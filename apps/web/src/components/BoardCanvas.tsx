@@ -39,15 +39,20 @@ import {
 } from "../state/canvasLayoutStore";
 import { useAddNode } from "../state/useAddNode";
 import { ConnectionArrow } from "./ConnectionArrow";
-import { resolveConnectionEndpoints, type ConnectionOrigin } from "./connectionUtils";
+import {
+  resolveConnectionEndpoints,
+  type ConnectionOrigin,
+  findNearestHandleId,
+} from "./connectionUtils";
 import { BoardInspector } from "./BoardInspector";
 import { BoardCommandBar, type CanvasTool } from "./BoardCommandBar";
-import { StickyNode } from "./StickyNode";
 import { FreehandOverlay } from "./pen/FreehandOverlay";
 import { PenNode } from "./pen/PenNode";
 import { TextNode } from "./TextNode";
 import { DatabaseNode } from "./flowNodes/DatabaseNode";
 import { PlotNode } from "./flowNodes/PlotNode";
+import ShapeNode, { type ShapeType } from "./flowNodes/ShapeNode";
+import CustomConnectionLine from "./flowEdges/CustomConnectionLine";
 
 const MonacoEditor = dynamic(async () => import("@monaco-editor/react"), {
   ssr: false,
@@ -127,7 +132,7 @@ const dataNodeHandles = [
   { id: "bottom", type: "source" as const, position: Position.Bottom },
 ];
 
-export function DataNodeHandles() {
+export function DataNodeHandles({ selected }: { selected?: boolean }) {
   return (
     <>
       {dataNodeHandles.map((handle) => (
@@ -138,6 +143,7 @@ export function DataNodeHandles() {
           position={handle.position}
           className={DATA_NODE_HANDLE_CLASS}
           data-handle-id={handle.id}
+          style={{ opacity: selected ? 1 : 0, pointerEvents: selected ? 'auto' : 'none' }}
         />
       ))}
     </>
@@ -260,7 +266,7 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
         lineClassName="!border-indigo-200"
         handleStyle={{ width: 12, height: 12, borderRadius: 6, border: "2px solid #6366f1", background: "#EEF2FF" }}
       />
-      <DataNodeHandles />
+      <DataNodeHandles selected={selected} />
       <div className="mb-3 flex items-center justify-between">
         <div className="flex flex-col">
           <span className="text-[11px] uppercase tracking-wide text-slate-500">SQL Node</span>
@@ -370,7 +376,7 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
         lineClassName="!border-indigo-200"
         handleStyle={{ width: 12, height: 12, borderRadius: 6, border: "2px solid #6366f1", background: "#EEF2FF" }}
       />
-      <DataNodeHandles />
+      <DataNodeHandles selected={selected} />
       <div className="mb-3 flex items-center justify-between">
         <div className="flex flex-col">
           <span className="text-[11px] uppercase tracking-wide text-slate-500">Python Node</span>
@@ -476,15 +482,15 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   );
 };
 
-const nodeTypes = {
-  sqlNode: SqlNodeComponent,
-  pythonNode: PythonNodeComponent,
-  sticky: StickyNode,
-  pen: PenNode,
-  textNode: TextNode,
-  databaseNode: DatabaseNode,
-  plotNode: PlotNode,
-};
+  const nodeTypes = {
+    sqlNode: SqlNodeComponent,
+    pythonNode: PythonNodeComponent,
+    pen: PenNode,
+    textNode: TextNode,
+    databaseNode: DatabaseNode,
+    plotNode: PlotNode,
+    shapeNode: ShapeNode, // Заметки теперь тоже shape nodes
+  };
 
 type ConnectionArrowsOverlayProps = {
   edges: Edge[];
@@ -675,11 +681,15 @@ function InnerBoardCanvas({
   const addNodeHelpers = useAddNode();
   const rf = useReactFlow();
   const connectOriginRef = useRef<ConnectionOrigin | null>(null);
+  const connectionCreatedRef = useRef<boolean>(false);
+  const lastMousePositionRef = useRef<{ x: number; y: number } | null>(null);
+  const mouseMoveCleanupRef = useRef<(() => void) | null>(null);
 
   const [localNodes, setLocalNodes] = useState(nodes);
   const localNodesRef = useRef(localNodes);
   const [localEdges, setLocalEdges] = useState(edges);
   const textNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const shapeNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   useEffect(() => {
     setLocalNodes(nodes);
@@ -689,13 +699,17 @@ function InnerBoardCanvas({
     localNodesRef.current = localNodes;
   }, [localNodes]);
 
-  // Cleanup для таймеров ресайза text nodes при размонтировании
+  // Cleanup для таймеров ресайза text и shape nodes при размонтировании
   useEffect(() => {
     return () => {
       textNodeResizeTimerRef.current.forEach((timer) => {
         clearTimeout(timer);
       });
       textNodeResizeTimerRef.current.clear();
+      shapeNodeResizeTimerRef.current.forEach((timer) => {
+        clearTimeout(timer);
+      });
+      shapeNodeResizeTimerRef.current.clear();
     };
   }, []);
 
@@ -775,9 +789,18 @@ function InnerBoardCanvas({
   }, [edges]);
 
   const [tool, setTool] = useState<CanvasTool>("select");
+  const [selectedShape, setSelectedShape] = useState<ShapeType | null>("rectangle");
   const isStickyMode = tool === "note";
   const isPenMode = tool === "pen";
   const isTextMode = tool === "text";
+  const isShapeMode = tool === "shape";
+  
+  // Автоматически выбираем rectangle при переключении на режим shape
+  useEffect(() => {
+    if (tool === "shape" && !selectedShape) {
+      setSelectedShape("rectangle");
+    }
+  }, [tool, selectedShape]);
 
   const selectedDataNode = useMemo(() => {
     if (!selectedNodeId) return null;
@@ -882,7 +905,6 @@ function InnerBoardCanvas({
     }
     return localNodes
       .filter((node) => node.type !== "draw") // draw nodes не отображаются в React Flow (legacy)
-      .filter((node) => node.type !== "note") // sticky НЕ идут в flowNodes, они рендерятся через stickyNodes
       .map((node) => {
         const isSql = node.type === "sql";
         const isPython = node.type === "python";
@@ -890,11 +912,13 @@ function InnerBoardCanvas({
         const isPlot = node.type === "plot";
         const isPen = node.type === "pen";
         const isText = node.type === "text";
-        const type = isSql ? "sqlNode" : isPython ? "pythonNode" : isDatabase ? "databaseNode" : isPlot ? "plotNode" : isPen ? "pen" : isText ? "textNode" : "default";
+        const isShape = node.type === "shape";
+        const isNote = node.type === "note"; // Заметки теперь тоже shape nodes
+        const type = isSql ? "sqlNode" : isPython ? "pythonNode" : isDatabase ? "databaseNode" : isPlot ? "plotNode" : isPen ? "pen" : isText ? "textNode" : (isShape || isNote) ? "shapeNode" : "default";
         
         // Определяем тип слоя для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
         const isDataNode = isSql || isPython || isDatabase || isPlot;
-        const isCanvasNode = isPen || isText;
+        const isCanvasNode = isPen || isText || isShape || isNote;
         
         if (isPen) {
           console.log("mapNodes: Mapping pen node", {
@@ -924,6 +948,14 @@ function InnerBoardCanvas({
           ? {
               width: ((node.payload as any)?.ui?.width ?? 240),
               height: ((node.payload as any)?.ui?.height ?? 80),
+              background: "transparent",
+              border: "none",
+              boxShadow: "none",
+            }
+          : (isShape || isNote)
+          ? {
+              width: isNote ? ((node.payload as any)?.ui?.width ?? 280) : ((node.payload as any)?.width ?? 160),
+              height: isNote ? ((node.payload as any)?.ui?.height ?? 280) : ((node.payload as any)?.height ?? 96),
               background: "transparent",
               border: "none",
               boxShadow: "none",
@@ -1009,6 +1041,105 @@ function InnerBoardCanvas({
                 },
               };
             })()
+          : (isShape || isNote)
+          ? (() => {
+              if (isNote) {
+                // Заметки - это shape nodes с типом rectangle и текстом
+                const text = (node.payload as any)?.text ?? (node.payload as any)?.noteContent ?? "";
+                const color = (node.payload as any)?.color ?? "#FFFFBA";
+                const fontSize = (node.payload as any)?.fontSize ?? 48;
+                const fontFamily = (node.payload as any)?.fontFamily ?? "Inter, sans-serif";
+                const isBold = (node.payload as any)?.isBold ?? false;
+                const isItalic = (node.payload as any)?.isItalic ?? false;
+                
+                return {
+                  shapeType: "rectangle" as const,
+                  shapeColor: color,
+                  text,
+                  fontSize,
+                  fontFamily,
+                  isBold,
+                  isItalic,
+                  width: (node.payload as any)?.ui?.width ?? 280,
+                  height: (node.payload as any)?.ui?.height ?? 280,
+                  onChangeText: (nid: string, newText: string) => {
+                    setLocalNodes((prev) => {
+                      const next = prev.map((n) =>
+                        n.id === nid && n.type === "note"
+                          ? { ...n, payload: { ...(n.payload ?? {}), text: newText, noteContent: newText } }
+                          : n
+                      );
+                      emitNodesChange(next);
+                      return next;
+                    });
+                  },
+                  onChangeColor: (nid: string, newColor: string) => {
+                    setLocalNodes((prev) => {
+                      const next = prev.map((n) =>
+                        n.id === nid && n.type === "note"
+                          ? { ...n, payload: { ...(n.payload ?? {}), color: newColor } }
+                          : n
+                      );
+                      emitNodesChange(next);
+                      return next;
+                    });
+                  },
+                  onChangeFontSize: (nid: string, newFontSize: number) => {
+                    setLocalNodes((prev) => {
+                      const next = prev.map((n) =>
+                        n.id === nid && n.type === "note"
+                          ? { ...n, payload: { ...(n.payload ?? {}), fontSize: newFontSize } }
+                          : n
+                      );
+                      emitNodesChange(next);
+                      return next;
+                    });
+                  },
+                  onChangeFontFamily: (nid: string, newFontFamily: string) => {
+                    setLocalNodes((prev) => {
+                      const next = prev.map((n) =>
+                        n.id === nid && n.type === "note"
+                          ? { ...n, payload: { ...(n.payload ?? {}), fontFamily: newFontFamily } }
+                          : n
+                      );
+                      emitNodesChange(next);
+                      return next;
+                    });
+                  },
+                  onChangeBold: (nid: string, newIsBold: boolean) => {
+                    setLocalNodes((prev) => {
+                      const next = prev.map((n) =>
+                        n.id === nid && n.type === "note"
+                          ? { ...n, payload: { ...(n.payload ?? {}), isBold: newIsBold } }
+                          : n
+                      );
+                      emitNodesChange(next);
+                      return next;
+                    });
+                  },
+                  onChangeItalic: (nid: string, newIsItalic: boolean) => {
+                    setLocalNodes((prev) => {
+                      const next = prev.map((n) =>
+                        n.id === nid && n.type === "note"
+                          ? { ...n, payload: { ...(n.payload ?? {}), isItalic: newIsItalic } }
+                          : n
+                      );
+                      emitNodesChange(next);
+                      return next;
+                    });
+                  },
+                };
+              } else {
+                // Обычные shape nodes
+                return {
+                  shapeType: ((node.payload as any)?.shapeType ?? "rectangle") as any,
+                  shapeColor: (node.payload as any)?.shapeColor ?? "#BFDBFE",
+                  shapeLabel: (node.payload as any)?.shapeLabel ?? "Фигура",
+                  width: (node.payload as any)?.width ?? 160,
+                  height: (node.payload as any)?.height ?? 96,
+                };
+              }
+            })()
           : isDatabase
           ? {
               nodeId: node.id,
@@ -1051,16 +1182,22 @@ function InnerBoardCanvas({
               isCodeCollapsed,
               nodeKind: node.type,
             },
+        // Для shape nodes (включая заметки) передаем width и height как пропсы, чтобы NodeResizer мог обновлять их в реальном времени
+        ...((isShape || isNote) ? {
+          width: isNote ? ((node.payload as any)?.ui?.width ?? 280) : ((node.payload as any)?.width ?? 160),
+          height: isNote ? ((node.payload as any)?.ui?.height ?? 280) : ((node.payload as any)?.height ?? 96),
+        } : {}),
         style: {
           ...baseStyle,
-          // Явный zIndex: дата-клетки = 1, элементы канвы pen = 10, text = 15 (между pen и sticky)
-          zIndex: isDataNode ? 1 : isPen ? 10 : isText ? 15 : 1,
+          // Явный zIndex: дата-клетки = 1, элементы канвы pen = 10, shape = 12, text = 15, заметки = 20
+          zIndex: isDataNode ? 1 : isPen ? 10 : isShape ? 12 : isText ? 15 : isNote ? 20 : 1,
         },
         // Pen nodes draggable только когда не в режиме pen
         // Text nodes draggable только когда не в режиме text (в режиме select можно перетаскивать)
+        // Shape nodes и заметки draggable всегда (как обычные элементы канвы), кроме режимов создания других элементов
         // Остальные ноды draggable всегда (если не в режиме создания sticky/pen/text)
-        draggable: isPen ? !isPenMode : isText ? !isTextMode : !isStickyMode && !isPenMode && !isTextMode,
-        selectable: isPen ? !isPenMode : isText ? !isTextMode : !isStickyMode && !isPenMode && !isTextMode,
+        draggable: isPen ? !isPenMode : isText ? !isTextMode : (isShape || isNote) ? !isPenMode && !isTextMode && !isShapeMode : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode,
+        selectable: isPen ? !isPenMode : isText ? !isTextMode : (isShape || isNote) ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode,
         // Служебное поле для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
         _sortOrder: isDataNode ? 0 : isCanvasNode ? 1 : 0,
       } as Node & { _sortOrder: number };
@@ -1207,15 +1344,20 @@ function InnerBoardCanvas({
 
   const flowEdges = useMemo<Edge[]>(
     () =>
-      localEdges.map((edge) => ({
-        id: edge.id,
-        source: edge.sourceId,
-        target: edge.targetId,
-        type: "step",
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
-        animated: true,
-        style: { stroke: "#94a3b8", strokeWidth: 2.2 },
-      })),
+      localEdges.map((edge) => {
+        const meta = (edge.metadata ?? {}) as { sourceHandleId?: string; targetHandleId?: string };
+        return {
+          id: edge.id,
+          source: edge.sourceId,
+          target: edge.targetId,
+          sourceHandle: meta.sourceHandleId ?? undefined,
+          targetHandle: meta.targetHandleId ?? undefined,
+          type: "step",
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
+          animated: true,
+          style: { stroke: "#94a3b8", strokeWidth: 4, strokeDasharray: "none" },
+        };
+      }),
     [localEdges],
   );
 
@@ -1229,17 +1371,63 @@ function InnerBoardCanvas({
         const position = flowNode.position ?? { x: previous?.position.x ?? 0, y: previous?.position.y ?? 0 };
         // Для pen nodes используем тип из data или previous
         const isPenNode = (flowNode.data as any)?.points !== undefined;
+        const isShapeNode = flowNode.type === "shapeNode";
+        const isNoteNode = isShapeNode && ((flowNode.data as any)?.text !== undefined || (flowNode.data as any)?.onChangeText);
         const nodeKind = isPenNode
           ? "pen"
+          : isShapeNode && isNoteNode
+          ? "note"
+          : isShapeNode
+          ? "shape"
           : ((flowNode.data as NodeData | undefined)?.nodeKind ?? previous?.type ?? "sql") as BoardCanvasProps["nodes"][number]["type"];
         // Для pen nodes сохраняем points и initialSize из data
+        // Для shape nodes сохраняем размеры из flowNode (width/height) и остальной payload
+        // Для заметок сохраняем размеры в ui, а текст и форматирование в payload
         const payload = isPenNode
           ? {
               points: (flowNode.data as any).points,
               initialSize: (flowNode.data as any).initialSize,
             }
+          : isShapeNode && isNoteNode
+          ? {
+              ...(previous?.payload ?? {}),
+              text: (flowNode.data as any)?.text ?? (previous?.payload as any)?.text,
+              noteContent: (flowNode.data as any)?.text ?? (previous?.payload as any)?.noteContent,
+              color: (flowNode.data as any)?.shapeColor ?? (previous?.payload as any)?.color,
+              fontSize: (flowNode.data as any)?.fontSize ?? (previous?.payload as any)?.fontSize,
+              fontFamily: (flowNode.data as any)?.fontFamily ?? (previous?.payload as any)?.fontFamily,
+              isBold: (flowNode.data as any)?.isBold ?? (previous?.payload as any)?.isBold,
+              isItalic: (flowNode.data as any)?.isItalic ?? (previous?.payload as any)?.isItalic,
+              ui: {
+                ...((previous?.payload as any)?.ui ?? {}),
+                width: typeof flowNode.width === "number" ? flowNode.width : ((previous?.payload as any)?.ui as any)?.width ?? 280,
+                height: typeof flowNode.height === "number" ? flowNode.height : ((previous?.payload as any)?.ui as any)?.height ?? 280,
+              },
+            }
+          : isShapeNode
+          ? {
+              ...(previous?.payload ?? {}),
+              ...((flowNode.data as any) ?? {}),
+              // Сохраняем размеры из flowNode, если они есть
+              width: typeof flowNode.width === "number" ? flowNode.width : (previous?.payload as any)?.width,
+              height: typeof flowNode.height === "number" ? flowNode.height : (previous?.payload as any)?.height,
+            }
           : previous?.payload ?? {};
-        if (!previous || previous.position.x !== position.x || previous.position.y !== position.y || previous.type !== nodeKind) {
+        // Проверяем изменения: position, type, или для shape nodes - размеры
+        const positionChanged = !previous || previous.position.x !== position.x || previous.position.y !== position.y;
+        const typeChanged = previous?.type !== nodeKind;
+        const shapeSizeChanged = isShapeNode && previous && (
+          isNoteNode
+            ? (
+                ((previous.payload as any)?.ui as any)?.width !== (payload as any)?.ui?.width ||
+                ((previous.payload as any)?.ui as any)?.height !== (payload as any)?.ui?.height
+              )
+            : (
+                (previous.payload as any)?.width !== payload.width ||
+                (previous.payload as any)?.height !== payload.height
+              )
+        );
+        if (positionChanged || typeChanged || shapeSizeChanged) {
           mutated = true;
         }
         return {
@@ -1265,264 +1453,21 @@ function InnerBoardCanvas({
     [emitNodesChange],
   );
 
-  // Sticky nodes live alongside flow nodes; we render a merged list
-  const [stickyNodes, setStickyNodes] = useState<Node[]>([]);
-  
-  // Инициализируем stickyNodes из localNodes при загрузке/изменении localNodes
-  useEffect(() => {
-    const noteNodes = localNodes.filter((n) => n.type === "note");
-    if (noteNodes.length > 0) {
-      const existingStickyIds = new Set(stickyNodes.map((n) => n.id));
-      const newStickyNodes = noteNodes
-        .filter((n) => !existingStickyIds.has(n.id))
-        .map((n) => {
-          const text = (n.payload as any)?.text ?? (n.payload as any)?.noteContent ?? "";
-          const nodeWidth = Number(((n.payload as any)?.ui as any)?.width ?? 160);
-          const nodeHeight = Number(((n.payload as any)?.ui as any)?.height ?? 96);
-          const color = (n.payload as any)?.color ?? "#EBC347"; // yellow по умолчанию
-          const fontSize = (n.payload as any)?.fontSize ?? 14;
-          const fontFamily = (n.payload as any)?.fontFamily ?? "Inter, sans-serif";
-          const isBold = (n.payload as any)?.isBold ?? false;
-          const isItalic = (n.payload as any)?.isItalic ?? false;
-          
-          return {
-            id: n.id,
-            type: "sticky" as const,
-            position: n.position,
-            // Важно: передаем width и height напрямую в props, а не только в style
-            // React Flow NodeResizer использует эти props для управления размерами
-            width: nodeWidth,
-            height: nodeHeight,
-            data: {
-              text,
-              color,
-              fontSize,
-              fontFamily,
-              isBold,
-              isItalic,
-              onChangeText: (nid: string, text: string) =>
-                setStickyNodes((cur) => {
-                  const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), text } } : st));
-                  setLocalNodes((prev) => {
-                    const next = prev.map((ext) =>
-                      ext.id === nid && ext.type === "note"
-                        ? { ...ext, payload: { ...(ext.payload ?? {}), text, noteContent: text } }
-                        : ext,
-                    );
-                    emitNodesChange(next);
-                    return next;
-                  });
-                  return updated;
-                }),
-              onChangeColor: (nid: string, newColor: string) => {
-                setStickyNodes((cur) => {
-                  const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), color: newColor } } : st));
-                  setLocalNodes((prev) => {
-                    const next = prev.map((ext) =>
-                      ext.id === nid && ext.type === "note"
-                        ? { ...ext, payload: { ...(ext.payload ?? {}), color: newColor } }
-                        : ext,
-                    );
-                    emitNodesChange(next);
-                    return next;
-                  });
-                  return updated;
-                });
-              },
-              onChangeFontSize: (nid: string, newFontSize: number) => {
-                setStickyNodes((cur) => {
-                  const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), fontSize: newFontSize } } : st));
-                  setLocalNodes((prev) => {
-                    const next = prev.map((ext) =>
-                      ext.id === nid && ext.type === "note"
-                        ? { ...ext, payload: { ...(ext.payload ?? {}), fontSize: newFontSize } }
-                        : ext,
-                    );
-                    emitNodesChange(next);
-                    return next;
-                  });
-                  return updated;
-                });
-              },
-              onChangeFontFamily: (nid: string, newFontFamily: string) => {
-                setStickyNodes((cur) => {
-                  const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), fontFamily: newFontFamily } } : st));
-                  setLocalNodes((prev) => {
-                    const next = prev.map((ext) =>
-                      ext.id === nid && ext.type === "note"
-                        ? { ...ext, payload: { ...(ext.payload ?? {}), fontFamily: newFontFamily } }
-                        : ext,
-                    );
-                    emitNodesChange(next);
-                    return next;
-                  });
-                  return updated;
-                });
-              },
-              onChangeBold: (nid: string, newIsBold: boolean) => {
-                setStickyNodes((cur) => {
-                  const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), isBold: newIsBold } } : st));
-                  setLocalNodes((prev) => {
-                    const next = prev.map((ext) =>
-                      ext.id === nid && ext.type === "note"
-                        ? { ...ext, payload: { ...(ext.payload ?? {}), isBold: newIsBold } }
-                        : ext,
-                    );
-                    emitNodesChange(next);
-                    return next;
-                  });
-                  return updated;
-                });
-              },
-              onChangeItalic: (nid: string, newIsItalic: boolean) => {
-                setStickyNodes((cur) => {
-                  const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), isItalic: newIsItalic } } : st));
-                  setLocalNodes((prev) => {
-                    const next = prev.map((ext) =>
-                      ext.id === nid && ext.type === "note"
-                        ? { ...ext, payload: { ...(ext.payload ?? {}), isItalic: newIsItalic } }
-                        : ext,
-                    );
-                    emitNodesChange(next);
-                    return next;
-                  });
-                  return updated;
-                });
-              },
-            },
-            style: {
-              width: nodeWidth,
-              height: nodeHeight,
-              // Явный zIndex для sticky: выше всех других nodes (20)
-              zIndex: 20,
-            },
-          } as Node;
-        });
-      
-      if (newStickyNodes.length > 0) {
-        setStickyNodes((prev) => {
-          const prevIds = new Set(prev.map((n) => n.id));
-          const unique = newStickyNodes.filter((n) => !prevIds.has(n.id));
-          return [...prev, ...unique];
-        });
-      }
-    }
-    // Удаляем stickyNodes, которых больше нет в localNodes
-    setStickyNodes((prev) => {
-      const localNoteIds = new Set(noteNodes.map((n) => n.id));
-      return prev.filter((n) => localNoteIds.has(n.id));
-    });
-  }, [localNodes, emitNodesChange]);
+  // Заметки теперь обрабатываются как shape nodes, отдельная логика не нужна
 
   const hasSelection = useMemo(() => {
     const nodes = flowNodes ?? [];
     const edges = flowEdges ?? [];
-    const sticky = stickyNodes ?? [];
     return (
       nodes.some((n: any) => n?.selected) ||
-      edges.some((e: any) => e?.selected) ||
-      sticky.some((n: any) => n?.selected || n.id === selectedNodeId)
+      edges.some((e: any) => e?.selected)
     );
-  }, [flowNodes, flowEdges, stickyNodes, selectedNodeId]);
+  }, [flowNodes, flowEdges]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      const stickyIds = new Set(stickyNodes.map((n) => n.id));
-      const stickyChanges: NodeChange[] = [];
-      const flowChanges: NodeChange[] = [];
-      for (const ch of changes) {
-        const id = (ch as any).id as string | undefined;
-        if (id && stickyIds.has(id)) stickyChanges.push(ch);
-        else flowChanges.push(ch);
-      }
-      if (stickyChanges.length) {
-        // Проверяем, есть ли активный dragging для sticky nodes
-        const hasActiveDragging = stickyChanges.some((ch) => ch.type === "position" && (ch as any).dragging === true);
-        
-        setStickyNodes((prev) => {
-          const updated = applyNodeChanges(stickyChanges, prev);
-          // Убеждаемся, что zIndex сохраняется после изменений и selected обновляется
-          const updatedWithZIndex = updated.map((node) => {
-            // React Flow обновляет width/height через applyNodeChanges при ресайзе
-            // Важно: используем node.width и node.height напрямую из applyNodeChanges
-            // applyNodeChanges обновляет их автоматически при изменениях dimensions
-            // НЕ используем fallback значения здесь, чтобы React Flow мог управлять размерами
-            // Fallback только если React Flow еще не установил размеры (undefined)
-            const nodeWidth = node.width ?? node.style?.width ?? 160;
-            const nodeHeight = node.height ?? node.style?.height ?? 96;
-            
-            return {
-              ...node,
-              selected: node.id === selectedNodeId,
-              // Сохраняем position из applyNodeChanges (React Flow автоматически обновляет его при ресайзе)
-              position: node.position,
-              // Сохраняем width/height в props (это важно для NodeResizer)
-              // React Flow передает их как числа в props компонента
-              width: nodeWidth,
-              height: nodeHeight,
-              style: {
-                ...node.style,
-                // Сохраняем width/height и в style для совместимости
-                width: nodeWidth,
-                height: nodeHeight,
-                zIndex: node.style?.zIndex ?? 20, // Сохраняем zIndex = 20 для sticky
-              },
-            };
-          });
-          
-          // Обновляем localNodes для всех изменений
-          setLocalNodes((prevExt) => {
-            const next = prevExt.map((ext) => {
-              if (ext.type !== "note") return ext;
-              const match = updatedWithZIndex.find((n) => n.id === ext.id);
-              if (!match) return ext;
-              
-              const newPos = match.position ?? { x: 0, y: 0 };
-              const newText = (match.data as any)?.text ?? (ext.payload as any)?.text ?? "";
-              const newColor = (match.data as any)?.color ?? (ext.payload as any)?.color ?? "#EBC347";
-              const newFontSize = (match.data as any)?.fontSize ?? (ext.payload as any)?.fontSize ?? 14;
-              const newFontFamily = (match.data as any)?.fontFamily ?? (ext.payload as any)?.fontFamily ?? "Inter, sans-serif";
-              const newIsBold = (match.data as any)?.isBold ?? (ext.payload as any)?.isBold ?? false;
-              const newIsItalic = (match.data as any)?.isItalic ?? (ext.payload as any)?.isItalic ?? false;
-              
-              // Обновляем размеры из width/height props напрямую (React Flow обновляет их при ресайзе)
-              // Важно: используем match.width/match.height, а не style.width/style.height
-              const newWidth = match.width ?? match.style?.width ?? ((ext.payload as any)?.ui as any)?.width ?? 160;
-              const newHeight = match.height ?? match.style?.height ?? ((ext.payload as any)?.ui as any)?.height ?? 96;
-              
-              return {
-                ...ext,
-                position: newPos,
-                payload: {
-                  ...(ext.payload ?? {}),
-                  text: newText,
-                  color: newColor,
-                  fontSize: newFontSize,
-                  fontFamily: newFontFamily,
-                  isBold: newIsBold,
-                  isItalic: newIsItalic,
-                  ui: {
-                    ...((ext.payload as any)?.ui ?? {}),
-                    width: typeof newWidth === "number" ? newWidth : parseFloat(String(newWidth)) || 160,
-                    height: typeof newHeight === "number" ? newHeight : parseFloat(String(newHeight)) || 96,
-                  },
-                },
-              };
-            });
-            
-            // Вызываем emitNodesChange только при окончании dragging (не во время активного ресайза)
-            if (!hasActiveDragging) {
-              queueMicrotask(() => {
-                emitNodesChange(next);
-              });
-            }
-            
-            return next;
-          });
-          
-          return updatedWithZIndex;
-        });
-      }
+      // Все изменения обрабатываются как flowChanges (заметки теперь shape nodes)
+      const flowChanges: NodeChange[] = changes;
       if (flowChanges.length) {
         const shouldCommit = flowChanges.some((change) => change.type === "position" && change.dragging !== true);
         setFlowNodes((current) => {
@@ -1532,6 +1477,7 @@ function InnerBoardCanvas({
           const nextWithZIndex = next.map((node) => {
             const isPen = node.type === "pen";
             const isText = node.type === "textNode";
+            const isShape = node.type === "shapeNode";
             const isDataNode = node.type === "sqlNode" || node.type === "pythonNode";
             
             // Для data nodes обновляем data.width из node.width (который React Flow обновляет через dimensions)
@@ -1551,18 +1497,23 @@ function InnerBoardCanvas({
               // Сохраняем selected из applyNodeChanges (React Flow управляет этим через onNodeClick)
               // Не обновляем selected здесь, чтобы избежать бесконечных циклов
               selected: node.selected,
-              // Сохраняем width/height из applyNodeChanges
+              // Сохраняем width/height из applyNodeChanges (важно для shape nodes - NodeResizer обновляет их напрямую)
               width: node.width,
               height: node.height,
               style: {
                 ...node.style,
-                // Сохраняем width/height из style, если React Flow их обновил
-                width: node.style?.width,
-                height: node.style?.height,
-                zIndex: node.style?.zIndex ?? (isPen ? 10 : isText ? 15 : isDataNode ? 1 : 1),
+                // Для shape nodes обновляем width/height в style из пропсов, чтобы они синхронизировались
+                ...(isShape ? {
+                  width: typeof node.width === "number" ? node.width : node.style?.width,
+                  height: typeof node.height === "number" ? node.height : node.style?.height,
+                } : {
+                  width: node.style?.width,
+                  height: node.style?.height,
+                }),
+                zIndex: node.style?.zIndex ?? (isPen ? 10 : isShape ? 12 : isText ? 15 : isDataNode ? 1 : 1),
               },
               // Сохраняем _sortOrder для корректной сортировки
-              _sortOrder: isDataNode ? 0 : (isPen || isText) ? 1 : 0,
+              _sortOrder: isDataNode ? 0 : (isPen || isText || isShape) ? 1 : 0,
             };
           }).sort((a, b) => (a._sortOrder ?? 0) - (b._sortOrder ?? 0));
           if (shouldCommit) {
@@ -1575,9 +1526,13 @@ function InnerBoardCanvas({
             const width = change.dimensions.width;
             const height = change.dimensions.height;
             
-            // Проверяем, есть ли активный dragging для этого node
+            // Проверяем, есть ли активный dragging или resizing для этого node
             const hasActiveDragging = flowChanges.some(
               (ch) => ch.type === "position" && (ch as any).id === change.id && (ch as any).dragging === true
+            );
+            // Проверяем, есть ли другие dimensions изменения для этого node (активный ресайз)
+            const hasActiveResizing = flowChanges.some(
+              (ch) => ch.type === "dimensions" && (ch as any).id === change.id && ch !== change
             );
             
             const node = localNodes.find((n) => n.id === change.id);
@@ -1618,7 +1573,71 @@ function InnerBoardCanvas({
               }, 200);
               
               textNodeResizeTimerRef.current.set(change.id, timer);
-            } else if (node?.type !== "text" && width && !hasActiveDragging) {
+            } else if ((node?.type === "shape" || node?.type === "note") && width && height && !hasActiveDragging && !hasActiveResizing) {
+              // Для shape nodes используем debounce для сохранения размеров в payload
+              // Сохраняем только после завершения ресайза, чтобы не конфликтовать с React Flow
+              const existingTimer = shapeNodeResizeTimerRef.current.get(change.id);
+              if (existingTimer) {
+                clearTimeout(existingTimer);
+              }
+              
+              const timer = setTimeout(() => {
+                // Получаем актуальные размеры из flowNodes через setFlowNodes callback
+                setFlowNodes((currentFlowNodes) => {
+                  const currentFlowNode = currentFlowNodes.find((n) => n.id === change.id);
+                  const isNote = node?.type === "note";
+                  const defaultWidth = isNote ? 280 : 160;
+                  const defaultHeight = isNote ? 280 : 96;
+                  
+                  const finalWidth = typeof currentFlowNode?.width === "number" && currentFlowNode.width > 0 
+                    ? currentFlowNode.width 
+                    : (typeof width === "number" ? width : parseFloat(String(width)) || defaultWidth);
+                  const finalHeight = typeof currentFlowNode?.height === "number" && currentFlowNode.height > 0 
+                    ? currentFlowNode.height 
+                    : (typeof height === "number" ? height : parseFloat(String(height)) || defaultHeight);
+                  
+                  setLocalNodes((prev) => {
+                    const currentNode = prev.find((n) => n.id === change.id && (n.type === "shape" || n.type === "note"));
+                    if (!currentNode) return prev;
+                    
+                    const next = prev.map((n) => {
+                      if (n.id === change.id && n.type === "shape") {
+                        return {
+                          ...n,
+                          position: currentFlowNode?.position ?? n.position,
+                          payload: {
+                            ...(n.payload ?? {}),
+                            width: finalWidth,
+                            height: finalHeight,
+                          },
+                        };
+                      } else if (n.id === change.id && n.type === "note") {
+                        return {
+                          ...n,
+                          position: currentFlowNode?.position ?? n.position,
+                          payload: {
+                            ...(n.payload ?? {}),
+                            ui: {
+                              ...((n.payload as any)?.ui ?? {}),
+                              width: finalWidth,
+                              height: finalHeight,
+                            },
+                          },
+                        };
+                      }
+                      return n;
+                    });
+                    emitNodesChange(next);
+                    return next;
+                  });
+                  
+                  return currentFlowNodes;
+                });
+                shapeNodeResizeTimerRef.current.delete(change.id);
+              }, 300); // Увеличиваем debounce до 300ms для более плавного ресайза
+              
+              shapeNodeResizeTimerRef.current.set(change.id, timer);
+            } else if (node?.type !== "text" && node?.type !== "shape" && node?.type !== "note" && width && !hasActiveDragging) {
                 // Для data nodes сохраняем только width
                 requestAnimationFrame(() => {
                   setNodeWidth(change.id!, width);
@@ -1634,7 +1653,7 @@ function InnerBoardCanvas({
         });
       }
     },
-    [commitFlowNodesToLocal, setNodeWidth, stickyNodes, localNodes, emitNodesChange, setLocalNodes],
+    [commitFlowNodesToLocal, setNodeWidth, localNodes, emitNodesChange, setLocalNodes, setFlowNodes],
   );
 
   const handleNodeClick = useCallback(
@@ -1731,24 +1750,247 @@ function InnerBoardCanvas({
     onSelectNode?.(template.id);
   }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
 
+
   const handleConnectStart = useCallback(
     (_event: React.MouseEvent | React.TouchEvent, params: ConnectionStartParams) => {
     connectOriginRef.current = {
       nodeId: params?.nodeId ?? null,
       handleType: params?.handleType ?? null,
+      handleId: params?.handleId ?? null,
+    };
+    connectionCreatedRef.current = false;
+    
+    // Start tracking mouse position
+    const handleMouseMove = (e: MouseEvent) => {
+      if (connectOriginRef.current) {
+        const flowPos = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        lastMousePositionRef.current = flowPos;
+      }
+    };
+    
+    window.addEventListener("mousemove", handleMouseMove);
+    // Store cleanup function
+    mouseMoveCleanupRef.current = () => {
+      window.removeEventListener("mousemove", handleMouseMove);
     };
     },
-    [],
+    [rf],
   );
 
-  const handleConnectEnd = useCallback(() => {
-    connectOriginRef.current = null;
-  }, []);
+  const handleConnectEnd = useCallback(
+    (event?: MouseEvent | TouchEvent) => {
+      // Cleanup mouse tracking
+      if (mouseMoveCleanupRef.current) {
+        mouseMoveCleanupRef.current();
+        mouseMoveCleanupRef.current = null;
+      }
+      
+      // If connection was not created through onConnect, try to create it manually
+      if (!connectionCreatedRef.current && connectOriginRef.current?.nodeId && lastMousePositionRef.current) {
+        const sourceNodeId = connectOriginRef.current.nodeId;
+        const sourceNode = rf.getNode(sourceNodeId);
+        
+        if (sourceNode && lastMousePositionRef.current) {
+          // Find node under mouse cursor or nearest node
+          const mousePos = lastMousePositionRef.current;
+          const allNodes = rf.getNodes();
+          
+          // First, try to find node that contains the mouse position
+          let targetNode: Node | null = null;
+          let minDistance = Infinity;
+          
+          for (const node of allNodes) {
+            if (node.id === sourceNodeId) continue; // Skip source node
+            
+            const nodePos = node.positionAbsolute ?? node.position;
+            const nodeWidth = node.width ?? 280;
+            const nodeHeight = node.height ?? 320;
+            const nodeCenterX = nodePos.x + nodeWidth / 2;
+            const nodeCenterY = nodePos.y + nodeHeight / 2;
+            
+            // Check if mouse is inside node bounds
+            if (
+              mousePos.x >= nodePos.x &&
+              mousePos.x <= nodePos.x + nodeWidth &&
+              mousePos.y >= nodePos.y &&
+              mousePos.y <= nodePos.y + nodeHeight
+            ) {
+              targetNode = node;
+              break; // Found node containing cursor, use it
+            }
+            
+            // Otherwise, track distance to node center for fallback
+            const distance = Math.sqrt(
+              Math.pow(mousePos.x - nodeCenterX, 2) + Math.pow(mousePos.y - nodeCenterY, 2)
+            );
+            if (distance < minDistance) {
+              minDistance = distance;
+              // Only use as fallback if reasonably close (within 200px)
+              if (distance < 200) {
+                targetNode = node;
+              }
+            }
+          }
+          
+          if (targetNode) {
+            // Create connection manually
+            const originHandleType = connectOriginRef.current.handleType;
+            const originHandleId = connectOriginRef.current.handleId;
+            const isConnectingFromSource = originHandleType === "source";
+            
+            // Determine source handle - use the actual handle ID from connectStart if available
+            let sourceHandle: string | null = null;
+            if (originHandleId && (
+              originHandleId === "left" || 
+              originHandleId === "top" || 
+              originHandleId === "right" || 
+              originHandleId === "bottom"
+            )) {
+              // Use the handle ID from where we started
+              sourceHandle = originHandleId;
+            } else {
+              // Fallback: find nearest handle if ID is not available
+              if (originHandleType === "source") {
+                const sourceNodePos = sourceNode.positionAbsolute ?? sourceNode.position;
+                const sourceNodeWidth = sourceNode.width ?? 280;
+                const sourceNodeHeight = sourceNode.height ?? 320;
+                const sourceCenter = {
+                  x: sourceNodePos.x + sourceNodeWidth / 2,
+                  y: sourceNodePos.y + sourceNodeHeight / 2,
+                };
+                sourceHandle = findNearestHandleId(sourceNode, sourceCenter, "source") ?? null;
+              } else if (originHandleType === "target") {
+                const sourceNodePos = sourceNode.positionAbsolute ?? sourceNode.position;
+                const sourceNodeWidth = sourceNode.width ?? 280;
+                const sourceNodeHeight = sourceNode.height ?? 320;
+                const sourceCenter = {
+                  x: sourceNodePos.x + sourceNodeWidth / 2,
+                  y: sourceNodePos.y + sourceNodeHeight / 2,
+                };
+                sourceHandle = findNearestHandleId(sourceNode, sourceCenter, "target") ?? null;
+              }
+            }
+            
+            // Determine target handle - use mouse position to find nearest handle
+            const neededTargetHandleType = isConnectingFromSource ? "target" : "source";
+            // Use actual mouse position instead of node center for better accuracy
+            const targetHandle = findNearestHandleId(targetNode, mousePos, neededTargetHandleType) ?? null;
+            
+            if (sourceHandle && targetHandle) {
+              // Create the connection
+              const sourceId = isConnectingFromSource ? sourceNodeId : targetNode.id;
+              const targetId = isConnectingFromSource ? targetNode.id : sourceNodeId;
+              const finalSourceHandle = isConnectingFromSource ? sourceHandle : targetHandle;
+              const finalTargetHandle = isConnectingFromSource ? targetHandle : sourceHandle;
+              
+              setLocalEdges((prev) => {
+                if (prev.some((edge) => edge.sourceId === sourceId && edge.targetId === targetId)) {
+                  return prev;
+                }
+                const next = [
+                  ...prev,
+                  {
+                    id: createEdgeId(),
+                    sourceId,
+                    targetId,
+                    metadata: {
+                      sourceHandleId: finalSourceHandle,
+                      targetHandleId: finalTargetHandle,
+                    },
+                  },
+                ];
+                emitEdgesChange(next);
+                return next;
+              });
+            }
+          }
+        }
+      }
+      
+      connectOriginRef.current = null;
+      connectionCreatedRef.current = false;
+      lastMousePositionRef.current = null;
+    },
+    [rf, emitEdgesChange],
+  );
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      const { sourceId, targetId } = resolveConnectionEndpoints(connection, connectOriginRef.current);
+      let {
+        sourceId,
+        targetId,
+        sourceHandle,
+        targetHandle,
+      } = resolveConnectionEndpoints(connection, connectOriginRef.current);
+
+      // Determine the handle type we started from (from connectOriginRef)
+      const originHandleType = connectOriginRef.current?.handleType;
+      const isConnectingFromSource = originHandleType === "source" || 
+        sourceHandle === "right" || 
+        sourceHandle === "bottom" ||
+        (connection.sourceHandle && (connection.sourceHandle === "right" || connection.sourceHandle === "bottom"));
+
+      // Auto-complete targetHandle if missing
+      if (targetId && !targetHandle && connection.target) {
+        const targetNode = rf.getNode(targetId);
+        if (targetNode) {
+          // Use the actual connection end position if available, otherwise use node center
+          const targetNodePos = targetNode.positionAbsolute ?? targetNode.position;
+          const targetNodeWidth = targetNode.width ?? 280;
+          const targetNodeHeight = targetNode.height ?? 320;
+          
+          // Try to get mouse position from connection, fallback to node center
+          const mousePosition = {
+            x: targetNodePos.x + targetNodeWidth / 2,
+            y: targetNodePos.y + targetNodeHeight / 2,
+          };
+
+          // If connecting from source, we need target handle (and vice versa)
+          const neededHandleType = isConnectingFromSource ? "target" : "source";
+
+          const nearestHandleId = findNearestHandleId(
+            targetNode,
+            mousePosition,
+            neededHandleType
+          );
+
+          if (nearestHandleId) {
+            targetHandle = nearestHandleId;
+          }
+        }
+      }
+
+      // Auto-complete sourceHandle if missing (less common, but possible)
+      if (sourceId && !sourceHandle && connection.source) {
+        const sourceNode = rf.getNode(sourceId);
+        if (sourceNode) {
+          const sourceNodePos = sourceNode.positionAbsolute ?? sourceNode.position;
+          const sourceNodeWidth = sourceNode.width ?? 280;
+          const sourceNodeHeight = sourceNode.height ?? 320;
+          const mousePosition = {
+            x: sourceNodePos.x + sourceNodeWidth / 2,
+            y: sourceNodePos.y + sourceNodeHeight / 2,
+          };
+
+          // If target is target handle, we need source handle (and vice versa)
+          const neededHandleType = targetHandle && (targetHandle === "left" || targetHandle === "top")
+            ? "source"
+            : originHandleType === "target" ? "source" : "target";
+
+          const nearestHandleId = findNearestHandleId(
+            sourceNode,
+            mousePosition,
+            neededHandleType
+          );
+
+          if (nearestHandleId) {
+            sourceHandle = nearestHandleId;
+          }
+        }
+      }
+
       connectOriginRef.current = null;
+      connectionCreatedRef.current = true;
       if (!sourceId || !targetId) return;
       setLocalEdges((prev) => {
         if (prev.some((edge) => edge.sourceId === sourceId && edge.targetId === targetId)) {
@@ -1760,14 +2002,18 @@ function InnerBoardCanvas({
             id: createEdgeId(),
             sourceId,
             targetId,
-            metadata: {},
+            metadata: {
+              ...(connection.metadata ?? {}),
+              sourceHandleId: sourceHandle ?? connection.sourceHandle ?? undefined,
+              targetHandleId: targetHandle ?? connection.targetHandle ?? undefined,
+            },
           },
         ];
         emitEdgesChange(next);
         return next;
       });
     },
-    [emitEdgesChange],
+    [emitEdgesChange, rf],
   );
 
   const handleEdgesChange = useCallback(
@@ -1799,9 +2045,6 @@ function InnerBoardCanvas({
     if (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) return;
 
     console.log("handleDeleteSelection: Deleting nodes:", Array.from(selectedNodeIds), "edges:", Array.from(selectedEdgeIds));
-
-    // remove sticky layer nodes
-    setStickyNodes((prev) => prev.filter((n) => !selectedNodeIds.has(n.id)));
 
     // remove from localNodes (regular + mirrored notes + pen nodes)
     setLocalNodes((prev) => {
@@ -1909,8 +2152,8 @@ function InnerBoardCanvas({
   };
   const addExternalSticky = useCallback(
     (id: string, pos: { x: number; y: number }, text = "") => {
-      const defaultColor = "#EBC347"; // yellow по умолчанию
-      const defaultFontSize = 14;
+      const defaultColor = "#FFFFBA"; // пастельный желтый по умолчанию
+      const defaultFontSize = 48;
       const defaultFontFamily = "Inter, sans-serif";
       const externalSticky = {
         id,
@@ -1919,13 +2162,13 @@ function InnerBoardCanvas({
         payload: {
           text,
           noteContent: text,
-          noteColor: "#FDE68A",
+          noteColor: "#FFFFBA",
           color: defaultColor,
-          fontSize: defaultFontSize,
+          fontSize: defaultFontSize, // явно устанавливаем 48
           fontFamily: defaultFontFamily,
           isBold: false,
           isItalic: false,
-          ui: { width: 180, height: 180 },
+          ui: { width: 280, height: 280 }, // квадратная форма, примерно половина дефолтной дата-клетки
         },
       };
       setLocalNodes((prev) => {
@@ -1959,23 +2202,17 @@ function InnerBoardCanvas({
       <div className="relative h-full w-full overflow-hidden">
         <div className="relative h-full w-full">
           <ReactFlow
-            nodes={[
-              ...flowNodes,
-              ...stickyNodes.map((node) => ({
-                ...node,
-                selected: node.id === selectedNodeId,
-              })),
-            ]}
+            nodes={flowNodes}
             edges={flowEdges}
             fitView
             fitViewOptions={{ padding: 0.2, duration: 0 }}
-            panOnDrag={!isStickyMode && !isPenMode && !isTextMode}
+            panOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
             panOnScroll={false}
             zoomOnScroll
-            selectionOnDrag={!isStickyMode && !isPenMode && !isTextMode}
-            nodesDraggable={!isStickyMode && !isPenMode && !isTextMode}
-            nodesConnectable={!isStickyMode && !isPenMode && !isTextMode}
-            elementsSelectable={!isStickyMode && !isPenMode && !isTextMode}
+            selectionOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
+            nodesDraggable={!isPenMode && !isTextMode && !isShapeMode}
+            nodesConnectable={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
+            elementsSelectable={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
             proOptions={{ hideAttribution: true }}
             className="h-full bg-white"
             style={{ width: "100%", height: "100%" }}
@@ -1986,41 +2223,50 @@ function InnerBoardCanvas({
             onConnect={handleConnect}
             onConnectStart={handleConnectStart}
             onConnectEnd={handleConnectEnd}
+            connectionLineComponent={CustomConnectionLine}
+            connectionLineStyle={{ stroke: "#94a3b8", strokeWidth: 4 }}
             onNodeClick={handleNodeClick}
             onNodeDataChange={(id, data) => {
               // Синхронизируем изменения данных узла (цвет, форматирование) с localNodes
+              // Заметки теперь shape nodes, изменения обрабатываются через callbacks в data
               if (data && typeof data === "object") {
-                const node = stickyNodes.find((n) => n.id === id);
-                if (node && node.type === "sticky") {
-                  const newColor = (data as any)?.color;
-                  const newFontSize = (data as any)?.fontSize;
-                  const newFontFamily = (data as any)?.fontFamily;
-                  const newIsBold = (data as any)?.isBold;
-                  const newIsItalic = (data as any)?.isItalic;
-                  
-                  // Обновляем только если есть изменения
-                  if (newColor || newFontSize !== undefined || newFontFamily || newIsBold !== undefined || newIsItalic !== undefined) {
-                    setLocalNodes((prev) => {
-                      const next = prev.map((ext) =>
-                        ext.id === id && ext.type === "note"
-                          ? {
-                              ...ext,
-                              payload: {
-                                ...(ext.payload ?? {}),
-                                ...(newColor && { color: newColor }),
-                                ...(newFontSize !== undefined && { fontSize: newFontSize }),
-                                ...(newFontFamily && { fontFamily: newFontFamily }),
-                                ...(newIsBold !== undefined && { isBold: newIsBold }),
-                                ...(newIsItalic !== undefined && { isItalic: newIsItalic }),
-                              },
-                            }
-                          : ext,
-                      );
-                      queueMicrotask(() => {
-                        emitNodesChange(next);
+                const node = flowNodes.find((n) => n.id === id);
+                if (node && node.type === "shapeNode") {
+                  const nodeData = node.data as any;
+                  // Если это заметка (есть text или onChangeText), обновляем localNodes
+                  if (nodeData?.text !== undefined || nodeData?.onChangeText) {
+                    const newColor = (data as any)?.shapeColor;
+                    const newText = (data as any)?.text;
+                    const newFontSize = (data as any)?.fontSize;
+                    const newFontFamily = (data as any)?.fontFamily;
+                    const newIsBold = (data as any)?.isBold;
+                    const newIsItalic = (data as any)?.isItalic;
+                    
+                    // Обновляем только если есть изменения
+                    if (newColor || newText !== undefined || newFontSize !== undefined || newFontFamily || newIsBold !== undefined || newIsItalic !== undefined) {
+                      setLocalNodes((prev) => {
+                        const next = prev.map((ext) =>
+                          ext.id === id && ext.type === "note"
+                            ? {
+                                ...ext,
+                                payload: {
+                                  ...(ext.payload ?? {}),
+                                  ...(newColor && { color: newColor }),
+                                  ...(newText !== undefined && { text: newText, noteContent: newText }),
+                                  ...(newFontSize !== undefined && { fontSize: newFontSize }),
+                                  ...(newFontFamily && { fontFamily: newFontFamily }),
+                                  ...(newIsBold !== undefined && { isBold: newIsBold }),
+                                  ...(newIsItalic !== undefined && { isItalic: newIsItalic }),
+                                },
+                              }
+                            : ext,
+                        );
+                        queueMicrotask(() => {
+                          emitNodesChange(next);
+                        });
+                        return next;
                       });
-                      return next;
-                    });
+                    }
                   }
                 }
               }
@@ -2044,125 +2290,32 @@ function InnerBoardCanvas({
                 return;
               }
               
-              // Создаем новый стикер только в режиме стикеров
+              // Создаем новую фигуру в режиме shape
+              if (isShapeMode && selectedShape) {
+                const shapeNode = addNodeHelpers.createShapeNode(p) as BoardCanvasProps["nodes"][number];
+                // Обновляем payload с выбранной формой
+                shapeNode.payload = {
+                  ...shapeNode.payload,
+                  shapeType: selectedShape,
+                };
+                setLocalNodes((prev) => {
+                  const next = [...prev, shapeNode];
+                  emitNodesChange(next);
+                  return next;
+                });
+                onSelectNode?.(shapeNode.id);
+                return;
+              }
+              
+              // Создаем новую заметку в режиме стикеров (как shape node с типом rectangle и текстом)
               if (!isStickyMode) return;
-              const id = uuidv4();
-              const defaultColor = "#EBC347"; // yellow по умолчанию
-              const defaultFontSize = 14;
-              const defaultFontFamily = "Inter, sans-serif";
-              const node: Node = {
-                id,
-                type: "sticky",
-                position: p,
-                // Важно: передаем width и height напрямую в props для NodeResizer
-                width: 160,
-                height: 96,
-                data: {
-                  text: "",
-                  color: defaultColor,
-                  fontSize: defaultFontSize,
-                  fontFamily: defaultFontFamily,
-                  isBold: false,
-                  isItalic: false,
-                  onChangeText: (nid: string, text: string) =>
-                    setStickyNodes((cur) => {
-                      const updated = cur.map((n) => (n.id === nid ? { ...n, data: { ...(n.data as any), text } } : n));
-                      setLocalNodes((prev) => {
-                        const next = prev.map((ext) =>
-                          ext.id === nid && ext.type === "note"
-                            ? { ...ext, payload: { ...(ext.payload ?? {}), text, noteContent: text } }
-                            : ext,
-                        );
-                        emitNodesChange(next);
-                        return next;
-                      });
-                      return updated;
-                    }),
-                  onChangeColor: (nid: string, newColor: string) => {
-                    setStickyNodes((cur) => {
-                      const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), color: newColor } } : st));
-                      setLocalNodes((prev) => {
-                        const next = prev.map((ext) =>
-                          ext.id === nid && ext.type === "note"
-                            ? { ...ext, payload: { ...(ext.payload ?? {}), color: newColor } }
-                            : ext,
-                        );
-                        emitNodesChange(next);
-                        return next;
-                      });
-                      return updated;
-                    });
-                  },
-                  onChangeFontSize: (nid: string, newFontSize: number) => {
-                    setStickyNodes((cur) => {
-                      const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), fontSize: newFontSize } } : st));
-                      setLocalNodes((prev) => {
-                        const next = prev.map((ext) =>
-                          ext.id === nid && ext.type === "note"
-                            ? { ...ext, payload: { ...(ext.payload ?? {}), fontSize: newFontSize } }
-                            : ext,
-                        );
-                        emitNodesChange(next);
-                        return next;
-                      });
-                      return updated;
-                    });
-                  },
-                  onChangeFontFamily: (nid: string, newFontFamily: string) => {
-                    setStickyNodes((cur) => {
-                      const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), fontFamily: newFontFamily } } : st));
-                      setLocalNodes((prev) => {
-                        const next = prev.map((ext) =>
-                          ext.id === nid && ext.type === "note"
-                            ? { ...ext, payload: { ...(ext.payload ?? {}), fontFamily: newFontFamily } }
-                            : ext,
-                        );
-                        emitNodesChange(next);
-                        return next;
-                      });
-                      return updated;
-                    });
-                  },
-                  onChangeBold: (nid: string, newIsBold: boolean) => {
-                    setStickyNodes((cur) => {
-                      const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), isBold: newIsBold } } : st));
-                      setLocalNodes((prev) => {
-                        const next = prev.map((ext) =>
-                          ext.id === nid && ext.type === "note"
-                            ? { ...ext, payload: { ...(ext.payload ?? {}), isBold: newIsBold } }
-                            : ext,
-                        );
-                        emitNodesChange(next);
-                        return next;
-                      });
-                      return updated;
-                    });
-                  },
-                  onChangeItalic: (nid: string, newIsItalic: boolean) => {
-                    setStickyNodes((cur) => {
-                      const updated = cur.map((st) => (st.id === nid ? { ...st, data: { ...(st.data as any), isItalic: newIsItalic } } : st));
-                      setLocalNodes((prev) => {
-                        const next = prev.map((ext) =>
-                          ext.id === nid && ext.type === "note"
-                            ? { ...ext, payload: { ...(ext.payload ?? {}), isItalic: newIsItalic } }
-                            : ext,
-                        );
-                        emitNodesChange(next);
-                        return next;
-                      });
-                      return updated;
-                    });
-                  },
-                },
-                style: {
-                  width: 160,
-                  height: 96,
-                  // Явный zIndex для sticky: выше всех других nodes (20)
-                  zIndex: 20,
-                },
-              } as Node;
-              setStickyNodes((prev) => [...prev, node]);
-              addExternalSticky(id, p, "");
+              const noteNode = addNodeHelpers.createNoteNode(p) as BoardCanvasProps["nodes"][number];
+              setLocalNodes((prev) => {
+                const next = [...prev, noteNode];
+                emitNodesChange(next);
+                return next;
+              });
+              onSelectNode?.(noteNode.id);
             }}
             onSelectionChange={handleSelectionChange}
             minZoom={0.2}
@@ -2203,10 +2356,11 @@ function InnerBoardCanvas({
                   return false;
                 }
                 
-                // Показываем только стикеры и дата-клетки
+                // Показываем только заметки (shape nodes с текстом) и дата-клетки
                 // Явно разрешаем только эти типы узлов
+                const isNote = nodeType === "shapeNode" && ((nodeData as any)?.text !== undefined || (nodeData as any)?.onChangeText);
                 return (
-                  nodeType === "sticky" ||
+                  isNote ||
                   nodeType === "sqlNode" ||
                   nodeType === "pythonNode"
                 );
@@ -2281,6 +2435,8 @@ function InnerBoardCanvas({
         onAddPythonNode={handleAddPythonNode}
         onAddDatabaseNode={handleAddDatabaseNode}
         onAddPlotNode={handleAddPlotNode}
+        selectedShape={selectedShape}
+        onSelectShape={setSelectedShape}
         onDeleteSelection={handleDeleteSelection}
         hasSelection={hasSelection}
       />

@@ -83,17 +83,17 @@ export function useAddNode() {
       type: "note",
       position,
       payload: {
-        noteContent: "Новая заметка",
-        noteColor: "#FDE68A",
-        text: "Новая заметка",
-        color: "#EBC347",
-        fontSize: 14,
+        noteContent: "",
+        noteColor: "#FFFFBA",
+        text: "",
+        color: "#FFFFBA", // пастельный бледно желтый
+        fontSize: 48,
         fontFamily: "Inter, sans-serif",
         isBold: false,
         isItalic: false,
         ui: {
-          width: 180,
-          height: 180,
+          width: 280,
+          height: 280,
         },
       },
     };

@@ -604,11 +604,11 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
             {payload.filters && payload.filters.length > 0 && (
               <div className="space-y-2">
                 {payload.filters.map((filter, index) => (
-                  <div key={index} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-2">
+                  <div key={index} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-2 min-w-0">
                     <select
                       value={filter.field}
                       onChange={(e) => handleFilterChange(index, { field: e.target.value })}
-                      className="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
+                      className="flex-1 min-w-0 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
                     >
                       {columns.map((col) => (
                         <option key={col} value={col}>
@@ -621,7 +621,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                       onChange={(e) =>
                         handleFilterChange(index, { operator: e.target.value as typeof filter.operator })
                       }
-                      className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
+                      className="flex-shrink-0 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
                     >
                       {FILTER_OPERATORS.map((op) => (
                         <option key={op.value} value={op.value}>
@@ -634,12 +634,12 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                       value={String(filter.value ?? "")}
                       onChange={(e) => handleFilterChange(index, { value: e.target.value })}
                       placeholder="Value"
-                      className="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
+                      className="flex-1 min-w-0 max-w-[120px] rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={() => handleRemoveFilter(index)}
-                      className="rounded p-1 text-slate-400 hover:text-rose-500"
+                      className="flex-shrink-0 rounded p-1 text-slate-400 hover:text-rose-500"
                     >
                       <Trash size={14} />
                     </button>

@@ -132,14 +132,14 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
         position={Position.Left}
         id="left"
         className={DATA_NODE_HANDLE_CLASS}
-        style={{ left: -6, top: "50%" }}
+        style={{ left: -6, top: "50%", opacity: selected ? 1 : 0, pointerEvents: selected ? 'auto' : 'none' }}
       />
       <Handle
         type="target"
         position={Position.Top}
         id="top"
         className={DATA_NODE_HANDLE_CLASS}
-        style={{ top: -6, left: "50%" }}
+        style={{ top: -6, left: "50%", opacity: selected ? 1 : 0, pointerEvents: selected ? 'auto' : 'none' }}
       />
 
       {/* Source handles on right/bottom for outgoing connections */}
@@ -148,14 +148,14 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
         position={Position.Right}
         id="right"
         className={DATA_NODE_HANDLE_CLASS}
-        style={{ right: -6, top: "50%" }}
+        style={{ right: -6, top: "50%", opacity: selected ? 1 : 0, pointerEvents: selected ? 'auto' : 'none' }}
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="bottom"
         className={DATA_NODE_HANDLE_CLASS}
-        style={{ bottom: -6, left: "50%" }}
+        style={{ bottom: -6, left: "50%", opacity: selected ? 1 : 0, pointerEvents: selected ? 'auto' : 'none' }}
       />
 
       <div className="px-4 py-3">

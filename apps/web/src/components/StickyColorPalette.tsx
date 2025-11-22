@@ -1,12 +1,12 @@
 import { NodeToolbar } from "reactflow";
 
 const colors = [
-  "#CF4C2C", // orange-red
-  "#EA9C41", // orange
-  "#EBC347", // yellow
-  "#438D57", // green
-  "#3F8AE2", // blue
-  "#803DEC", // purple
+  "#FFB3BA", // пастельный розовый
+  "#FFDFBA", // пастельный персиковый
+  "#FFFFBA", // пастельный желтый
+  "#BAFFC9", // пастельный мятный
+  "#BAE1FF", // пастельный голубой
+  "#E0BBE4", // пастельный лавандовый
 ];
 
 type StickyColorPaletteProps = {

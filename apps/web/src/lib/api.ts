@@ -121,11 +121,16 @@ export type PersistedNode = {
   boardId?: string
 }
 
+export type EdgeHandleMetadata = {
+  sourceHandleId?: string; // "left" | "top" | "right" | "bottom" | undefined
+  targetHandleId?: string;
+};
+
 export type PersistedEdge = {
   id: string;
   sourceId: string;
   targetId: string;
-  metadata?: Record<string, unknown>;
+  metadata?: EdgeHandleMetadata & Record<string, unknown>;
 };
 
 export type SaveBoardStructureInput = {

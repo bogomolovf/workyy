@@ -1,6 +1,15 @@
 import { useCallback, useRef } from "react";
-import { NodeResizer, type NodeProps } from "reactflow";
+import { NodeResizer, type NodeProps, useStore } from "reactflow";
 import { StickyToolbar } from "./StickyToolbar";
+
+// Получаем актуальные размеры узла из внутреннего состояния React Flow (как в референсе)
+function useNodeDimensions(id: string) {
+  const node = useStore((state) => state.nodeInternals.get(id));
+  return {
+    width: node?.width || 0,
+    height: node?.height || 0,
+  };
+}
 
 type StickyData = {
   text?: string;
@@ -17,17 +26,23 @@ type StickyData = {
   onChangeItalic?: (id: string, isItalic: boolean) => void;
 };
 
-const DEFAULT_STICKY_COLOR = "#EBC347"; // yellow, как в оригинале amber
-const DEFAULT_FONT_SIZE = 14;
+const DEFAULT_STICKY_COLOR = "#FFFFBA"; // пастельный желтый
+const DEFAULT_FONT_SIZE = 48;
 const DEFAULT_FONT_FAMILY = "Inter, sans-serif";
 
-export function StickyNode({ id, data, selected, width, height }: NodeProps<StickyData>) {
+export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
   const stickyColor = data.color ?? DEFAULT_STICKY_COLOR;
   const fontSize = data.fontSize ?? DEFAULT_FONT_SIZE;
   const fontFamily = data.fontFamily ?? DEFAULT_FONT_FAMILY;
   // Явно преобразуем в boolean, чтобы гарантировать правильное применение стилей
   const isBold = Boolean(data.isBold ?? false);
   const isItalic = Boolean(data.isItalic ?? false);
+  
+  // Используем useNodeDimensions для получения актуальных размеров в реальном времени (как в референсе)
+  // Это позволяет NodeResizer обновлять размеры плавно во время ресайза
+  // Для sticky nodes wrapper управляется React Flow, поэтому размеры обновляются автоматически
+  // useNodeDimensions подписывается на изменения внутреннего состояния React Flow
+  useNodeDimensions(id); // Подписываемся на изменения размеров для плавного ресайза
   
   // Сохраняем selection range для восстановления после потери фокуса
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -185,8 +200,8 @@ export function StickyNode({ id, data, selected, width, height }: NodeProps<Stic
       )}
       <NodeResizer
         isVisible={selected}
-        minWidth={120}
-        minHeight={80}
+        minWidth={200}
+        minHeight={200}
         lineClassName="!border-amber-200"
         handleStyle={{
           width: 10,

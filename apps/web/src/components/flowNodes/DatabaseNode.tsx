@@ -75,6 +75,8 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
             right: -8,
             top: "50%",
             transform: "translate(50%, -50%)",
+            opacity: selected ? 1 : 0,
+            pointerEvents: selected ? 'auto' : 'none',
           }}
         />
         <div className="px-4 py-3">

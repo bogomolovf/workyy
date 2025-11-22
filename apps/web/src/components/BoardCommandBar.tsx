@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowRight,
@@ -13,17 +13,22 @@ import {
   Play,
   Plus,
   SpinnerGap,
+  SquaresFour,
   Terminal,
   TextT,
   Trash,
 } from "@phosphor-icons/react";
 import type { NodeStatus } from "../state/executionStore";
+import { ShapePalette } from "./ShapePalette";
+import type { ShapeType } from "./flowNodes/ShapeNode";
 
-export type CanvasTool = "select" | "note" | "pen" | "text";
+export type CanvasTool = "select" | "note" | "pen" | "text" | "shape";
 
 type BoardCommandBarProps = {
   currentTool: CanvasTool;
   onChangeTool: (tool: CanvasTool) => void;
+  selectedShape?: ShapeType | null;
+  onSelectShape?: (shape: ShapeType) => void;
   selectedNodeType?: "sql" | "python" | null;
   selectedNodeStatus?: NodeStatus;
   onRunSelectedNode?: () => void;
@@ -51,6 +56,7 @@ const canvasTools: CanvasToolConfig[] = [
   { id: "note", label: "Sticky", icon: NotePencil, hotkey: "N" },
   { id: "pen", label: "Pen", icon: PencilSimple, hotkey: "P" },
   { id: "text", label: "Text", icon: TextT, hotkey: "T" },
+  { id: "shape", label: "Shape", icon: SquaresFour, hotkey: "S" },
 ];
 
 const statusToneClasses: Record<NodeStatus, string> = {
@@ -76,6 +82,8 @@ const TOOLTIP_DELAY = 150;
 export const BoardCommandBar = memo(function BoardCommandBar({
   currentTool,
   onChangeTool,
+  selectedShape,
+  onSelectShape,
   selectedNodeType,
   selectedNodeStatus,
   onRunSelectedNode,
@@ -91,6 +99,8 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   portalRoot,
 }: BoardCommandBarProps) {
   const [root, setRoot] = useState<HTMLElement | null>(null);
+  const [isShapePaletteOpen, setIsShapePaletteOpen] = useState(false);
+  const shapeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (portalRoot) {
@@ -119,6 +129,34 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   const dataRunDisabled = !canRunSelectedNode || selectedNodeStatus === "running";
   const downstreamDisabled = !canRunDownstream || selectedNodeStatus === "running";
 
+  // Закрываем палитру при изменении инструмента
+  useEffect(() => {
+    if (currentTool !== "shape") {
+      setIsShapePaletteOpen(false);
+    }
+  }, [currentTool]);
+
+  // Закрываем палитру при клике вне её
+  useEffect(() => {
+    if (!isShapePaletteOpen) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (
+        shapeButtonRef.current &&
+        !shapeButtonRef.current.contains(target) &&
+        !target.closest('.shape-palette-popover')
+      ) {
+        setIsShapePaletteOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isShapePaletteOpen]);
+
   const positioningClass =
     portalRoot != null ? "absolute left-1/2 bottom-4 -translate-x-1/2 z-[100]" : "fixed left-1/2 bottom-4 -translate-x-1/2 z-[100000]";
 
@@ -131,32 +169,58 @@ export const BoardCommandBar = memo(function BoardCommandBar({
 
   const card = (
     <div className={`pointer-events-none ${positioningClass}`}>
-      <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-white/70 bg-white/95 px-2.5 py-1.5 backdrop-blur-md shadow-[0_12px_30px_rgba(15,23,42,0.15)]">
+      <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-[0_12px_30px_rgba(15,23,42,0.15)]">
         <div className="flex items-center gap-1.5">
           {canvasTools.map((tool) => {
             const Icon = tool.icon;
             const isActive = currentTool === tool.id;
+            const isShapeTool = tool.id === "shape";
+            
             return (
-              <button
-                key={tool.id}
-                type="button"
-                className={`${baseButtonClass} ${isActive ? activeButtonClass : ""}`}
-                onClick={() => {
-                  if (tool.id === "select") {
-                    onChangeTool("select");
-                    return;
-                  }
-                  if (isActive) {
-                    onChangeTool("select");
-                  } else {
-                    onChangeTool(tool.id);
-                  }
-                }}
-                title={`${tool.label} (${tool.hotkey.toUpperCase()})`}
-                data-delay={TOOLTIP_DELAY}
-              >
-                <Icon size={18} weight={isActive ? "fill" : "regular"} />
-              </button>
+              <div key={tool.id} className="relative">
+                <button
+                  ref={isShapeTool ? shapeButtonRef : undefined}
+                  type="button"
+                  className={`${baseButtonClass} ${isActive ? activeButtonClass : ""}`}
+                  onClick={() => {
+                    if (tool.id === "select") {
+                      onChangeTool("select");
+                      setIsShapePaletteOpen(false);
+                      return;
+                    }
+                    if (isShapeTool) {
+                      if (isActive) {
+                        setIsShapePaletteOpen(!isShapePaletteOpen);
+                      } else {
+                        onChangeTool(tool.id);
+                        setIsShapePaletteOpen(true);
+                      }
+                      return;
+                    }
+                    if (isActive) {
+                      onChangeTool("select");
+                    } else {
+                      onChangeTool(tool.id);
+                    }
+                    setIsShapePaletteOpen(false);
+                  }}
+                  title={`${tool.label} (${tool.hotkey.toUpperCase()})`}
+                  data-delay={TOOLTIP_DELAY}
+                >
+                  <Icon size={18} weight={isActive ? "fill" : "regular"} />
+                </button>
+                {isShapeTool && isShapePaletteOpen && onSelectShape && (
+                  <div className="shape-palette-popover absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[100001] pointer-events-auto">
+                    <ShapePalette 
+                      selectedShape={selectedShape ?? null} 
+                      onSelectShape={(shape) => {
+                        onSelectShape(shape);
+                        setIsShapePaletteOpen(false);
+                      }} 
+                    />
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
