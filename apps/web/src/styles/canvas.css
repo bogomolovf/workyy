@@ -1,0 +1,311 @@
+.canvas-controls {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  pointer-events: none;
+  width: auto;
+}
+
+.canvas-controls__bar {
+  pointer-events: auto;
+  display: inline-flex;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+
+.canvas-controls__bar--compact {
+  display: inline-flex;
+}
+
+.canvas-controls__segment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.canvas-controls__label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #475569;
+  font-weight: 600;
+}
+
+.canvas-controls__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.canvas-controls__bar--compact .canvas-controls__segment {
+  flex-direction: row;
+  align-items: center;
+}
+
+.canvas-controls__bar--compact .canvas-controls__label {
+  display: none;
+}
+
+.canvas-controls__bar--compact .canvas-controls__group {
+  gap: 10px;
+}
+
+.canvas-controls__pill,
+.canvas-controls__action,
+.canvas-controls__toggle-btn {
+  border-radius: 9999px;
+  border: 1px solid #cbd5f5;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  background: #fff;
+  transition: all 0.15s ease;
+}
+
+.canvas-controls__pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.canvas-controls__pill.is-active,
+.canvas-controls__toggle-btn.is-active {
+  border-color: #4f46e5;
+  color: #4f46e5;
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.canvas-controls__toggle {
+  display: inline-flex;
+  gap: 0;
+  border-radius: 9999px;
+  border: 1px solid #cbd5f5;
+  overflow: hidden;
+}
+
+.canvas-controls__toggle-btn {
+  border: none;
+  border-right: 1px solid #cbd5f5;
+  background: transparent;
+}
+
+.canvas-controls__toggle-btn:last-child {
+  border-right: none;
+}
+
+.canvas-controls__action {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.canvas-controls__zoom {
+  min-width: 60px;
+  text-align: center;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.canvas-controls__hint {
+  pointer-events: auto;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  font-size: 12px;
+  align-items: flex-start;
+  border: 1px solid rgba(226, 232, 240, 0.25);
+}
+
+.canvas-controls__hint-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #f59e0b;
+  margin-top: 6px;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
+}
+
+.canvas-controls__hint-title {
+  font-weight: 600;
+  margin: 0;
+}
+
+.canvas-controls__hint-text {
+  margin: 2px 0 0;
+  color: #cbd5f5;
+  line-height: 1.3;
+}
+
+@media (max-width: 900px) {
+  .canvas-controls__bar {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    padding: 12px;
+  }
+}
+
+/* Freehand overlay styles */
+.freehand-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  height: 100%;
+  width: 100%;
+  transform-origin: top left;
+  cursor: crosshair;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.freehand-overlay svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Pen node styles */
+.react-flow__node-pen {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  pointer-events: auto !important;
+  outline: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+.react-flow__node-pen svg {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.react-flow__node-pen.selectable:focus,
+.react-flow__node-pen.selectable:focus:active,
+.react-flow__node-pen.selectable:hover,
+.react-flow__node-pen.draggable:hover {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.react-flow__node-pen.selected {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.react-flow__node-pen .react-flow__handle {
+  display: none !important;
+}
+
+.react-flow__resize-control {
+  pointer-events: all;
+}
+
+/* Sticky node styles */
+.react-flow__node-sticky {
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+/* Text node styles */
+.react-flow__node-textNode {
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+/* TipTap editor styles */
+.ProseMirror {
+  outline: none;
+  padding: 8px;
+  min-height: 100%;
+  word-wrap: break-word;
+}
+
+.ProseMirror p {
+  margin: 0;
+  padding: 0;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: #adb5bd;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.ProseMirror-focused {
+  outline: none;
+}
+
+/* Color palette styles */
+.color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  outline: none;
+  box-shadow: none;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.color-swatch.active {
+  outline: 2px solid #0f172a;
+  outline-offset: 1.5px;
+}
+
+/* Light scrollbars on dark canvas nodes and right inspector */
+.board-canvas-root,
+.board-inspector {
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb #f8fafc;
+}
+
+.board-canvas-root ::-webkit-scrollbar,
+.board-inspector::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background-color: #f8fafc;
+}
+
+.board-canvas-root ::-webkit-scrollbar-track,
+.board-inspector::-webkit-scrollbar-track {
+  background-color: #f8fafc;
+}
+
+.board-canvas-root ::-webkit-scrollbar-thumb,
+.board-inspector::-webkit-scrollbar-thumb {
+  background-color: #e5e7eb;
+  border-radius: 9999px;
+  border: 2px solid #f8fafc;
+}

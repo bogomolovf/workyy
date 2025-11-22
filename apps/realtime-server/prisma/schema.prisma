@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  name      String?
+  avatarUrl String?
+  createdAt DateTime  @default(now())
+  roles     UserWorkspaceRole[]
+  boards    Board[]   @relation("BoardOwner")
+  comments  Comment[]
+  snapshots Snapshot[]
+}
+
+model Workspace {
+  id        String              @id @default(uuid())
+  name      String
+  createdAt DateTime            @default(now())
+  boards    Board[]
+  members   UserWorkspaceRole[]
+  secrets   Secret[]
+  databaseConnections DatabaseConnection[]
+  retentionPolicies RetentionPolicy[]
+  auditEvents AuditEvent[]
+}
+
+model UserWorkspaceRole {
+  userId      String
+  workspaceId String
+  role        WorkspaceRole
+  addedAt     DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, workspaceId])
+}
+
+enum WorkspaceRole {
+  owner
+  editor
+  viewer
+}
+
+model Board {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  ownerId      String?
+  title        String
+  description  String?
+  snapshotCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner     User?     @relation("BoardOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  nodes     Node[]
+  edges     Edge[]
+  runs      Run[]
+  snapshots Snapshot[]
+  comments  Comment[]
+  retentionPolicies RetentionPolicy[]
+  runRequests RunRequest[]
+  auditEvents AuditEvent[]
+  drawing   BoardDrawing?
+
+  @@unique([workspaceId, title])
+}
+
+model Node {
+  id        String   @id @default(uuid())
+  boardId   String
+  type      NodeType
+  positionX Float
+  positionY Float
+  payload   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  runs  Run[]
+  edgesOut Edge[] @relation("EdgeSource")
+  edgesIn  Edge[] @relation("EdgeTarget")
+  comments Comment[]
+  runRequests RunRequest[]
+}
+
+enum NodeType {
+  sql
+  python
+  table
+  plot
+  note
+  text
+  shape
+  image
+  draw
+  pen
+  database
+}
+
+model Edge {
+  id        String @id @default(uuid())
+  boardId   String
+  sourceId  String
+  targetId  String
+  metadata  Json    @default("{}")
+
+  board  Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  source Node  @relation("EdgeSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target Node  @relation("EdgeTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, targetId])
+}
+
+model Run {
+  id         String   @id @default(uuid())
+  nodeId     String
+  boardId    String
+  status     RunStatus
+  trigger    RunTrigger
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  outputArrow Bytes?
+  error      String?
+
+  node  Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  runRequest RunRequest? @relation("RunToRunRequest")
+  auditEvents AuditEvent[]
+
+  @@index([nodeId, status, startedAt(sort: Desc)])
+}
+
+enum RunStatus {
+  queued
+  running
+  succeeded
+  failed
+}
+
+enum RunTrigger {
+  manual
+  upstream
+  schedule
+}
+
+model Snapshot {
+  id         String   @id @default(uuid())
+  boardId    String
+  createdBy  String?
+  createdAt  DateTime @default(now())
+  metadata   Json?
+  arrowBlob  Bytes
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  boardId   String
+  nodeId    String?
+  authorId  String?
+  body      String
+  createdAt DateTime @default(now())
+
+  board  Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  node   Node? @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([boardId, nodeId])
+}
+
+model Secret {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  value       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  databaseConnections DatabaseConnection[]
+
+  @@unique([workspaceId, name])
+}
+
+model DatabaseConnection {
+  id            String   @id @default(uuid())
+  workspaceId   String
+  connectionName String
+  host          String
+  port          Int
+  database      String
+  username      String
+  ssl           Boolean  @default(false)
+  secretId      String
+  status        String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  secret    Secret    @relation(fields: [secretId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model RetentionPolicy {
+  id          String   @id @default(uuid())
+  workspaceId String
+  boardId     String?
+  type        RetentionType
+  ttlDays     Int
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  board     Board?    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+}
+
+enum RetentionType {
+  board
+  run
+  snapshot
+}
+
+model RunRequest {
+  id             String   @id @default(uuid())
+  boardId        String
+  nodeId         String
+  idempotencyKey String   @unique
+  status         RunRequestStatus @default(pending)
+  createdAt      DateTime @default(now())
+  runId          String?  @unique
+  inputs         Json?
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  node  Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  run   Run?  @relation("RunToRunRequest", fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([boardId, nodeId, createdAt])
+}
+
+enum RunRequestStatus {
+  pending
+  completed
+  duplicate
+}
+
+model AuditEvent {
+  id           String   @id @default(uuid())
+  boardId      String?
+  workspaceId  String?
+  runId        String?
+  type         String
+  payload      Json?
+  createdAt    DateTime @default(now())
+
+  board     Board?     @relation(fields: [boardId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  run       Run?       @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([boardId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([runId, createdAt])
+}
+
+model BoardDrawing {
+  boardId   String   @id
+  snapshot  Json
+  rev       Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+}
+

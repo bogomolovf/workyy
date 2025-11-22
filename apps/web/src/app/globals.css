@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import "../styles/canvas.css";
+
+:root {
+  color-scheme: dark;
+}
+
+.rf-select-cursor .react-flow__node {
+  cursor: default !important;
+}
+
+.rf-hand-cursor .react-flow__node,
+.rf-hand-cursor .react-flow__pane {
+  cursor: grab !important;
+}
+

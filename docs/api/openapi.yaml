@@ -1,0 +1,449 @@
+openapi: 3.1.0
+info:
+  title: Workyy Realtime API
+  version: 0.2.0
+servers:
+  - url: https://api.workyy.dev
+    description: Production
+  - url: http://localhost:4000/api
+    description: Local development
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://api.workyy.dev/problems/conflict
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errors:
+          type: object
+          additionalProperties: true
+    Board:
+      type: object
+      required: [id, workspaceId, title, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Node:
+      type: object
+      required: [id, boardId, type, position]
+      properties:
+        id:
+          type: string
+          format: uuid
+        boardId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [sql, python, table, plot]
+        position:
+          type: object
+          required: [x, y]
+          properties:
+            x: { type: number }
+            y: { type: number }
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+    Edge:
+      type: object
+      required: [id, sourceId, targetId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+    Run:
+      type: object
+      required: [runId, nodeId, boardId, status, trigger, startedAt]
+      properties:
+        runId:
+          type: string
+          format: uuid
+        nodeId:
+          type: string
+          format: uuid
+        boardId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        trigger:
+          type: string
+          enum: [manual, upstream, schedule]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+paths:
+  /boards:
+    post:
+      summary: Create a new board
+      operationId: createBoard
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspaceId, title]
+              properties:
+                workspaceId:
+                  type: string
+                  format: uuid
+                title:
+                  type: string
+                description:
+                  type: string
+                  nullable: true
+      responses:
+        '201':
+          description: Board created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '404':
+          description: Workspace not found
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: Board title conflict
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /boards/{boardId}:
+    get:
+      summary: Get board with nodes and edges
+      operationId: getBoard
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Board details
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [board, nodes, edges]
+                properties:
+                  board:
+                    $ref: '#/components/schemas/Board'
+                  nodes:
+                    type: array
+                    items: { $ref: '#/components/schemas/Node' }
+                  edges:
+                    type: array
+                    items: { $ref: '#/components/schemas/Edge' }
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /runs:
+    post:
+      summary: Queue a node execution
+      operationId: createRun
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+          description: Unique key to guarantee idempotent execution.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nodeId, trigger]
+              properties:
+                nodeId:
+                  type: string
+                  format: uuid
+                trigger:
+                  type: string
+                  enum: [manual, upstream, schedule]
+                inputs:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '202':
+          description: Run accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runId, status, startedAt]
+                properties:
+                  runId:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [queued, running, succeeded, failed]
+                  startedAt:
+                    type: string
+                    format: date-time
+                  finishedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+        '400':
+          description: Missing idempotency key
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: Node not found
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: Duplicate run request
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+    get:
+      summary: List runs
+      operationId: listRuns
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: boardId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [queued, running, succeeded, failed]
+        - in: query
+          name: cursor
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+      responses:
+        '200':
+          description: Paginated runs
+          headers:
+            X-Cursor-Next:
+              schema:
+                type: string
+                format: uuid
+              description: Cursor for the next page if present.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Run' }
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /connections/test:
+    post:
+      summary: Test external database connection configuration
+      operationId: testConnection
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [driver, config]
+              properties:
+                driver:
+                  type: string
+                  enum: [postgres, mysql, snowflake, bigquery]
+                config:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Request accepted for testing
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, message]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  message:
+                    type: string
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /secrets:
+    get:
+      summary: List workspace secrets
+      operationId: listSecrets
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Secret list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, workspaceId, name, createdAt, updatedAt]
+                      properties:
+                        id: { type: string, format: uuid }
+                        workspaceId: { type: string, format: uuid }
+                        name: { type: string }
+                        createdAt: { type: string, format: date-time }
+                        updatedAt: { type: string, format: date-time }
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+    post:
+      summary: Store a workspace secret
+      operationId: createSecret
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspaceId, name, value]
+              properties:
+                workspaceId:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                value:
+                  type: string
+      responses:
+        '201':
+          description: Secret stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, workspaceId, name, createdAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  workspaceId: { type: string, format: uuid }
+                  name: { type: string }
+                  createdAt: { type: string, format: date-time }
+        '404':
+          description: Workspace not found
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: Secret name conflict
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+

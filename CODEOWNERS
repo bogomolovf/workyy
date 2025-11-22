@@ -1,0 +1,7 @@
+* @workyy/core-team
+
+docs/** @workyy/docs
+apps/web/** @workyy/frontend
+apps/realtime-server/** @workyy/backend
+packages/** @workyy/core-team
+

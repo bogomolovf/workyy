@@ -1,0 +1,33 @@
+{
+  "name": "@workyy/wasm-bridge",
+  "version": "0.1.0",
+  "private": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "module": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "dev": "tsup src/index.ts --watch",
+    "lint": "eslint 'src/**/*.ts'",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "^1.29.0",
+    "apache-arrow": "^16.1.0",
+    "pyodide": "^0.26.4",
+    "comlink": "^4.4.1"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.2",
+    "typescript": "^5.5.4",
+    "vitest": "^1.6.0"
+  }
+}
+
