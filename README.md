@@ -5,8 +5,15 @@ Workyy — браузерная платформа аналитики на бе�
 ## Быстрый старт
 
 ```bash
+# Установка зависимостей
 pnpm install
-pnpm run dev
+
+# Запуск всех приложений (web + backend + landing)
+pnpm dev
+
+# Или только продукт (web + backend)
+pnpm --filter web dev
+pnpm --filter realtime-server dev
 ```
 
 > Подробнее о запуске конкретных пакетов см. в `CONTRIBUTING.md`.
@@ -34,9 +41,24 @@ docker exec -it workyy-postgres-1 psql -U postgres -d workyy \
 
 - `apps/web` — Next.js приложение с канвой tldraw, узлами SQL/Python и визуализациями.
 - `apps/realtime-server` — Fastify/y-websocket сервер для синхронизации и API.
+- `apps/landing` — Landing page (Vite + React) для маркетинга и онбординга (опционально).
 - `packages/*` — Общие доменные и инфраструктурные пакеты.
 - `infra/` — Terraform и Docker конфигурации окружений.
 - `docs/` — Решения, диаграммы, схемы данных и контрактов.
+
+## Запуск отдельных приложений
+
+```bash
+# Только продукт (web + backend)
+pnpm --filter web dev
+pnpm --filter realtime-server dev
+
+# Только лендинг
+pnpm --filter landing dev
+
+# Всё вместе
+pnpm dev
+```
 
 ## Лицензия
 
