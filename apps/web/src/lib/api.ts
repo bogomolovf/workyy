@@ -22,8 +22,8 @@ export type BoardResponse = {
 
 const API_URL =
   typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000'
-    : process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000';
+    ? process.env.NEXT_PUBLIC_API_URL ?? process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000'
+    : process.env.NEXT_PUBLIC_API_URL ?? process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000';
 
 export function isValidUuid(value: string | null | undefined): value is string {
   return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -34,7 +34,9 @@ export async function fetchBoard(boardId: string): Promise<BoardResponse> {
     throw new Error("invalid-board-id");
   }
 
-  const res = await fetch(`${API_URL}/api/boards/${boardId}`);
+  const res = await fetch(`${API_URL}/api/boards/${boardId}`, {
+    credentials: 'include',
+  });
   if (!res.ok) {
     throw new Error('Failed to load board');
   }
@@ -62,6 +64,7 @@ export async function fetchBoards(workspaceId?: string): Promise<BoardSummary[]>
 
   const res = await fetch(`${API_URL}/api/boards${params.size ? `?${params.toString()}` : ""}`, {
     headers: { "Accept": "application/json" },
+    credentials: 'include',
     cache: "no-store",
   });
 
@@ -95,6 +98,7 @@ export async function createBoard(payload: CreateBoardInput): Promise<CreatedBoa
       "Content-Type": "application/json",
       Accept: "application/json",
     },
+    credentials: 'include',
     body: JSON.stringify(payload),
   });
 
@@ -145,6 +149,7 @@ export async function saveBoardStructure(boardId: string, payload: SaveBoardStru
       "Content-Type": "application/json",
       Accept: "application/json",
     },
+    credentials: 'include',
     body: JSON.stringify(payload),
   });
 
@@ -170,6 +175,7 @@ export async function deleteBoard(boardId: string): Promise<void> {
     headers: {
       Accept: "application/json",
     },
+    credentials: 'include',
   });
 
   if (!res.ok) {
@@ -204,6 +210,7 @@ export async function updateBoardMetadata(boardId: string, payload: UpdateBoardM
       "Content-Type": "application/json",
       Accept: "application/json",
     },
+    credentials: 'include',
     body: JSON.stringify(payload),
   });
 
@@ -217,5 +224,53 @@ export async function updateBoardMetadata(boardId: string, payload: UpdateBoardM
     }
     throw new Error(detail);
   }
+}
+
+// Auth API functions
+
+export async function registerUser(payload: { email: string; password: string; name?: string }) {
+  const res = await fetch(`${API_URL}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || 'Registration failed');
+  }
+  return res.json();
+}
+
+export async function loginUser(payload: { email: string; password: string }) {
+  const res = await fetch(`${API_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || 'Login failed');
+  }
+  return res.json();
+}
+
+export async function logoutUser() {
+  await fetch(`${API_URL}/api/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+}
+
+export async function fetchCurrentUser() {
+  const res = await fetch(`${API_URL}/api/auth/me`, {
+    credentials: 'include',
+  });
+  if (res.status === 401) return null;
+  if (!res.ok) {
+    throw new Error('Failed to fetch current user');
+  }
+  return res.json();
 }
 

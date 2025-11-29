@@ -6,12 +6,17 @@ import { X } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { BoardSummary, createBoard, deleteBoard, fetchBoards } from "../lib/api";
+import { LANDING_URL } from "../lib/appConfig";
+import { RequireAuth } from "../components/RequireAuth";
+import { useAuthStore } from "../state/authStore";
 
 const DEFAULT_WORKSPACE_ID = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_ID ?? "";
 
-export default function HomePage() {
+function HomePageContent() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const [title, setTitle] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -21,14 +26,20 @@ export default function HomePage() {
   });
 
   const workspaceIdForCreation = useMemo(() => {
+    // Use user's first workspace if available
+    if (user?.workspaces && user.workspaces.length > 0) {
+      return user.workspaces[0].id;
+    }
+    // Fallback to default workspace ID from env
     if (DEFAULT_WORKSPACE_ID) {
       return DEFAULT_WORKSPACE_ID;
     }
+    // Fallback to first board's workspace
     if (boards && boards.length > 0) {
       return boards[0].workspaceId;
     }
     return null;
-  }, [boards]);
+  }, [boards, user]);
 
   const createBoardMutation = useMutation({
     mutationFn: ({ workspaceId, title }: { workspaceId: string; title: string }) =>
@@ -163,10 +174,51 @@ export default function HomePage() {
     );
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.push('/login');
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
       <section className="mx-auto w-full max-w-5xl px-6 py-20">
         <header className="text-center">
+          <div className="flex justify-between items-center mb-4">
+            <a
+              href={LANDING_URL}
+              className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              ← Back to website
+            </a>
+            {user && (
+              <div className="flex items-center gap-4">
+                <div className="text-right hidden sm:block">
+                  <p className="text-sm font-medium text-slate-900">
+                    {user.name || user.email}
+                  </p>
+                  {user.name && (
+                    <p className="text-xs text-slate-500">{user.email}</p>
+                  )}
+                  {user.workspaces && user.workspaces.length > 0 && (
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {user.workspaces.length} workspace{user.workspaces.length !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+                  title="Выйти и войти с другого аккаунта"
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
           <h1 className="text-4xl font-semibold">Workyy MVP</h1>
           <p className="mt-3 text-lg text-slate-600">
             Смешанные SQL и Python узлы, DAG и совместная работа в реальном времени в одном браузере.
@@ -212,5 +264,13 @@ export default function HomePage() {
         </p>
       </section>
     </main>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <RequireAuth>
+      <HomePageContent />
+    </RequireAuth>
   );
 }

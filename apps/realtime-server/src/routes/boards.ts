@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { container } from '../container';
 import { sendProblem } from '../lib/problem';
+import { ensureBoardAccess, ensureWorkspaceAccess } from '../services/authorizationService';
 import {
   createBoardBodySchema,
   getBoardParamsSchema,
@@ -11,7 +12,8 @@ import {
 } from '../validators/boards';
 
 export async function boardsRoutes(app: FastifyInstance) {
-  app.get('/boards', async (request, reply) => {
+  app.get('/boards', { preValidation: [app.authenticate] }, async (request, reply) => {
+    const userId = request.user!.userId;
     const parsedQuery = listBoardsQuerySchema.safeParse(request.query);
     if (!parsedQuery.success) {
       return sendProblem(reply, {
@@ -24,8 +26,33 @@ export async function boardsRoutes(app: FastifyInstance) {
 
     const { workspaceId } = parsedQuery.data;
 
+    // Get user's workspace IDs
+    const userWorkspaces = await container.prisma.userWorkspaceRole.findMany({
+      where: { userId },
+      select: { workspaceId: true },
+    });
+    const userWorkspaceIds = userWorkspaces.map((uw) => uw.workspaceId);
+
+    // Filter boards by user's workspaces
+    const whereClause: Prisma.BoardWhereInput = {
+      workspaceId: { in: userWorkspaceIds },
+      ...(workspaceId ? { workspaceId } : {}),
+    };
+
+    // If specific workspaceId is provided, check access
+    if (workspaceId) {
+      const access = await ensureWorkspaceAccess({ userId, workspaceId });
+      if (!access.ok) {
+        return sendProblem(reply, {
+          title: 'Forbidden',
+          status: 403,
+          detail: 'Access denied to this workspace',
+        });
+      }
+    }
+
     const boards = await container.prisma.board.findMany({
-      where: workspaceId ? { workspaceId } : undefined,
+      where: whereClause,
       orderBy: { updatedAt: 'desc' },
       include: {
         _count: {
@@ -53,7 +80,8 @@ export async function boardsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/boards', async (request, reply) => {
+  app.post('/boards', { preValidation: [app.authenticate] }, async (request, reply) => {
+    const userId = request.user!.userId;
     const parseResult = createBoardBodySchema.safeParse(request.body);
     if (!parseResult.success) {
       return sendProblem(reply, {
@@ -65,15 +93,17 @@ export async function boardsRoutes(app: FastifyInstance) {
     }
     const body = parseResult.data;
 
-    const workspace = await container.prisma.workspace.findUnique({
-      where: { id: body.workspaceId },
+    // Check workspace access
+    const access = await ensureWorkspaceAccess({
+      userId,
+      workspaceId: body.workspaceId,
+      requiredRoles: ['owner', 'editor'],
     });
-
-    if (!workspace) {
+    if (!access.ok) {
       return sendProblem(reply, {
-        title: 'Workspace not found',
-        status: 404,
-        detail: `Workspace ${body.workspaceId} does not exist`,
+        title: access.status === 404 ? 'Workspace not found' : 'Forbidden',
+        status: access.status,
+        detail: access.reason,
       });
     }
 
@@ -81,6 +111,7 @@ export async function boardsRoutes(app: FastifyInstance) {
       const board = await container.prisma.board.create({
         data: {
           workspaceId: body.workspaceId,
+          ownerId: userId,
           title: body.title,
           description: body.description ?? undefined,
         },
@@ -111,7 +142,8 @@ export async function boardsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get('/boards/:boardId', async (request, reply) => {
+  app.get('/boards/:boardId', { preValidation: [app.authenticate] }, async (request, reply) => {
+    const userId = request.user!.userId;
     const parseParams = getBoardParamsSchema.safeParse(request.params);
     if (!parseParams.success) {
       return sendProblem(reply, {
@@ -122,8 +154,20 @@ export async function boardsRoutes(app: FastifyInstance) {
       });
     }
 
+    const boardId = parseParams.data.boardId;
+
+    // Check board access
+    const access = await ensureBoardAccess({ userId, boardId });
+    if (!access.ok) {
+      return sendProblem(reply, {
+        title: access.status === 404 ? 'Board not found' : 'Forbidden',
+        status: access.status,
+        detail: access.reason,
+      });
+    }
+
     const board = await container.prisma.board.findUnique({
-      where: { id: parseParams.data.boardId },
+      where: { id: boardId },
       include: {
         nodes: true,
         edges: true,
@@ -134,7 +178,7 @@ export async function boardsRoutes(app: FastifyInstance) {
       return sendProblem(reply, {
         title: 'Board not found',
         status: 404,
-        detail: `Board ${parseParams.data.boardId} does not exist`,
+        detail: `Board ${boardId} does not exist`,
       });
     }
 
@@ -165,7 +209,8 @@ export async function boardsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.patch('/boards/:boardId', async (request, reply) => {
+  app.patch('/boards/:boardId', { preValidation: [app.authenticate] }, async (request, reply) => {
+    const userId = request.user!.userId;
     const parseParams = getBoardParamsSchema.safeParse(request.params);
     if (!parseParams.success) {
       return sendProblem(reply, {
@@ -187,6 +232,20 @@ export async function boardsRoutes(app: FastifyInstance) {
     }
 
     const boardId = parseParams.data.boardId;
+
+    // Check board access (owner or editor can update)
+    const access = await ensureBoardAccess({
+      userId,
+      boardId,
+      requiredRoles: ['owner', 'editor'],
+    });
+    if (!access.ok) {
+      return sendProblem(reply, {
+        title: access.status === 404 ? 'Board not found' : 'Forbidden',
+        status: access.status,
+        detail: access.reason,
+      });
+    }
 
     const exists = await container.prisma.board.findUnique({
       where: { id: boardId },
@@ -230,7 +289,8 @@ export async function boardsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.put('/boards/:boardId/nodes', async (request, reply) => {
+  app.put('/boards/:boardId/nodes', { preValidation: [app.authenticate] }, async (request, reply) => {
+    const userId = request.user!.userId;
     const parseParams = getBoardParamsSchema.safeParse(request.params);
     if (!parseParams.success) {
       return sendProblem(reply, {
@@ -254,16 +314,17 @@ export async function boardsRoutes(app: FastifyInstance) {
     const boardId = parseParams.data.boardId;
     const { nodes, edges } = parsedBody.data;
 
-    const board = await container.prisma.board.findUnique({
-      where: { id: boardId },
-      select: { id: true },
+    // Check board access (owner or editor can update)
+    const access = await ensureBoardAccess({
+      userId,
+      boardId,
+      requiredRoles: ['owner', 'editor'],
     });
-
-    if (!board) {
+    if (!access.ok) {
       return sendProblem(reply, {
-        title: 'Board not found',
-        status: 404,
-        detail: `Board ${boardId} does not exist`,
+        title: access.status === 404 ? 'Board not found' : 'Forbidden',
+        status: access.status,
+        detail: access.reason,
       });
     }
 
@@ -343,7 +404,8 @@ export async function boardsRoutes(app: FastifyInstance) {
     return reply.send({ nodes: nodes.length, edges: edges.length });
   });
 
-  app.delete('/boards/:boardId', async (request, reply) => {
+  app.delete('/boards/:boardId', { preValidation: [app.authenticate] }, async (request, reply) => {
+    const userId = request.user!.userId;
     const parseParams = getBoardParamsSchema.safeParse(request.params);
     if (!parseParams.success) {
       return sendProblem(reply, {
@@ -355,6 +417,20 @@ export async function boardsRoutes(app: FastifyInstance) {
     }
 
     const boardId = parseParams.data.boardId;
+
+    // Check board access (only owner can delete)
+    const access = await ensureBoardAccess({
+      userId,
+      boardId,
+      requiredRoles: ['owner'],
+    });
+    if (!access.ok) {
+      return sendProblem(reply, {
+        title: access.status === 404 ? 'Board not found' : 'Forbidden',
+        status: access.status,
+        detail: access.reason,
+      });
+    }
 
     const board = await container.prisma.board.findUnique({
       where: { id: boardId },

@@ -11,6 +11,10 @@ import {
   type BoardResponse,
   type SaveBoardStructureInput,
 } from "../../../lib/api";
+import { LANDING_URL } from "../../../lib/appConfig";
+import { RequireAuth } from "../../../components/RequireAuth";
+import { useAuthStore } from "../../../state/authStore";
+import { useRouter } from "next/navigation";
 import { useExecutionStore, type ExecutionStoreState } from "../../../state/executionStore";
 import { useCanvasLayoutStore, type CanvasLayoutState } from "../../../state/canvasLayoutStore";
 import { executeSql, listTables, loadFileIntoDuckDb, restoreDatasetsForBoard } from "../../../lib/duckdbClient";
@@ -69,8 +73,11 @@ type BoardPageProps = {
   };
 };
 
-export default function BoardPage({ params }: BoardPageProps) {
+function BoardPageContent({ params }: BoardPageProps) {
   const { boardId } = params;
+  const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const [nodesState, setNodesState] = useState<CanvasNode[]>([]);
   const [edgesState, setEdgesState] = useState<CanvasEdge[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -911,6 +918,15 @@ const { data, isLoading, error } = useQuery({
     fileInputRef.current?.click();
   }, []);
 
+  const handleLogout = useCallback(async () => {
+    try {
+      await logout();
+      router.push('/login');
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+  }, [logout, router]);
+
   const handleSaveBoard = useCallback(async () => {
     if (!boardId || isSaving || (!isDirty && !saveError)) return;
     const payload = buildPersistPayload();
@@ -989,6 +1005,24 @@ const { data, isLoading, error } = useQuery({
             )}
           </div>
           <div className="flex flex-col items-start gap-3 md:ml-auto md:flex-row md:items-center md:justify-end">
+            {user && (
+              <div className="flex items-center gap-3 mr-2">
+                <div className="text-right hidden sm:block">
+                  <p className="text-sm font-medium text-slate-900">
+                    {user.name || user.email}
+                  </p>
+                  {user.name && (
+                    <p className="text-xs text-slate-500">{user.email}</p>
+                  )}
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+                >
+                  Log out
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleDatasetButtonClick}
@@ -1015,6 +1049,12 @@ const { data, isLoading, error } = useQuery({
             >
               ← Back to home
             </Link>
+            <a
+              href={LANDING_URL}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              Back to website
+            </a>
           </div>
         </div>
         {saveError && <p className="mt-3 text-sm text-rose-500">{saveError}</p>}
@@ -1059,5 +1099,13 @@ const { data, isLoading, error } = useQuery({
         )}
       </section>
     </main>
+  );
+}
+
+export default function BoardPage({ params }: BoardPageProps) {
+  return (
+    <RequireAuth>
+      <BoardPageContent params={params} />
+    </RequireAuth>
   );
 }

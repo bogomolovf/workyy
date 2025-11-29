@@ -9,15 +9,16 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  name      String?
-  avatarUrl String?
-  createdAt DateTime  @default(now())
-  roles     UserWorkspaceRole[]
-  boards    Board[]   @relation("BoardOwner")
-  comments  Comment[]
-  snapshots Snapshot[]
+  id           String    @id @default(uuid())
+  email        String    @unique
+  name         String?
+  avatarUrl    String?
+  createdAt    DateTime  @default(now())
+  passwordHash String?   // nullable for backward compatibility with existing users
+  roles        UserWorkspaceRole[]
+  boards       Board[]   @relation("BoardOwner")
+  comments     Comment[]
+  snapshots    Snapshot[]
 }
 
 model Workspace {
