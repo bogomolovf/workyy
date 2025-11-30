@@ -229,17 +229,37 @@ export async function updateBoardMetadata(boardId: string, payload: UpdateBoardM
 // Auth API functions
 
 export async function registerUser(payload: { email: string; password: string; name?: string }) {
-  const res = await fetch(`${API_URL}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || 'Registration failed');
+  try {
+    const res = await fetch(`${API_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    
+    if (!res.ok) {
+      let errorDetail = 'Registration failed';
+      try {
+        const error = await res.json();
+        errorDetail = error.detail || error.title || errorDetail;
+        console.error('Registration error:', error);
+      } catch {
+        const text = await res.text().catch(() => '');
+        errorDetail = text || errorDetail;
+        console.error('Registration failed with status:', res.status, text);
+      }
+      throw new Error(errorDetail);
+    }
+    
+    return res.json();
+  } catch (err: any) {
+    if (err.message) {
+      throw err;
+    }
+    // Network error or other issues
+    console.error('Registration network error:', err);
+    throw new Error('Failed to connect to server. Make sure backend is running on http://localhost:4000');
   }
-  return res.json();
 }
 
 export async function loginUser(payload: { email: string; password: string }) {

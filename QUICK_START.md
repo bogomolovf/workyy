@@ -1,82 +1,131 @@
-# 🚀 Быстрый запуск Workyy
+# Быстрый старт для разработки
 
-## Проблема была в следующем:
-- Backend сервер не был запущен (порт 4000)
-- Отсутствовали `.env` файлы с конфигурацией
-- Не был сгенерирован Prisma клиент
+## Первый запуск
 
-## ✅ Все исправлено! Теперь запуск:
+1. **Клонируйте репозиторий:**
+   ```bash
+   git clone git@github.com:bogomolovf/workyy-fullproject-stable.git
+   cd workyy-fullproject-stable
+   ```
 
-### Вариант 1: Автоматический запуск (рекомендуется)
+2. **Запустите проект:**
+   ```bash
+   ./start.sh
+   ```
+
+   Скрипт автоматически:
+   - Установит зависимости
+   - Сгенерирует Prisma клиент
+   - Запустит PostgreSQL и Redis через Docker
+   - Применит миграции базы данных
+   - Создаст необходимые `.env` файлы
+   - Запустит frontend и backend
+
+3. **Откройте в браузере:**
+   - Frontend: http://localhost:3000
+   - Backend: http://localhost:4000
+
+## Регистрация и вход
+
+После запуска проекта:
+
+1. Перейдите на http://localhost:3000
+2. Нажмите "Sign up" или перейдите на http://localhost:3000/signup
+3. Заполните форму регистрации:
+   - Email (обязательно)
+   - Password (минимум 8 символов)
+   - Name (опционально)
+4. После регистрации вы автоматически войдете в систему
+5. Будет создан ваш личный workspace
+6. Вы сможете создавать доски и работать с ними
+
+## Решение проблем
+
+### Регистрация не работает
+
+1. **Проверьте, что backend запущен:**
+   ```bash
+   curl http://localhost:4000/health
+   ```
+   Должен вернуть: `{"status":"ok"}`
+
+2. **Проверьте, что база данных запущена:**
+   ```bash
+   docker ps | grep postgres
+   ```
+
+3. **Проверьте миграции:**
+   ```bash
+   cd apps/realtime-server
+   pnpm prisma migrate status
+   ```
+
+4. **Примените миграции вручную:**
+   ```bash
+   cd apps/realtime-server
+   pnpm prisma migrate deploy
+   ```
+
+5. **Проверьте логи backend:**
+   - В терминале, где запущен `pnpm dev`, должны быть логи от realtime-server
+   - Ищите ошибки подключения к базе данных
+
+### База данных не запускается
 
 ```bash
-cd ~/workyy
-./start.sh
+# Остановите все контейнеры
+docker compose down
+
+# Запустите заново
+docker compose up -d postgres redis
+
+# Проверьте логи
+docker compose logs postgres
 ```
 
-Этот скрипт автоматически:
-- Проверит зависимости
-- Сгенерирует Prisma клиент
-- Проверит базу данных
-- Создаст `.env` файлы при необходимости
-- Запустит frontend и backend
+### Порт уже занят
 
-### Вариант 2: Ручной запуск
-
-1. Убедитесь, что PostgreSQL запущен:
 ```bash
-# Если база не запущена:
-cd ~/workyy
-docker compose up -d postgres
+# Проверьте, что порты свободны
+lsof -i :3000
+lsof -i :4000
+lsof -i :5433
+
+# Если заняты, остановите процессы или измените порты в docker-compose.yml
 ```
 
-2. Запустите проект:
+## Структура проекта
+
+- `apps/web/` - Next.js frontend
+- `apps/realtime-server/` - Fastify backend API
+- `apps/landing/` - Landing page (опционально)
+- `packages/` - Общие пакеты
+
+## Полезные команды
+
 ```bash
-cd ~/workyy
-pnpm dev
+# Только frontend
+pnpm --filter web dev
+
+# Только backend
+pnpm --filter realtime-server dev
+
+# Prisma Studio (GUI для базы данных)
+cd apps/realtime-server
+pnpm prisma:studio
+
+# Просмотр логов Docker
+docker compose logs -f
+
+# Остановка всех сервисов
+docker compose down
 ```
 
-### После запуска:
+## Переменные окружения
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:4000
-- **Health check**: http://localhost:4000/health
+Скрипт `start.sh` автоматически создает необходимые `.env` файлы:
 
-### Проверка работы:
+- `apps/realtime-server/.env` - настройки backend
+- `apps/web/.env.local` - настройки frontend
 
-1. Откройте http://localhost:3000 в браузере
-2. Должны загрузиться доски (если есть в базе)
-3. Если видите ошибку — проверьте, что backend отвечает:
-```bash
-curl http://localhost:4000/health
-# Должно вернуть: {"status":"ok"}
-```
-
-## 📝 Структура проекта:
-
-```
-~/workyy/
-├── apps/
-│   ├── web/              # Next.js frontend
-│   └── realtime-server/  # Fastify backend API
-├── packages/             # Внутренние пакеты
-├── docker-compose.yml    # Docker конфигурация
-├── start.sh              # Скрипт автоматического запуска
-└── README_SETUP.md       # Детальная инструкция
-```
-
-## ⚠️ Если что-то не работает:
-
-1. **Backend не запускается:**
-   - Проверьте, что порт 4000 свободен: `netstat -tlnp | grep :4000`
-   - Проверьте логи в терминале
-
-2. **База данных не доступна:**
-   - Проверьте Docker: `docker ps | grep postgres`
-   - Запустите: `docker compose up -d postgres`
-
-3. **Frontend не подключается к backend:**
-   - Проверьте `apps/web/.env.local`: `NEXT_PUBLIC_WS_URL=http://localhost:4000`
-   - Убедитесь, что backend запущен на порту 4000
-
-Более детальная инструкция в `README_SETUP.md`
+Если нужно изменить настройки, отредактируйте эти файлы.
