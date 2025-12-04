@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient, WorkspaceRole, NodeType, RunStatus, RunTrigger } from '@prisma/client';
 
 const prisma = new PrismaClient();

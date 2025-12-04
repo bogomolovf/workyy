@@ -10,20 +10,6 @@ if [ ! -d "node_modules" ]; then
     pnpm install
 fi
 
-# Проверка Prisma клиента
-if [ ! -d "apps/realtime-server/node_modules/.prisma" ]; then
-    echo "🔧 Генерация Prisma клиента..."
-    cd apps/realtime-server
-    pnpm prisma:generate
-    cd ../..
-fi
-
-# Убеждаемся, что Prisma клиент актуален
-echo "🔧 Проверка актуальности Prisma клиента..."
-cd apps/realtime-server
-pnpm prisma:generate
-cd ../..
-
 # Проверка базы данных
 echo "🔍 Проверка базы данных..."
 if ! docker ps | grep -q postgres; then
@@ -41,7 +27,7 @@ until docker exec $(docker ps -q -f name=postgres) pg_isready -U postgres > /dev
 done
 echo "✅ PostgreSQL готов"
 
-# Проверка .env файлов
+# Проверка .env файлов (ВАЖНО: создаем ДО генерации Prisma клиента)
 if [ ! -f "apps/realtime-server/.env" ]; then
     echo "⚠️  Отсутствует apps/realtime-server/.env, создаю..."
     cat > apps/realtime-server/.env << 'ENVEOF'
@@ -59,6 +45,20 @@ APP_ORIGIN=http://localhost:3000
 ENVEOF
     echo "✅ apps/realtime-server/.env создан"
 fi
+
+# Проверка Prisma клиента (после создания .env файла)
+if [ ! -d "apps/realtime-server/node_modules/.prisma" ]; then
+    echo "🔧 Генерация Prisma клиента..."
+    cd apps/realtime-server
+    pnpm prisma:generate
+    cd ../..
+fi
+
+# Убеждаемся, что Prisma клиент актуален
+echo "🔧 Проверка актуальности Prisma клиента..."
+cd apps/realtime-server
+pnpm prisma:generate
+cd ../..
 
 # Применение миграций
 echo "🔧 Применение миграций базы данных..."
