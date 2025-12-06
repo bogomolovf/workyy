@@ -60,7 +60,26 @@ pnpm --filter landing dev
 pnpm dev
 ```
 
+## 🤖 Работа с Cursor AI
+
+Проект полностью настроен для эффективной командной разработки с использованием Cursor AI.
+
+**Быстрый старт:**
+
+- 📖 [CURSOR_SETUP.md](./CURSOR_SETUP.md) - Детальная настройка (5 минут)
+- 🚀 [.cursor/QUICK_START.md](./.cursor/QUICK_START.md) - Быстрый старт
+- 📚 [CURSOR_AI_GUIDE.md](./CURSOR_AI_GUIDE.md) - Полное руководство
+- 🔄 [.cursor/TEAM_WORKFLOW.md](./.cursor/TEAM_WORKFLOW.md) - Процессы команды
+
+**Что настроено:**
+
+- ✅ Правила проекта (`.cursorrules`)
+- ✅ База знаний (`.cursor/knowledge/`)
+- ✅ Хранилище промптов (`.cursor/prompts/` - команда добавляет туда хорошие промпты)
+- ✅ Агентские команды (`.cursor/commands/agents/`) - 4 команды
+- ✅ Команды задач (`.cursor/commands/tasks/`) - 14 команд
+- ✅ Все команды доступны через префикс `/` в чате Cursor
+
 ## Лицензия
 
 Проект распространяется по лицензии MIT, см. `LICENSE`.
-
