@@ -112,8 +112,11 @@ import { NodeType } from '../../../packages/core-domain/src';
 3. Проверяй сгенерированный код перед коммитом
 4. Запускай тесты после генерации кода
 
-### Промпты
-- Используй шаблоны из `.cursor/prompts/`
+### Команды и промпты
+- Используй команды из `.cursor/commands/` (через префикс `/` в чате)
+  - Агентские команды: `/developer`, `/code-reviewer`, `/test-generator`, `/migration-helper`
+  - Команды задач: `/fix-bug`, `/develop-feature`, `/refactor`, `/code-review`, и др.
+- Сохраняй полезные промпты в `.cursor/prompts/` для будущего использования
 - Экспортируй важные чаты в `.cursor/knowledge/`
 - Документируй сложные решения
 
@@ -150,9 +153,12 @@ import { NodeType } from '../../../packages/core-domain/src';
 
 ## 💡 Советы по эффективной работе
 
-- Используй пользовательские команды (`/review-pr`, `/create-test`, etc.)
-- Экспортируй важные обсуждения в базу знаний
-- Создавай переиспользуемые промпты для типовых задач
+- Используй команды Cursor через префикс `/`:
+  - Основные: `/fix-bug`, `/develop-feature`, `/refactor`, `/code-review`
+  - Дополнительные: `/review-pr`, `/create-test`, `/check-architecture`, и др.
+  - Агенты: `/developer`, `/code-reviewer`, `/test-generator`, `/migration-helper`
+- Экспортируй важные обсуждения в базу знаний (`.cursor/knowledge/`)
+- Сохраняй полезные промпты в `.cursor/prompts/` для будущего использования
 - Используй несколько агентов параллельно для разных задач
 - Регулярно синхронизируйся с `main` веткой
 
