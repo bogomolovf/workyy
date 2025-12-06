@@ -67,7 +67,7 @@ async function main() {
           'import pandas as pd',
           'import plotly.express as px',
           '',
-          "if df is None:",
+          'if df is None:',
           "    print('⚠️ Run the upstream SQL node first.')",
           '    result = None',
           'else:',
@@ -169,4 +169,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

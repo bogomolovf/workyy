@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { useAuthStore } from "../state/authStore";
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { useAuthStore } from '../state/authStore';
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -10,15 +10,13 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (initialized && !user) {
-      router.replace("/login?redirectTo=/");
+      router.replace('/login?redirectTo=/');
     }
   }, [initialized, user, router]);
 
   if (!initialized) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-slate-500">
-        Loading…
-      </div>
+      <div className="flex min-h-screen items-center justify-center text-slate-500">Loading…</div>
     );
   }
 
@@ -26,4 +24,3 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>;
 }
-

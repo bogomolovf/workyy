@@ -13,20 +13,20 @@ const config = {
     };
     webpackConfig.resolve.alias = {
       ...(webpackConfig.resolve.alias ?? {}),
-      "node:child_process": false,
-      "node:fs": false,
-      "node:path": false,
-      "node:crypto": false,
-      "node:module": false,
+      'node:child_process': false,
+      'node:fs': false,
+      'node:path': false,
+      'node:crypto': false,
+      'node:module': false,
     };
-    
+
     // Ensure echarts is properly resolved
     if (!isServer) {
       webpackConfig.resolve.alias = {
         ...webpackConfig.resolve.alias,
       };
     }
-    
+
     return webpackConfig;
   },
   typescript: {
@@ -38,4 +38,3 @@ const config = {
 };
 
 export default config;
-

@@ -264,7 +264,9 @@ export async function boardsRoutes(app: FastifyInstance) {
       where: { id: boardId },
       data: {
         ...(parseBody.data.title !== undefined ? { title: parseBody.data.title } : {}),
-        ...(parseBody.data.description !== undefined ? { description: parseBody.data.description } : {}),
+        ...(parseBody.data.description !== undefined
+          ? { description: parseBody.data.description }
+          : {}),
       },
     });
 
@@ -289,120 +291,124 @@ export async function boardsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.put('/boards/:boardId/nodes', { preValidation: [app.authenticate] }, async (request, reply) => {
-    const userId = request.user!.userId;
-    const parseParams = getBoardParamsSchema.safeParse(request.params);
-    if (!parseParams.success) {
-      return sendProblem(reply, {
-        title: 'Validation error',
-        status: 422,
-        detail: parseParams.error.message,
-        errors: parseParams.error.flatten(),
+  app.put(
+    '/boards/:boardId/nodes',
+    { preValidation: [app.authenticate] },
+    async (request, reply) => {
+      const userId = request.user!.userId;
+      const parseParams = getBoardParamsSchema.safeParse(request.params);
+      if (!parseParams.success) {
+        return sendProblem(reply, {
+          title: 'Validation error',
+          status: 422,
+          detail: parseParams.error.message,
+          errors: parseParams.error.flatten(),
+        });
+      }
+
+      const parsedBody = updateBoardContentSchema.safeParse(request.body);
+      if (!parsedBody.success) {
+        return sendProblem(reply, {
+          title: 'Validation error',
+          status: 422,
+          detail: parsedBody.error.message,
+          errors: parsedBody.error.flatten(),
+        });
+      }
+
+      const boardId = parseParams.data.boardId;
+      const { nodes, edges } = parsedBody.data;
+
+      // Check board access (owner or editor can update)
+      const access = await ensureBoardAccess({
+        userId,
+        boardId,
+        requiredRoles: ['owner', 'editor'],
       });
-    }
+      if (!access.ok) {
+        return sendProblem(reply, {
+          title: access.status === 404 ? 'Board not found' : 'Forbidden',
+          status: access.status,
+          detail: access.reason,
+        });
+      }
 
-    const parsedBody = updateBoardContentSchema.safeParse(request.body);
-    if (!parsedBody.success) {
-      return sendProblem(reply, {
-        title: 'Validation error',
-        status: 422,
-        detail: parsedBody.error.message,
-        errors: parsedBody.error.flatten(),
+      const existingNodes = await container.prisma.node.findMany({
+        where: { boardId },
+        select: { id: true },
       });
-    }
+      const incomingNodeIds = new Set(nodes.map((node) => node.id));
+      const nodesToDelete = existingNodes.filter((node) => !incomingNodeIds.has(node.id));
+      if (nodesToDelete.length > 0) {
+        await container.prisma.node.deleteMany({
+          where: {
+            boardId,
+            id: { in: nodesToDelete.map((node) => node.id) },
+          },
+        });
+      }
 
-    const boardId = parseParams.data.boardId;
-    const { nodes, edges } = parsedBody.data;
+      for (const node of nodes) {
+        await container.prisma.node.upsert({
+          where: { id: node.id },
+          create: {
+            id: node.id,
+            boardId,
+            type: node.type,
+            positionX: node.position.x,
+            positionY: node.position.y,
+            payload: node.payload ?? Prisma.JsonNull,
+          },
+          update: {
+            positionX: node.position.x,
+            positionY: node.position.y,
+            type: node.type,
+            ...(node.payload !== undefined ? { payload: node.payload } : {}),
+          },
+        });
+      }
 
-    // Check board access (owner or editor can update)
-    const access = await ensureBoardAccess({
-      userId,
-      boardId,
-      requiredRoles: ['owner', 'editor'],
-    });
-    if (!access.ok) {
-      return sendProblem(reply, {
-        title: access.status === 404 ? 'Board not found' : 'Forbidden',
-        status: access.status,
-        detail: access.reason,
+      const existingEdges = await container.prisma.edge.findMany({
+        where: { boardId },
+        select: { id: true },
       });
-    }
+      const incomingEdgeIds = new Set(edges.map((edge) => edge.id));
+      const edgesToDelete = existingEdges.filter((edge) => !incomingEdgeIds.has(edge.id));
+      if (edgesToDelete.length > 0) {
+        await container.prisma.edge.deleteMany({
+          where: {
+            boardId,
+            id: { in: edgesToDelete.map((edge) => edge.id) },
+          },
+        });
+      }
 
-    const existingNodes = await container.prisma.node.findMany({
-      where: { boardId },
-      select: { id: true },
-    });
-    const incomingNodeIds = new Set(nodes.map((node) => node.id));
-    const nodesToDelete = existingNodes.filter((node) => !incomingNodeIds.has(node.id));
-    if (nodesToDelete.length > 0) {
-      await container.prisma.node.deleteMany({
-        where: {
-          boardId,
-          id: { in: nodesToDelete.map((node) => node.id) },
-        },
+      for (const edge of edges) {
+        await container.prisma.edge.upsert({
+          where: { id: edge.id },
+          create: {
+            id: edge.id,
+            boardId,
+            sourceId: edge.sourceId,
+            targetId: edge.targetId,
+            metadata: edge.metadata ?? Prisma.JsonNull,
+          },
+          update: {
+            sourceId: edge.sourceId,
+            targetId: edge.targetId,
+            ...(edge.metadata !== undefined ? { metadata: edge.metadata } : {}),
+          },
+        });
+      }
+
+      await container.prisma.board.update({
+        where: { id: boardId },
+        data: { updatedAt: new Date() },
       });
-    }
 
-    for (const node of nodes) {
-      await container.prisma.node.upsert({
-        where: { id: node.id },
-        create: {
-          id: node.id,
-          boardId,
-          type: node.type,
-          positionX: node.position.x,
-          positionY: node.position.y,
-          payload: node.payload ?? Prisma.JsonNull,
-        },
-        update: {
-          positionX: node.position.x,
-          positionY: node.position.y,
-          type: node.type,
-          ...(node.payload !== undefined ? { payload: node.payload } : {}),
-        },
-      });
-    }
-
-    const existingEdges = await container.prisma.edge.findMany({
-      where: { boardId },
-      select: { id: true },
-    });
-    const incomingEdgeIds = new Set(edges.map((edge) => edge.id));
-    const edgesToDelete = existingEdges.filter((edge) => !incomingEdgeIds.has(edge.id));
-    if (edgesToDelete.length > 0) {
-      await container.prisma.edge.deleteMany({
-        where: {
-          boardId,
-          id: { in: edgesToDelete.map((edge) => edge.id) },
-        },
-      });
-    }
-
-    for (const edge of edges) {
-      await container.prisma.edge.upsert({
-        where: { id: edge.id },
-        create: {
-          id: edge.id,
-          boardId,
-          sourceId: edge.sourceId,
-          targetId: edge.targetId,
-          metadata: edge.metadata ?? Prisma.JsonNull,
-        },
-        update: {
-          sourceId: edge.sourceId,
-          targetId: edge.targetId,
-          ...(edge.metadata !== undefined ? { metadata: edge.metadata } : {}),
-        },
-      });
-    }
-
-    await container.prisma.board.update({
-      where: { id: boardId },
-      data: { updatedAt: new Date() },
-    });
-
-    return reply.send({ nodes: nodes.length, edges: edges.length });
-  });
+      return reply.send({ nodes: nodes.length, edges: edges.length });
+    },
+  );
 
   app.delete('/boards/:boardId', { preValidation: [app.authenticate] }, async (request, reply) => {
     const userId = request.user!.userId;
@@ -459,4 +465,3 @@ export async function boardsRoutes(app: FastifyInstance) {
     return reply.code(204).send();
   });
 }
-

@@ -1,7 +1,7 @@
 // file: apps/web/src/state/useAddNode.ts
 type Position = { x: number; y: number };
 
-type NodeKind = "sql" | "python" | "note" | "text" | "shape" | "image" | "database" | "plot";
+type NodeKind = 'sql' | 'python' | 'note' | 'text' | 'shape' | 'image' | 'database' | 'plot';
 
 type NewNode = {
   id: string;
@@ -16,7 +16,7 @@ let fallbackIdCounter = 0;
 
 function createUuidFallback() {
   const array = new Uint8Array(16);
-  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
     crypto.getRandomValues(array);
   } else {
     for (let i = 0; i < array.length; i += 1) {
@@ -25,14 +25,14 @@ function createUuidFallback() {
   }
   array[6] = (array[6] & 0x0f) | 0x40;
   array[8] = (array[8] & 0x3f) | 0x80;
-  const hex = Array.from(array, (byte) => byte.toString(16).padStart(2, "0"));
-  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex
+  const hex = Array.from(array, (byte) => byte.toString(16).padStart(2, '0'));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex
     .slice(8, 10)
-    .join("")}-${hex.slice(10, 16).join("")}`;
+    .join('')}-${hex.slice(10, 16).join('')}`;
 }
 
 function createId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
   fallbackIdCounter += 1;
@@ -49,30 +49,30 @@ export function useAddNode() {
   function createSqlNode(position: Position): NewNode {
     return {
       id: createId(),
-      type: "sql",
+      type: 'sql',
       position,
-      payload: { sql: "SELECT 1;" },
+      payload: { sql: 'SELECT 1;' },
     };
   }
 
   function createPythonNode(position: Position): NewNode {
     return {
       id: createId(),
-      type: "python",
+      type: 'python',
       position,
       payload: {
         python: [
-          "import pandas as pd",
-          "import plotly.express as px",
-          "",
-          "if df is None:",
+          'import pandas as pd',
+          'import plotly.express as px',
+          '',
+          'if df is None:',
           "    print('⚠️ Run the upstream SQL node first.')",
-          "    result = None",
-          "else:",
+          '    result = None',
+          'else:',
           "    summary = df.groupby('region', as_index=False)['revenue'].sum()",
-          "    result = summary",
+          '    result = summary',
           "    plot = px.bar(summary, x='region', y='revenue', title='Revenue by region')",
-        ].join("\n"),
+        ].join('\n'),
       },
     };
   }
@@ -80,15 +80,15 @@ export function useAddNode() {
   function createNoteNode(position: Position): NewNode {
     return {
       id: createId(),
-      type: "note",
+      type: 'note',
       position,
       payload: {
-        noteContent: "",
-        noteColor: "#FFFFBA",
-        text: "",
-        color: "#FFFFBA", // пастельный бледно желтый
+        noteContent: '',
+        noteColor: '#FFFFBA',
+        text: '',
+        color: '#FFFFBA', // пастельный бледно желтый
         fontSize: 48,
-        fontFamily: "Inter, sans-serif",
+        fontFamily: 'Inter, sans-serif',
         isBold: false,
         isItalic: false,
         ui: {
@@ -102,15 +102,15 @@ export function useAddNode() {
   function createTextNode(position: Position): NewNode {
     return {
       id: createId(),
-      type: "text",
+      type: 'text',
       position,
       payload: {
-        text: "",
-        textContent: "",
+        text: '',
+        textContent: '',
         fontSize: 18,
-        fontFamily: "Inter, sans-serif",
-        color: "#CF4C2C", // orange-red (первый цвет в палитре, как у стикеров)
-        textAlign: "left" as const,
+        fontFamily: 'Inter, sans-serif',
+        color: '#CF4C2C', // orange-red (первый цвет в палитре, как у стикеров)
+        textAlign: 'left' as const,
         ui: {
           width: 240,
           height: 80,
@@ -122,12 +122,12 @@ export function useAddNode() {
   function createShapeNode(position: Position): NewNode {
     return {
       id: createId(),
-      type: "shape",
+      type: 'shape',
       position,
       payload: {
-        shapeType: "rectangle",
-        shapeColor: "#BFDBFE",
-        shapeLabel: "Фигура",
+        shapeType: 'rectangle',
+        shapeColor: '#BFDBFE',
+        shapeLabel: 'Фигура',
       },
     };
   }
@@ -135,11 +135,11 @@ export function useAddNode() {
   function createImageNode(position: Position): NewNode {
     return {
       id: createId(),
-      type: "image",
+      type: 'image',
       position,
       payload: {
-        imageUrl: "",
-        imageCaption: "Добавьте изображение",
+        imageUrl: '',
+        imageCaption: 'Добавьте изображение',
       },
     };
   }
@@ -147,17 +147,17 @@ export function useAddNode() {
   function createDatabaseNode(position: Position): NewNode {
     return {
       id: createId(),
-      type: "database",
+      type: 'database',
       position,
       payload: {
-        connectionName: "New Database",
-        host: "",
+        connectionName: 'New Database',
+        host: '',
         port: 5432,
-        database: "",
-        username: "",
-        password: "",
+        database: '',
+        username: '',
+        password: '',
         ssl: false,
-        status: "idle",
+        status: 'idle',
       },
     };
   }
@@ -165,21 +165,21 @@ export function useAddNode() {
   function createPlotNode(position: Position): NewNode {
     return {
       id: createId(),
-      type: "plot",
+      type: 'plot',
       position,
       payload: {
-        chartType: "bar",
+        chartType: 'bar',
         mapping: {},
         styling: {
-          title: "New Chart",
-          theme: "light",
+          title: 'New Chart',
+          theme: 'light',
           showLegend: true,
-          legendPosition: "top",
+          legendPosition: 'top',
           showGrid: true,
           enableZoomPan: false,
           enableTooltips: true,
         },
-        version: "1",
+        version: '1',
         autoConfigured: false,
       },
     };

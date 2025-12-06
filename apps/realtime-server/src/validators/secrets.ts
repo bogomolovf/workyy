@@ -14,4 +14,3 @@ export const listSecretsQuerySchema = z.object({
 });
 
 export type ListSecretsQuery = z.infer<typeof listSecretsQuerySchema>;
-

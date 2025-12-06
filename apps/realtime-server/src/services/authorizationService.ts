@@ -57,4 +57,3 @@ export async function ensureWorkspaceAccess(params: {
 
   return { ok: true, membership };
 }
-

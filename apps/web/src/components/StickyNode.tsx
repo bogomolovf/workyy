@@ -1,6 +1,6 @@
-import { useCallback, useRef } from "react";
-import { NodeResizer, type NodeProps, useStore } from "reactflow";
-import { StickyToolbar } from "./StickyToolbar";
+import { useCallback, useRef } from 'react';
+import { NodeResizer, type NodeProps, useStore } from 'reactflow';
+import { StickyToolbar } from './StickyToolbar';
 
 // Получаем актуальные размеры узла из внутреннего состояния React Flow (как в референсе)
 function useNodeDimensions(id: string) {
@@ -26,9 +26,9 @@ type StickyData = {
   onChangeItalic?: (id: string, isItalic: boolean) => void;
 };
 
-const DEFAULT_STICKY_COLOR = "#FFFFBA"; // пастельный желтый
+const DEFAULT_STICKY_COLOR = '#FFFFBA'; // пастельный желтый
 const DEFAULT_FONT_SIZE = 48;
-const DEFAULT_FONT_FAMILY = "Inter, sans-serif";
+const DEFAULT_FONT_FAMILY = 'Inter, sans-serif';
 
 export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
   const stickyColor = data.color ?? DEFAULT_STICKY_COLOR;
@@ -37,13 +37,13 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
   // Явно преобразуем в boolean, чтобы гарантировать правильное применение стилей
   const isBold = Boolean(data.isBold ?? false);
   const isItalic = Boolean(data.isItalic ?? false);
-  
+
   // Используем useNodeDimensions для получения актуальных размеров в реальном времени (как в референсе)
   // Это позволяет NodeResizer обновлять размеры плавно во время ресайза
   // Для sticky nodes wrapper управляется React Flow, поэтому размеры обновляются автоматически
   // useNodeDimensions подписывается на изменения внутреннего состояния React Flow
   useNodeDimensions(id); // Подписываемся на изменения размеров для плавного ресайза
-  
+
   // Сохраняем selection range для восстановления после потери фокуса
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const savedSelectionRef = useRef<{ start: number; end: number } | null>(null);
@@ -61,7 +61,7 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
     // Сохраняем selection только если фокус не перешел на элементы тулбара
     const relatedTarget = e.relatedTarget as HTMLElement | null;
     const isToolbarClick = relatedTarget?.closest('.react-flow__node-toolbar');
-    
+
     // Если выделение еще не сохранено (например, пользователь просто кликнул вне textarea),
     // сохраняем его здесь
     if (textarea && !isToolbarClick && !savedSelectionRef.current) {
@@ -81,7 +81,7 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
         if (textarea && savedSelectionRef.current) {
           textarea.setSelectionRange(
             savedSelectionRef.current.start,
-            savedSelectionRef.current.end
+            savedSelectionRef.current.end,
           );
         }
       });
@@ -116,7 +116,7 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
             const maxLength = textarea.value.length;
             const safeStart = Math.min(Math.max(0, start), maxLength);
             const safeEnd = Math.min(Math.max(safeStart, end), maxLength);
-            
+
             textarea.setSelectionRange(safeStart, safeEnd);
             // Форсируем перерисовку выделения
             textarea.blur();
@@ -161,11 +161,12 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
   // Формируем более светлый непрозрачный оттенок для background и оригинальный цвет для border
   const getColorStyles = (color: string) => {
     const borderColor = color;
-    const hex = color.replace("#", "");
+    const hex = color.replace('#', '');
     const r = parseInt(hex.substring(0, 2), 16);
     const g = parseInt(hex.substring(2, 4), 16);
     const b = parseInt(hex.substring(4, 6), 16);
-    const lighten = (channel: number) => Math.min(255, Math.round(channel + (255 - channel) * 0.15));
+    const lighten = (channel: number) =>
+      Math.min(255, Math.round(channel + (255 - channel) * 0.15));
     const bgColor = `rgb(${lighten(r)}, ${lighten(g)}, ${lighten(b)})`; // непрозрачный светлый оттенок
 
     return {
@@ -212,14 +213,14 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
         }}
       />
       <div
-        style={{ 
+        style={{
           // Используем 100% чтобы заполнить wrapper, который управляется React Flow
           // React Flow применяет width/height к wrapper через inline styles
-          width: "100%",
-          height: "100%",
+          width: '100%',
+          height: '100%',
           minWidth: 120,
           minHeight: 80,
-          boxSizing: "border-box",
+          boxSizing: 'border-box',
           borderColor: colorStyles.borderColor,
           backgroundColor: colorStyles.backgroundColor,
         }}
@@ -227,7 +228,7 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
       >
         <textarea
           ref={textareaRef}
-          value={data.text ?? ""}
+          value={data.text ?? ''}
           onChange={onChange}
           onBlur={onBlur}
           onFocus={onFocus}
@@ -245,12 +246,12 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
           placeholder="Sticky note..."
           className="nodrag h-full w-full resize-none bg-transparent text-slate-800 outline-none"
           style={{
-            boxSizing: "border-box",
+            boxSizing: 'border-box',
             fontSize: `${fontSize}px`,
             fontFamily: fontFamily,
-            fontWeight: isBold ? "bold" : "normal",
-            fontStyle: isItalic ? "italic" : "normal",
-            lineHeight: "1.5",
+            fontWeight: isBold ? 'bold' : 'normal',
+            fontStyle: isItalic ? 'italic' : 'normal',
+            lineHeight: '1.5',
           }}
           onMouseDown={(e) => {
             // Предотвращаем dragging узла при взаимодействии с textarea
@@ -269,5 +270,3 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyData>) {
     </>
   );
 }
-
-

@@ -1,20 +1,20 @@
-import { useScrollPosition } from '../hooks/useScrollPosition'
-import { useLanguage } from '../contexts/LanguageContext'
+import { useScrollPosition } from '../hooks/useScrollPosition';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export const BackToTop = () => {
-  const isVisible = useScrollPosition(400)
-  const { language } = useLanguage()
+  const isVisible = useScrollPosition(400);
+  const { language } = useLanguage();
 
   const scrollToTop = () => {
     window.scrollTo({
       top: 0,
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-    })
-  }
+    });
+  };
 
-  if (!isVisible) return null
+  if (!isVisible) return null;
 
-  const label = language === 'en' ? 'Back to top' : 'Наверх'
+  const label = language === 'en' ? 'Back to top' : 'Наверх';
 
   return (
     <button
@@ -29,10 +29,14 @@ export const BackToTop = () => {
         viewBox="0 0 24 24"
         aria-hidden="true"
       >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M5 10l7-7m0 0l7 7m-7-7v18"
+        />
       </svg>
       <span className="sr-only">{label}</span>
     </button>
-  )
-}
-
+  );
+};

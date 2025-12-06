@@ -19,4 +19,3 @@ export const container = {
   runService,
   runProcessor,
 };
-

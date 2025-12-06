@@ -1,46 +1,52 @@
-import { useState } from 'react'
-import React from 'react'
-import { useLanguage } from '../contexts/LanguageContext'
-import { SEOHead } from '../components/SEOHead'
-import { Button } from '../components/ui/Button'
-import { Card } from '../components/ui/Card'
-import { Badge } from '../components/ui/Badge'
+import { useState } from 'react';
+import React from 'react';
+import { useLanguage } from '../contexts/LanguageContext';
+import { SEOHead } from '../components/SEOHead';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
 
 const PricingPage = () => {
-  const { language, content } = useLanguage()
-  const pricingContent = content.pricing
+  const { language, content } = useLanguage();
+  const pricingContent = content.pricing;
 
   const getPath = (path: string) => {
-    return `/${language}${path}`
-  }
+    return `/${language}${path}`;
+  };
 
-  const [teamSize, setTeamSize] = useState(8)
-  const [boardCount, setBoardCount] = useState(12)
-  const [aiMinutes, setAiMinutes] = useState(30)
+  const [teamSize, setTeamSize] = useState(8);
+  const [boardCount, setBoardCount] = useState(12);
+  const [aiMinutes, setAiMinutes] = useState(30);
 
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     company: '',
     message: '',
-  })
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    console.log('Demo Request Submitted:', formData)
-    alert(language === 'en' ? 'Your demo request has been sent!' : 'Ваш запрос на демо отправлен!')
-    setFormData({ name: '', email: '', company: '', message: '' })
-  }
+    e.preventDefault();
+    console.log('Demo Request Submitted:', formData);
+    alert(language === 'en' ? 'Your demo request has been sent!' : 'Ваш запрос на демо отправлен!');
+    setFormData({ name: '', email: '', company: '', message: '' });
+  };
 
-  const calculatorPlan = teamSize <= 5 ? pricingContent.plans[0] : teamSize <= 20 ? pricingContent.plans[1] : pricingContent.plans[2]
-  const addOnCost = Math.max(0, teamSize - 10) * 5 + Math.max(0, boardCount - 10) * 2 + aiMinutes * 0.4
-  const basePrice = calculatorPlan.name === 'Free' ? 0 : calculatorPlan.name === 'Pro' ? 49 : 149
-  const estimatedCost = calculatorPlan.name === 'Free' ? 0 : basePrice + addOnCost
+  const calculatorPlan =
+    teamSize <= 5
+      ? pricingContent.plans[0]
+      : teamSize <= 20
+        ? pricingContent.plans[1]
+        : pricingContent.plans[2];
+  const addOnCost =
+    Math.max(0, teamSize - 10) * 5 + Math.max(0, boardCount - 10) * 2 + aiMinutes * 0.4;
+  const basePrice = calculatorPlan.name === 'Free' ? 0 : calculatorPlan.name === 'Pro' ? 49 : 149;
+  const estimatedCost = calculatorPlan.name === 'Free' ? 0 : basePrice + addOnCost;
 
   return (
     <div className="bg-[var(--color-bg-root)] text-[var(--color-text-primary)] min-h-screen transition-theme">
@@ -54,12 +60,16 @@ const PricingPage = () => {
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h1 className="typography-section mb-4">{pricingContent.title}</h1>
-            <p className="typography-base text-[var(--color-text-secondary)] max-w-2xl mx-auto">{pricingContent.description}</p>
+            <p className="typography-base text-[var(--color-text-secondary)] max-w-2xl mx-auto">
+              {pricingContent.description}
+            </p>
           </div>
 
           <Card variant="elevated" className="mb-16 grid lg:grid-cols-2 gap-6">
             <div>
-              <h3 className="typography-subsection mb-2">{language === 'en' ? 'Interactive pricing calculator' : 'Интерактивный калькулятор'}</h3>
+              <h3 className="typography-subsection mb-2">
+                {language === 'en' ? 'Interactive pricing calculator' : 'Интерактивный калькулятор'}
+              </h3>
               <p className="typography-small mb-6">
                 {language === 'en'
                   ? 'Slide to match your team size, number of canvases, and AI usage to see the plan that fits best.'
@@ -119,17 +129,27 @@ const PricingPage = () => {
                 <p className="typography-small mb-6">{calculatorPlan.price}</p>
                 <div className="flex items-end gap-2">
                   <span className="text-4xl font-bold text-[var(--color-accent-primary)]">
-                    {calculatorPlan.price === 'Free forever' ? '$0' : `$${estimatedCost.toFixed(0)}`}
+                    {calculatorPlan.price === 'Free forever'
+                      ? '$0'
+                      : `$${estimatedCost.toFixed(0)}`}
                   </span>
                   {calculatorPlan.price !== 'Free forever' && (
-                    <span className="typography-small mb-1">{language === 'en' ? 'per month (est.)' : 'в месяц (оценка)'}</span>
+                    <span className="typography-small mb-1">
+                      {language === 'en' ? 'per month (est.)' : 'в месяц (оценка)'}
+                    </span>
                   )}
                 </div>
               </div>
               <ul className="typography-small space-y-1 mt-6 text-[var(--color-text-secondary)]">
-                <li>• {teamSize} {language === 'en' ? 'teammates' : 'участников'}</li>
-                <li>• {boardCount} {language === 'en' ? 'canvases' : 'канв'}</li>
-                <li>• {aiMinutes} {language === 'en' ? 'AI min' : 'минут AI'}</li>
+                <li>
+                  • {teamSize} {language === 'en' ? 'teammates' : 'участников'}
+                </li>
+                <li>
+                  • {boardCount} {language === 'en' ? 'canvases' : 'канв'}
+                </li>
+                <li>
+                  • {aiMinutes} {language === 'en' ? 'AI min' : 'минут AI'}
+                </li>
               </ul>
             </Card>
           </Card>
@@ -148,7 +168,9 @@ const PricingPage = () => {
                   {plan.highlight && <Badge variant="primary">Best for teams</Badge>}
                   {plan.name === 'Free' && <Badge variant="secondary">Starter</Badge>}
                 </div>
-                <p className="text-5xl font-bold text-[var(--color-accent-primary)] mb-2">{plan.price}</p>
+                <p className="text-5xl font-bold text-[var(--color-accent-primary)] mb-2">
+                  {plan.price}
+                </p>
                 <ul className="space-y-3 typography-base text-[var(--color-text-secondary)] flex-grow mb-8">
                   {plan.features.map((feature, fIdx) => (
                     <li key={fIdx} className="flex items-center">
@@ -158,7 +180,12 @@ const PricingPage = () => {
                         stroke="currentColor"
                         viewBox="0 0 24 24"
                       >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
                       </svg>
                       {feature}
                     </li>
@@ -168,10 +195,16 @@ const PricingPage = () => {
                   variant={plan.highlight ? 'primary' : 'secondary'}
                   size="md"
                   href={plan.cta === 'Contact Sales' ? '#contact-form' : '#'}
-                  onClick={plan.cta === 'Contact Sales' ? undefined : (e?: React.MouseEvent<HTMLAnchorElement>) => {
-                    e?.preventDefault()
-                    document.getElementById('contact-form')?.scrollIntoView({ behavior: 'smooth' })
-                  }}
+                  onClick={
+                    plan.cta === 'Contact Sales'
+                      ? undefined
+                      : (e?: React.MouseEvent<HTMLAnchorElement>) => {
+                          e?.preventDefault();
+                          document
+                            .getElementById('contact-form')
+                            ?.scrollIntoView({ behavior: 'smooth' });
+                        }
+                  }
                   className="w-full"
                 >
                   {plan.cta}
@@ -186,7 +219,7 @@ const PricingPage = () => {
             </h2>
             <p className="typography-base text-[var(--color-text-secondary)] text-center mb-8">
               {language === 'en'
-                ? 'Interested in an Enterprise plan or a personalized walkthrough? Fill out the form below, and we\'ll get in touch.'
+                ? "Interested in an Enterprise plan or a personalized walkthrough? Fill out the form below, and we'll get in touch."
                 : 'Заинтересованы в Enterprise-плане или персональной демонстрации? Заполните форму ниже, и мы свяжемся с вами.'}
             </p>
             <form onSubmit={handleSubmit} className="grid gap-6 md:grid-cols-2">
@@ -246,7 +279,12 @@ const PricingPage = () => {
                 ></textarea>
               </div>
               <div className="md:col-span-2 flex justify-end">
-                <Button type="submit" variant="primary" size="md" className="w-full md:w-auto px-10">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  className="w-full md:w-auto px-10"
+                >
                   {language === 'en' ? 'Request a Demo' : 'Запросить демо'}
                 </Button>
               </div>
@@ -254,10 +292,8 @@ const PricingPage = () => {
           </Card>
         </div>
       </main>
-
     </div>
-  )
-}
+  );
+};
 
-export default PricingPage
-
+export default PricingPage;

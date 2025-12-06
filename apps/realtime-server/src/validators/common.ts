@@ -12,4 +12,3 @@ export const paginationSchema = z.object({
     }),
   cursor: z.string().uuid().optional(),
 });
-

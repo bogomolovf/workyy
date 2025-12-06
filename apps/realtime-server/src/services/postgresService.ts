@@ -157,4 +157,3 @@ export class PostgresService {
     await Promise.all(promises);
   }
 }
-

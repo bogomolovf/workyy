@@ -1,27 +1,31 @@
-"use client";
+'use client';
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
-import { X } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { BoardSummary, createBoard, deleteBoard, fetchBoards } from "../lib/api";
-import { LANDING_URL } from "../lib/appConfig";
-import { RequireAuth } from "../components/RequireAuth";
-import { useAuthStore } from "../state/authStore";
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { X } from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { BoardSummary, createBoard, deleteBoard, fetchBoards } from '../lib/api';
+import { LANDING_URL } from '../lib/appConfig';
+import { RequireAuth } from '../components/RequireAuth';
+import { useAuthStore } from '../state/authStore';
 
-const DEFAULT_WORKSPACE_ID = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_ID ?? "";
+const DEFAULT_WORKSPACE_ID = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_ID ?? '';
 
 function HomePageContent() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
-  const { data: boards, isLoading, isError } = useQuery({
-    queryKey: ["boards"],
+  const {
+    data: boards,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ['boards'],
     queryFn: () => fetchBoards(),
   });
 
@@ -45,13 +49,13 @@ function HomePageContent() {
     mutationFn: ({ workspaceId, title }: { workspaceId: string; title: string }) =>
       createBoard({ workspaceId, title }),
     onSuccess: async (board) => {
-      setTitle("");
+      setTitle('');
       setFormError(null);
-      await queryClient.invalidateQueries({ queryKey: ["boards"] });
+      await queryClient.invalidateQueries({ queryKey: ['boards'] });
       router.push(`/board/${board.id}`);
     },
     onError: (error: unknown) => {
-      setFormError(error instanceof Error ? error.message : "Не удалось создать доску");
+      setFormError(error instanceof Error ? error.message : 'Не удалось создать доску');
     },
   });
 
@@ -59,13 +63,13 @@ function HomePageContent() {
     mutationFn: (boardId: string) => deleteBoard(boardId),
     onMutate: async (boardId) => {
       // Отменяем текущие запросы для отмены устаревших обновлений
-      await queryClient.cancelQueries({ queryKey: ["boards"] });
+      await queryClient.cancelQueries({ queryKey: ['boards'] });
 
       // Сохраняем предыдущее значение для отката
-      const previousBoards = queryClient.getQueryData<BoardSummary[]>(["boards"]);
+      const previousBoards = queryClient.getQueryData<BoardSummary[]>(['boards']);
 
       // Оптимистично обновляем кэш, удаляя доску из списка
-      queryClient.setQueryData<BoardSummary[]>(["boards"], (old) => {
+      queryClient.setQueryData<BoardSummary[]>(['boards'], (old) => {
         if (!old) return old;
         return old.filter((board) => board.id !== boardId);
       });
@@ -76,13 +80,13 @@ function HomePageContent() {
     onError: (error: unknown, boardId, context) => {
       // В случае ошибки откатываем изменения
       if (context?.previousBoards) {
-        queryClient.setQueryData(["boards"], context.previousBoards);
+        queryClient.setQueryData(['boards'], context.previousBoards);
       }
-      console.error("Failed to delete board:", error);
+      console.error('Failed to delete board:', error);
     },
     onSettled: async () => {
       // В любом случае обновляем данные с сервера
-      await queryClient.invalidateQueries({ queryKey: ["boards"] });
+      await queryClient.invalidateQueries({ queryKey: ['boards'] });
     },
   });
 
@@ -91,13 +95,15 @@ function HomePageContent() {
     const nextWorkspace = workspaceIdForCreation;
 
     if (!nextWorkspace) {
-      setFormError("Не найден workspace для создания доски. Укажите NEXT_PUBLIC_DEFAULT_WORKSPACE_ID.");
+      setFormError(
+        'Не найден workspace для создания доски. Укажите NEXT_PUBLIC_DEFAULT_WORKSPACE_ID.',
+      );
       return;
     }
 
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      setFormError("Введите название доски.");
+      setFormError('Введите название доски.');
       return;
     }
 
@@ -149,7 +155,11 @@ function HomePageContent() {
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (window.confirm(`Удалить доску "${board.title}"? Это действие нельзя отменить.`)) {
+                      if (
+                        window.confirm(
+                          `Удалить доску "${board.title}"? Это действие нельзя отменить.`,
+                        )
+                      ) {
                         deleteBoardMutation.mutate(board.id);
                       }
                     }}
@@ -163,7 +173,7 @@ function HomePageContent() {
                 </div>
                 <div className="mt-4">
                   <p className="text-xs text-slate-500">
-                    Обновлено: {Number.isNaN(updated.getTime()) ? "—" : updated.toLocaleString()}
+                    Обновлено: {Number.isNaN(updated.getTime()) ? '—' : updated.toLocaleString()}
                   </p>
                 </div>
               </Link>
@@ -197,12 +207,8 @@ function HomePageContent() {
             {user && (
               <div className="flex items-center gap-4">
                 <div className="text-right hidden sm:block">
-                  <p className="text-sm font-medium text-slate-900">
-                    {user.name || user.email}
-                  </p>
-                  {user.name && (
-                    <p className="text-xs text-slate-500">{user.email}</p>
-                  )}
+                  <p className="text-sm font-medium text-slate-900">{user.name || user.email}</p>
+                  {user.name && <p className="text-xs text-slate-500">{user.email}</p>}
                   {user.workspaces && user.workspaces.length > 0 && (
                     <p className="text-xs text-slate-400 mt-0.5">
                       {user.workspaces.length} workspace{user.workspaces.length !== 1 ? 's' : ''}
@@ -221,7 +227,8 @@ function HomePageContent() {
           </div>
           <h1 className="text-4xl font-semibold">Workyy MVP</h1>
           <p className="mt-3 text-lg text-slate-600">
-            Смешанные SQL и Python узлы, DAG и совместная работа в реальном времени в одном браузере.
+            Смешанные SQL и Python узлы, DAG и совместная работа в реальном времени в одном
+            браузере.
           </p>
         </header>
 
@@ -233,7 +240,10 @@ function HomePageContent() {
                 Открывайте существующие или создайте новую доску прямо отсюда.
               </p>
             </div>
-            <form onSubmit={handleSubmit} className="flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:w-auto md:flex-row md:items-center">
+            <form
+              onSubmit={handleSubmit}
+              className="flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:w-auto md:flex-row md:items-center"
+            >
               <input
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
@@ -245,7 +255,7 @@ function HomePageContent() {
                 disabled={createBoardMutation.isPending || !workspaceIdForCreation}
                 className="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white shadow transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-200"
               >
-                {createBoardMutation.isPending ? "Создаём…" : "Создать"}
+                {createBoardMutation.isPending ? 'Создаём…' : 'Создать'}
               </button>
             </form>
           </div>
@@ -260,7 +270,8 @@ function HomePageContent() {
         </div>
 
         <p className="mt-10 text-center text-xs text-slate-400">
-          Готовые демо-данные остаются доступны: открывайте любую доску, ссылка ведёт на canvas-представление.
+          Готовые демо-данные остаются доступны: открывайте любую доску, ссылка ведёт на
+          canvas-представление.
         </p>
       </section>
     </main>

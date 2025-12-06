@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef } from 'react';
 
 let plotlyPromise: Promise<any> | null = null;
 
 async function getPlotly() {
   if (!plotlyPromise) {
-    plotlyPromise = import("plotly.js-dist-min");
+    plotlyPromise = import('plotly.js-dist-min');
   }
   return plotlyPromise;
 }
@@ -36,7 +36,7 @@ export default function PlotlyPreview({ plotJson, height = 320 }: PlotlyPreviewP
           displaylogo: false,
         });
       } catch (error) {
-        console.warn("Plotly render error", error);
+        console.warn('Plotly render error', error);
       }
     })();
 

@@ -28,4 +28,3 @@
   `docker exec -it workyy-postgres-1 psql -U postgres -d workyy -c 'select id, title from "Board";'`
 - Запуск веб-приложения: `pnpm --filter web dev` (Next.js на порту 3000/3001). React Flow показывает read-only превью узлов/рёбер, API берётся из realtime-сервиса.
 - Для быстрого теста можно добавить UUID в URL: `/board/demo?boardId=<uuid>`, input на странице обновляет query-param.
-

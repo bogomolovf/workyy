@@ -2,8 +2,8 @@ import type { SqlResult } from '../state/executionStore';
 
 const API_URL =
   typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000'
-    : process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000';
+    ? (process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000')
+    : (process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000');
 
 export type ConnectionConfig = {
   host: string;
@@ -130,4 +130,3 @@ export async function getDatabaseConnection(id: string): Promise<DatabaseConnect
 
   return res.json();
 }
-

@@ -3,6 +3,7 @@
 ## Проблема с правами доступа к Docker
 
 Если вы видите ошибку:
+
 ```
 permission denied while trying to connect to the Docker daemon socket
 ```
@@ -21,6 +22,7 @@ newgrp docker
 ```
 
 После этого проверьте:
+
 ```bash
 docker ps
 # Должно работать без sudo
@@ -34,10 +36,11 @@ sudo docker compose up -d postgres
 
 ### Вариант 3: Использовать уже запущенную базу (если она работает)
 
-Если PostgreSQL уже запущен на порту 5433 (например, из workyy-dev), 
+Если PostgreSQL уже запущен на порту 5433 (например, из workyy-dev),
 можно просто использовать её. Проект будет подключаться к ней автоматически.
 
 Проверка:
+
 ```bash
 netstat -tlnp | grep :5433
 # Или

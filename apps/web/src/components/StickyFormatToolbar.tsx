@@ -1,12 +1,12 @@
-import { NodeToolbar } from "reactflow";
+import { NodeToolbar } from 'reactflow';
 
 const fontSizes = [12, 14, 16, 18, 20, 24];
 
 const fontFamilies = [
-  { value: "Inter, sans-serif", label: "Inter" },
-  { value: "Arial, sans-serif", label: "Arial" },
-  { value: "Georgia, serif", label: "Georgia" },
-  { value: "Monaco, monospace", label: "Monospace" },
+  { value: 'Inter, sans-serif', label: 'Inter' },
+  { value: 'Arial, sans-serif', label: 'Arial' },
+  { value: 'Georgia, serif', label: 'Georgia' },
+  { value: 'Monaco, monospace', label: 'Monospace' },
 ];
 
 type StickyFormatToolbarProps = {
@@ -36,7 +36,7 @@ export function StickyFormatToolbar({
 }: StickyFormatToolbarProps) {
   return (
     <NodeToolbar className="nodrag" offset={38}>
-      <div 
+      <div
         className="flex items-center gap-1.5 rounded-md bg-white px-1.5 py-1 shadow-md border border-slate-200"
         onMouseDownCapture={(e) => {
           // Сохраняем выделение в capture фазе ДО того, как textarea потеряет фокус
@@ -110,8 +110,8 @@ export function StickyFormatToolbar({
           }}
           className={`px-1.5 py-0.5 rounded text-xs font-semibold transition-colors ${
             isBold
-              ? "bg-indigo-100 text-indigo-700 border border-indigo-300"
-              : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
+              ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+              : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
           }`}
           title="Bold"
           aria-label="Toggle bold"
@@ -136,8 +136,8 @@ export function StickyFormatToolbar({
           }}
           className={`px-1.5 py-0.5 rounded text-xs italic transition-colors ${
             isItalic
-              ? "bg-indigo-100 text-indigo-700 border border-indigo-300"
-              : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
+              ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+              : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
           }`}
           title="Italic"
           aria-label="Toggle italic"
@@ -148,4 +148,3 @@ export function StickyFormatToolbar({
     </NodeToolbar>
   );
 }
-

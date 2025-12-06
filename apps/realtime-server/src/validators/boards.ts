@@ -52,7 +52,18 @@ const nodePayloadSchema = z
   .passthrough()
   .optional();
 
-const nodeTypeSchema = z.enum(['sql', 'python', 'table', 'plot', 'note', 'text', 'shape', 'image', 'pen', 'database']);
+const nodeTypeSchema = z.enum([
+  'sql',
+  'python',
+  'table',
+  'plot',
+  'note',
+  'text',
+  'shape',
+  'image',
+  'pen',
+  'database',
+]);
 
 const updateNodeSchema = z.object({
   id: uuidSchema,
@@ -74,4 +85,3 @@ export const updateBoardContentSchema = z.object({
 });
 
 export type UpdateBoardContentInput = z.infer<typeof updateBoardContentSchema>;
-

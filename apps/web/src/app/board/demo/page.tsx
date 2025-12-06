@@ -1,27 +1,31 @@
-"use client";
+'use client';
 
-import dynamic from "next/dynamic";
-import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { fetchBoard, isValidUuid } from "../../../lib/api";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useExecutionStore } from "../../../state/executionStore";
-import { executeSql } from "../../../lib/duckdbClient";
-import { runPython } from "../../../lib/pythonExecutor";
-import { useCanvasLayoutStore } from "../../../state/canvasLayoutStore";
+import dynamic from 'next/dynamic';
+import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { fetchBoard, isValidUuid } from '../../../lib/api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useExecutionStore } from '../../../state/executionStore';
+import { executeSql } from '../../../lib/duckdbClient';
+import { runPython } from '../../../lib/pythonExecutor';
+import { useCanvasLayoutStore } from '../../../state/canvasLayoutStore';
 
-const ENV_DEMO_BOARD_ID = process.env.NEXT_PUBLIC_DEMO_BOARD_ID ?? "";
+const ENV_DEMO_BOARD_ID = process.env.NEXT_PUBLIC_DEMO_BOARD_ID ?? '';
 
 const BoardCanvasDynamic = dynamic(
-  () =>
-    import("../../../components/BoardCanvas").then((module) => module.BoardCanvas),
-  { ssr: false, loading: () => <div className="flex h-full items-center justify-center text-slate-400">Loading canvas…</div> },
+  () => import('../../../components/BoardCanvas').then((module) => module.BoardCanvas),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-slate-400">Loading canvas…</div>
+    ),
+  },
 );
 
 export default function DemoBoardPage() {
   const searchParams = useSearchParams();
-  const boardIdParam = searchParams.get("boardId");
+  const boardIdParam = searchParams.get('boardId');
   const boardId = useMemo(() => {
     if (boardIdParam && isValidUuid(boardIdParam)) {
       return boardIdParam;
@@ -33,7 +37,7 @@ export default function DemoBoardPage() {
   }, [boardIdParam]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["board", boardId],
+    queryKey: ['board', boardId],
     queryFn: () => fetchBoard(boardId as string),
     enabled: isValidUuid(boardId),
   });
@@ -79,37 +83,37 @@ export default function DemoBoardPage() {
       if (!data) return;
       const node = data.nodes.find((item) => item.id === nodeId);
       if (!node) {
-        setError(nodeId, "Node not found");
+        setError(nodeId, 'Node not found');
         return;
       }
       const currentEntries = useExecutionStore.getState().entries;
       const entry = currentEntries[nodeId];
-      const code = entry?.code ?? "";
+      const code = entry?.code ?? '';
 
-      setStatus(nodeId, "running");
+      setStatus(nodeId, 'running');
       try {
-        if (node.type === "sql") {
+        if (node.type === 'sql') {
           const result = await executeSql(code);
-          setSuccess(nodeId, { kind: "sql", result, code });
+          setSuccess(nodeId, { kind: 'sql', result, code });
           return;
         }
 
-        if (node.type === "python") {
+        if (node.type === 'python') {
           const upstreamEdge = data.edges.find((edge) => edge.targetId === nodeId);
           const latestEntries = useExecutionStore.getState().entries;
           const upstreamResult =
-            upstreamEdge && latestEntries[upstreamEdge.sourceId]?.output?.kind === "sql"
+            upstreamEdge && latestEntries[upstreamEdge.sourceId]?.output?.kind === 'sql'
               ? latestEntries[upstreamEdge.sourceId]?.output?.result
               : undefined;
 
           const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
           if (!pythonOutput.success) {
-            setError(nodeId, pythonOutput.error ?? "Execution failed");
+            setError(nodeId, pythonOutput.error ?? 'Execution failed');
             return;
           }
 
           setSuccess(nodeId, {
-            kind: "python",
+            kind: 'python',
             result: {
               stdout: pythonOutput.stdout,
               stderr: pythonOutput.stderr,
@@ -155,7 +159,9 @@ export default function DemoBoardPage() {
       <header className="border-b border-slate-200 bg-white px-6 py-4">
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">{data?.board.title ?? "Demo Board"}</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">
+              {data?.board.title ?? 'Demo Board'}
+            </h1>
             <p className="text-sm text-slate-500">
               Рабочая копия борда. Изменения пока не сохраняются — используйте для предпросмотра.
             </p>
@@ -174,7 +180,11 @@ export default function DemoBoardPage() {
           <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
             <p>Пожалуйста, укажите Board ID в .env или введите UUID вручную.</p>
             <p className="text-sm text-slate-500">
-              Пример: <code>docker exec -it workyy-postgres-1 psql -U postgres -d workyy -c 'select id, title from "Board";'</code>
+              Пример:{' '}
+              <code>
+                docker exec -it workyy-postgres-1 psql -U postgres -d workyy -c 'select id, title
+                from "Board";'
+              </code>
             </p>
           </div>
         )}
@@ -185,9 +195,11 @@ export default function DemoBoardPage() {
         )}
         {error && boardId && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-rose-500">
-            <span>Failed to load board <code>{boardId}</code>.</span>
+            <span>
+              Failed to load board <code>{boardId}</code>.
+            </span>
             <span className="text-sm text-slate-400">
-              Проверьте UUID и убедитесь, что realtime-сервер доступен по{" "}
+              Проверьте UUID и убедитесь, что realtime-сервер доступен по{' '}
               <code>http://localhost:4000/api/boards/{boardId}</code>.
             </span>
           </div>

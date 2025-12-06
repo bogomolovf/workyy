@@ -17,4 +17,3 @@ export const listRunsQuerySchema = paginationSchema.extend({
 });
 
 export type ListRunsQuery = z.infer<typeof listRunsQuerySchema>;
-

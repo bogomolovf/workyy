@@ -8,4 +8,3 @@ export const testConnectionBodySchema = z.object({
 });
 
 export type TestConnectionInput = z.infer<typeof testConnectionBodySchema>;
-

@@ -1,39 +1,36 @@
-import type { ColumnAnalysis } from "./dataAnalyzer";
+import type { ColumnAnalysis } from './dataAnalyzer';
 
 export function getNumericColumns(analyses: ColumnAnalysis[]): ColumnAnalysis[] {
-  return analyses.filter((a) => a.type === "numeric");
+  return analyses.filter((a) => a.type === 'numeric');
 }
 
 export function getCategoricalColumns(analyses: ColumnAnalysis[]): ColumnAnalysis[] {
-  return analyses.filter((a) => a.type === "categorical");
+  return analyses.filter((a) => a.type === 'categorical');
 }
 
 export function getTemporalColumns(analyses: ColumnAnalysis[]): ColumnAnalysis[] {
-  return analyses.filter((a) => a.type === "temporal");
+  return analyses.filter((a) => a.type === 'temporal');
 }
 
 /**
  * Suggest default X field based on chart type and available columns
  */
-export function suggestXField(
-  chartType: string,
-  analyses: ColumnAnalysis[]
-): string | undefined {
+export function suggestXField(chartType: string, analyses: ColumnAnalysis[]): string | undefined {
   const temporal = getTemporalColumns(analyses);
   const categorical = getCategoricalColumns(analyses);
   const numeric = getNumericColumns(analyses);
 
   // For line/area charts, prefer temporal
-  if ((chartType === "line" || chartType === "area") && temporal.length > 0) {
+  if ((chartType === 'line' || chartType === 'area') && temporal.length > 0) {
     return temporal[0].name;
   }
 
   // For bar/pie charts, prefer categorical
   if (
-    (chartType === "bar" ||
-      chartType === "bar-horizontal" ||
-      chartType === "pie" ||
-      chartType === "doughnut") &&
+    (chartType === 'bar' ||
+      chartType === 'bar-horizontal' ||
+      chartType === 'pie' ||
+      chartType === 'doughnut') &&
     categorical.length > 0
   ) {
     // Prefer categorical with fewer distinct values
@@ -42,7 +39,7 @@ export function suggestXField(
   }
 
   // For scatter, prefer numeric
-  if (chartType === "scatter" && numeric.length > 0) {
+  if (chartType === 'scatter' && numeric.length > 0) {
     return numeric[0].name;
   }
 
@@ -60,12 +57,12 @@ export function suggestXField(
 export function suggestYField(
   chartType: string,
   analyses: ColumnAnalysis[],
-  xField?: string
+  xField?: string,
 ): string | undefined {
   const numeric = getNumericColumns(analyses);
 
   // For pie/doughnut, we don't need Y in the same way, but we need a numeric for value
-  if (chartType === "pie" || chartType === "doughnut") {
+  if (chartType === 'pie' || chartType === 'doughnut') {
     // Use first numeric that's not the X field
     const available = numeric.filter((a) => a.name !== xField);
     return available[0]?.name || numeric[0]?.name;
@@ -87,12 +84,11 @@ export function suggestYField(
 export function suggestColorField(
   analyses: ColumnAnalysis[],
   xField?: string,
-  yField?: string
+  yField?: string,
 ): string | undefined {
   const categorical = getCategoricalColumns(analyses);
   const available = categorical.filter(
-    (a) => a.name !== xField && a.name !== yField && (a.uniqueCount ?? 0) < 20
+    (a) => a.name !== xField && a.name !== yField && (a.uniqueCount ?? 0) < 20,
   );
   return available[0]?.name || categorical[0]?.name;
 }
-

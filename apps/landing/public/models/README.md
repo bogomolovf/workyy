@@ -86,6 +86,7 @@ Your GLB model should include these named animation clips:
 ## Adding Smoke Effects
 
 If your model doesn't include smoke, you can:
+
 1. Add smoke planes in Blender
 2. Use the smoke material names: `smoke`, `Smoke`, or `smokeFX`
 3. The code will automatically adjust opacity based on smoke state
@@ -93,6 +94,7 @@ If your model doesn't include smoke, you can:
 ## Quick Start (Mixamo)
 
 1. **Get Character:**
+
    ```
    - Go to mixamo.com
    - Download "Samantha" or similar character (FBX)
@@ -100,6 +102,7 @@ If your model doesn't include smoke, you can:
    ```
 
 2. **Convert in Blender:**
+
    ```
    - Import FBX character
    - Import FBX animation

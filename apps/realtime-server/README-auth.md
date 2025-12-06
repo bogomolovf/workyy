@@ -5,6 +5,7 @@ This document describes the authentication system implemented in Workyy 4.0.
 ## Overview
 
 The authentication system uses:
+
 - **Email + Password** authentication
 - **JWT tokens** stored in HTTP-only cookies
 - **bcrypt** for password hashing (11 rounds)
@@ -16,6 +17,7 @@ The authentication system uses:
 ### Database Schema
 
 The `User` model includes:
+
 - `passwordHash` (nullable for backward compatibility with existing users)
 
 ### Environment Variables
@@ -34,18 +36,21 @@ BCRYPT_ROUNDS=11
 ### API Endpoints
 
 #### `POST /api/auth/register`
+
 Register a new user.
 
 **Request:**
+
 ```json
 {
   "email": "user@example.com",
   "password": "password123",
-  "name": "User Name"  // optional
+  "name": "User Name" // optional
 }
 ```
 
 **Response:**
+
 ```json
 {
   "id": "user-uuid",
@@ -57,9 +62,11 @@ Register a new user.
 Creates a user account and automatically creates a default workspace with the user as owner. Sets an authentication cookie.
 
 #### `POST /api/auth/login`
+
 Login with email and password.
 
 **Request:**
+
 ```json
 {
   "email": "user@example.com",
@@ -68,6 +75,7 @@ Login with email and password.
 ```
 
 **Response:**
+
 ```json
 {
   "id": "user-uuid",
@@ -79,9 +87,11 @@ Login with email and password.
 Sets an authentication cookie.
 
 #### `POST /api/auth/logout`
+
 Logout the current user.
 
 **Response:**
+
 ```json
 {
   "ok": true
@@ -91,9 +101,11 @@ Logout the current user.
 Clears the authentication cookie.
 
 #### `GET /api/auth/me`
+
 Get the current authenticated user.
 
 **Response:**
+
 ```json
 {
   "id": "user-uuid",
@@ -114,6 +126,7 @@ Requires authentication (protected endpoint).
 ### Protected Endpoints
 
 All board-related endpoints require authentication:
+
 - `GET /api/boards` - List boards (filtered by user's workspaces)
 - `POST /api/boards` - Create board (requires workspace access)
 - `GET /api/boards/:boardId` - Get board (requires board access)
@@ -124,6 +137,7 @@ All board-related endpoints require authentication:
 ### Authorization
 
 The system uses workspace-based authorization:
+
 - Users can only access boards in workspaces where they have a role
 - Roles: `owner`, `editor`, `viewer`
 - `owner` can delete boards
@@ -154,6 +168,7 @@ Pages are protected using the `RequireAuth` component:
 ```
 
 This component:
+
 - Checks if the user is authenticated
 - Redirects to `/login?redirectTo=/` if not authenticated
 - Shows a loading state while checking authentication
@@ -184,4 +199,3 @@ All API requests include `credentials: 'include'` to send cookies with requests.
 - Email verification
 - Two-factor authentication
 - OAuth providers (Google, GitHub, etc.)
-

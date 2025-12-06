@@ -12,4 +12,3 @@ if (missing.length) {
 }
 
 console.log('Environment variables look good');
-

@@ -1,5 +1,5 @@
 // file: apps/web/src/components/InteractiveResultTable.tsx
-"use client";
+'use client';
 
 import {
   ColumnDef,
@@ -8,24 +8,24 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
-} from "@tanstack/react-table";
-import { useMemo, useState } from "react";
-import type { SqlResult } from "../state/executionStore";
+} from '@tanstack/react-table';
+import { useMemo, useState } from 'react';
+import type { SqlResult } from '../state/executionStore';
 
 function isNumericValue(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 function inferColumnType(values: Array<string | number | null>) {
   const sample = values.find((item) => item !== null && item !== undefined);
-  if (typeof sample === "number") return "number";
-  if (typeof sample === "string") {
+  if (typeof sample === 'number') return 'number';
+  if (typeof sample === 'string') {
     const numericCandidate = Number(sample);
-    if (!Number.isNaN(numericCandidate) && sample.trim() !== "") {
-      return "stringNumeric";
+    if (!Number.isNaN(numericCandidate) && sample.trim() !== '') {
+      return 'stringNumeric';
     }
   }
-  return "string";
+  return 'string';
 }
 
 type TableRow = Record<string, string | number | null> & { __rowId: number };
@@ -51,9 +51,7 @@ export function InteractiveResultTable({ result, compact }: InteractiveResultTab
       const values = rows.map((row) => row[column]);
       const type = inferColumnType(values);
       const numericValues =
-        type === "number"
-          ? (values.filter((value) => isNumericValue(value)) as number[])
-          : [];
+        type === 'number' ? (values.filter((value) => isNumericValue(value)) as number[]) : [];
       const min = numericValues.length > 0 ? Math.min(...numericValues) : undefined;
       const max = numericValues.length > 0 ? Math.max(...numericValues) : undefined;
       const mean =
@@ -68,7 +66,7 @@ export function InteractiveResultTable({ result, compact }: InteractiveResultTab
 
   const columnDefs = useMemo<ColumnDef<TableRow>[]>(() => {
     return columnMeta.map(({ column, type }) => {
-      const isNumeric = type === "number";
+      const isNumeric = type === 'number';
       return {
         accessorKey: column,
         header: ({ column }) => {
@@ -77,13 +75,13 @@ export function InteractiveResultTable({ result, compact }: InteractiveResultTab
             <button
               type="button"
               className="flex w-full items-center justify-between gap-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
-              onClick={() => column.toggleSorting(isSorted === "asc")}
+              onClick={() => column.toggleSorting(isSorted === 'asc')}
             >
               <span>{column.id}</span>
               <span className="text-[10px] font-medium text-slate-400">
-                {isSorted === "asc" && "▲"}
-                {isSorted === "desc" && "▼"}
-                {!isSorted && ""}
+                {isSorted === 'asc' && '▲'}
+                {isSorted === 'desc' && '▼'}
+                {!isSorted && ''}
               </span>
             </button>
           );
@@ -98,7 +96,7 @@ export function InteractiveResultTable({ result, compact }: InteractiveResultTab
           }
           return <span>{String(value)}</span>;
         },
-        sortingFn: isNumeric ? "basic" : "alphanumeric",
+        sortingFn: isNumeric ? 'basic' : 'alphanumeric',
         meta: {
           isNumeric,
         },
@@ -119,14 +117,18 @@ export function InteractiveResultTable({ result, compact }: InteractiveResultTab
 
   return (
     <div className="flex flex-col gap-2">
-      <div className={`overflow-auto rounded-lg border border-slate-200 bg-white ${compact ? "max-h-56" : "max-h-80"}`}>
+      <div
+        className={`overflow-auto rounded-lg border border-slate-200 bg-white ${compact ? 'max-h-56' : 'max-h-80'}`}
+      >
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th key={header.id} scope="col" className="px-3 py-2 align-top text-left">
-                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(header.column.columnDef.header, header.getContext())}
                   </th>
                 ))}
               </tr>
@@ -135,8 +137,11 @@ export function InteractiveResultTable({ result, compact }: InteractiveResultTab
           <tbody className="divide-y divide-slate-100">
             {table.getRowModel().rows.length === 0 && (
               <tr>
-                <td colSpan={result.columns.length} className="px-3 py-6 text-center text-sm text-slate-500">
-                  {hasBaseRows ? "No rows available." : "No rows returned."}
+                <td
+                  colSpan={result.columns.length}
+                  className="px-3 py-6 text-center text-sm text-slate-500"
+                >
+                  {hasBaseRows ? 'No rows available.' : 'No rows returned.'}
                 </td>
               </tr>
             )}

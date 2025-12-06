@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef } from 'react';
 
 type PlotPreviewProps = {
   plotJson: string;
@@ -13,7 +13,7 @@ export function PlotPreview({ plotJson, height = 360 }: PlotPreviewProps) {
   useEffect(() => {
     if (!plotJson) {
       if (containerRef.current) {
-        containerRef.current.innerHTML = "";
+        containerRef.current.innerHTML = '';
       }
       return;
     }
@@ -23,7 +23,7 @@ export function PlotPreview({ plotJson, height = 360 }: PlotPreviewProps) {
 
     (async () => {
       try {
-        const Plotly = await import("plotly.js-dist-min");
+        const Plotly = await import('plotly.js-dist-min');
         plotly = Plotly;
         if (!mounted || !containerRef.current) return;
         const parsed = JSON.parse(plotJson);
@@ -34,7 +34,7 @@ export function PlotPreview({ plotJson, height = 360 }: PlotPreviewProps) {
           parsed?.config ?? {},
         );
       } catch (error) {
-        console.warn("Plot render failed", error);
+        console.warn('Plot render failed', error);
       }
     })();
 
@@ -50,7 +50,11 @@ export function PlotPreview({ plotJson, height = 360 }: PlotPreviewProps) {
     };
   }, [plotJson]);
 
-  return <div ref={containerRef} style={{ width: "100%", height, overflow: "hidden" }} className="w-full" />;
+  return (
+    <div
+      ref={containerRef}
+      style={{ width: '100%', height, overflow: 'hidden' }}
+      className="w-full"
+    />
+  );
 }
-
-

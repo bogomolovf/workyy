@@ -50,9 +50,9 @@
 - **Idle/turntable loop**: 8-second loop; character holds pose, slight breathing motion, tiny head sway; optional 5° back-and-forth yaw for turntable if needed.
 - **Smoke interaction timing**: Each card draw triggers 1-second blend from current smoke density to next; shader parameter curves synced to animation events exposed in FBX/GLB metadata.
 - **Expression variants** (as morph targets or additive facial clips):
-  - *Smile – Gentle hopeful*: soften eyelids, raise mouth corners, introduce subtle cheek lift.
-  - *Sad / concerned*: brow inner corners lift, eyes glisten via increased specular, lips relax downward slightly.
-  - *Sly smirk*: asymmetric mouth corner raise, eyebrow quirk, slight eye narrowing for playful read.
+  - _Smile – Gentle hopeful_: soften eyelids, raise mouth corners, introduce subtle cheek lift.
+  - _Sad / concerned_: brow inner corners lift, eyes glisten via increased specular, lips relax downward slightly.
+  - _Sly smirk_: asymmetric mouth corner raise, eyebrow quirk, slight eye narrowing for playful read.
 - **Delivery**: Export separate 0.5-second blend-in clips (or ARKit-style morph targets) for each expression so UI code can trigger them based on tarot results without reloading mesh.
 - **Mantle/headpiece controls**: Add FK chains with limited joints (3-4) and driven-key offsets to mimic cloth sway without simulation.
 - **Smoke rig**: Parent multiple alpha-card ribbons to a central controller with custom attributes `smokeDensity`, `smokeOpacity`, `haloEmissive`. Expose attributes via Animation > Game Exporter.
@@ -89,4 +89,3 @@
 - **Parameter hooks**: Access custom `smokeDensity` track via `mesh.userData.smokeDensity` or animation track targeting `Node.material.uniforms.smokeDensity`. Provide helper to clamp 0–1.
 - **Expression blending**: Trigger additive clips (`Smile`, `Sad`, `SlySmirk`) with weight-based actions so they layer atop Idle without restarting base loop.
 - **Performance**: Preload textures, enable `premultipliedAlpha` for smoke planes, and share materials between LODs to keep draw calls within budget.
-

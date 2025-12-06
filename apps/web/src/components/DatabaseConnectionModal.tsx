@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
-import type { DatabaseNodePayload } from "../lib/databaseNodeTypes";
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import type { DatabaseNodePayload } from '../lib/databaseNodeTypes';
 import {
   testDatabaseConnection,
   createDatabaseConnection,
   updateDatabaseConnection,
-} from "../lib/postgresClient";
+} from '../lib/postgresClient';
 
 type DatabaseConnectionModalProps = {
   isOpen: boolean;
@@ -19,14 +19,14 @@ type DatabaseConnectionModalProps = {
 
 // Default values for a new database connection
 const getDefaultPayload = (): DatabaseNodePayload => ({
-  connectionName: "New Database",
-  host: "",
+  connectionName: 'New Database',
+  host: '',
   port: 5432,
-  database: "",
-  username: "",
-  password: "",
+  database: '',
+  username: '',
+  password: '',
   ssl: false,
-  status: "idle",
+  status: 'idle',
 });
 
 export function DatabaseConnectionModal({
@@ -60,7 +60,7 @@ export function DatabaseConnectionModal({
 
   const handleTest = async () => {
     if (!formData.host || !formData.database || !formData.username) {
-      setError("Please fill in required fields");
+      setError('Please fill in required fields');
       return;
     }
 
@@ -74,7 +74,7 @@ export function DatabaseConnectionModal({
         port: formData.port,
         database: formData.database,
         username: formData.username,
-        password: formData.password || "",
+        password: formData.password || '',
         ssl: formData.ssl,
       });
 
@@ -82,23 +82,23 @@ export function DatabaseConnectionModal({
       if (result.success) {
         setFormData((prev) => ({
           ...prev,
-          status: "connected",
+          status: 'connected',
           lastTestedAt: new Date().toISOString(),
         }));
       } else {
         setFormData((prev) => ({
           ...prev,
-          status: "error",
+          status: 'error',
           lastTestedAt: new Date().toISOString(),
         }));
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Connection test failed";
+      const message = err instanceof Error ? err.message : 'Connection test failed';
       setError(message);
       setTestResult({ success: false, message });
       setFormData((prev) => ({
         ...prev,
-        status: "error",
+        status: 'error',
         lastTestedAt: new Date().toISOString(),
       }));
     } finally {
@@ -108,7 +108,7 @@ export function DatabaseConnectionModal({
 
   const handleSave = async () => {
     if (!formData.host || !formData.database || !formData.username) {
-      setError("Please fill in required fields");
+      setError('Please fill in required fields');
       return;
     }
 
@@ -128,7 +128,7 @@ export function DatabaseConnectionModal({
           port: formData.port,
           database: formData.database,
           username: formData.username,
-          password: formData.password || "",
+          password: formData.password || '',
           ssl: formData.ssl,
         });
         connectionId = result.connectionId;
@@ -151,12 +151,12 @@ export function DatabaseConnectionModal({
         connectionId,
         secretId,
         password: undefined, // Never persist password in payload
-        status: testResult?.success ? "connected" : formData.status || "idle",
+        status: testResult?.success ? 'connected' : formData.status || 'idle',
       };
 
       onSave(updatedPayload);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save connection";
+      const message = err instanceof Error ? err.message : 'Failed to save connection';
       setError(message);
     } finally {
       setIsSaving(false);
@@ -194,11 +194,13 @@ export function DatabaseConnectionModal({
             <div
               className={`rounded-lg border px-3 py-2 text-sm ${
                 testResult.success
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-600"
-                  : "border-rose-200 bg-rose-50 text-rose-600"
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                  : 'border-rose-200 bg-rose-50 text-rose-600'
               }`}
             >
-              {testResult.success ? "✓ Connection successful" : `✗ ${testResult.message || "Connection failed"}`}
+              {testResult.success
+                ? '✓ Connection successful'
+                : `✗ ${testResult.message || 'Connection failed'}`}
             </div>
           )}
 
@@ -209,9 +211,7 @@ export function DatabaseConnectionModal({
             <input
               type="text"
               value={formData.connectionName}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, connectionName: e.target.value }))
-              }
+              onChange={(e) => setFormData((prev) => ({ ...prev, connectionName: e.target.value }))}
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
               placeholder="Production DB"
             />
@@ -279,10 +279,10 @@ export function DatabaseConnectionModal({
             </label>
             <input
               type="password"
-              value={formData.password || ""}
+              value={formData.password || ''}
               onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder={formData.connectionId ? "Leave empty to keep existing" : ""}
+              placeholder={formData.connectionId ? 'Leave empty to keep existing' : ''}
             />
             {formData.connectionId && (
               <p className="mt-1 text-xs text-slate-500">Leave empty to keep existing password</p>
@@ -315,24 +315,27 @@ export function DatabaseConnectionModal({
           <button
             type="button"
             onClick={handleTest}
-            disabled={isTesting || isSaving || !formData.host || !formData.database || !formData.username}
+            disabled={
+              isTesting || isSaving || !formData.host || !formData.database || !formData.username
+            }
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isTesting ? "Testing..." : "Test Connection"}
+            {isTesting ? 'Testing...' : 'Test Connection'}
           </button>
           <button
             type="button"
             onClick={handleSave}
-            disabled={isTesting || isSaving || !formData.host || !formData.database || !formData.username}
+            disabled={
+              isTesting || isSaving || !formData.host || !formData.database || !formData.username
+            }
             className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
     </div>
   );
 
-  return typeof window !== "undefined" ? createPortal(modal, document.body) : null;
+  return typeof window !== 'undefined' ? createPortal(modal, document.body) : null;
 }
-

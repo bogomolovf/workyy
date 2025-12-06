@@ -4,7 +4,10 @@ import { RunService } from '../services/runService';
 export class RunProcessor {
   private readonly inflight = new Set<string>();
 
-  constructor(private readonly runService: RunService, private readonly delayMs = 200) {}
+  constructor(
+    private readonly runService: RunService,
+    private readonly delayMs = 200,
+  ) {}
 
   enqueue(runId: string) {
     if (this.inflight.has(runId)) {
@@ -34,4 +37,3 @@ export class RunProcessor {
     }, this.delayMs);
   }
 }
-

@@ -205,7 +205,14 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
       });
 
       // Close and remove pool to force reconnection with new credentials
-      if (body.host || body.port || body.database || body.username || body.password || body.ssl !== undefined) {
+      if (
+        body.host ||
+        body.port ||
+        body.database ||
+        body.username ||
+        body.password ||
+        body.ssl !== undefined
+      ) {
         await container.postgresService.closePool(connectionId);
       }
 
@@ -266,11 +273,13 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
 
       // Also delete secret explicitly (though cascade should handle it)
       if (existing.secret) {
-        await container.prisma.secret.delete({
-          where: { id: existing.secretId },
-        }).catch(() => {
-          // Ignore if already deleted by cascade
-        });
+        await container.prisma.secret
+          .delete({
+            where: { id: existing.secretId },
+          })
+          .catch(() => {
+            // Ignore if already deleted by cascade
+          });
       }
 
       await container.auditService.record({
@@ -353,4 +362,3 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
     }
   });
 }
-

@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAuthStore } from "../../state/authStore";
-import { LANDING_URL } from "../../lib/appConfig";
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '../../state/authStore';
+import { LANDING_URL } from '../../lib/appConfig';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -11,15 +11,15 @@ export default function SignupPage() {
   const loading = useAuthStore((s) => s.loading);
   const error = useAuthStore((s) => s.error);
 
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
       await register({ email, password, name: name || undefined });
-      router.push("/"); // Redirect to boards list
+      router.push('/'); // Redirect to boards list
     } catch (err) {
       // Error is already in store
     }
@@ -74,12 +74,12 @@ export default function SignupPage() {
             disabled={loading}
             className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            {loading ? "Creating account…" : "Sign up"}
+            {loading ? 'Creating account…' : 'Sign up'}
           </button>
         </form>
 
         <p className="text-xs text-slate-500">
-          Already have an account?{" "}
+          Already have an account?{' '}
           <a href="/login" className="text-indigo-600 hover:text-indigo-700">
             Log in
           </a>
@@ -93,4 +93,3 @@ export default function SignupPage() {
     </main>
   );
 }
-

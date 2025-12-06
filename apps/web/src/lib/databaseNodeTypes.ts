@@ -11,4 +11,3 @@ export type DatabaseNodePayload = {
   status?: 'idle' | 'connected' | 'error';
   lastTestedAt?: string; // ISO timestamp
 };
-

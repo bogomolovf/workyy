@@ -158,8 +158,8 @@ services:
       - ./infra/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /var/www/workyy-landing/dist:/var/www/workyy-landing/dist:ro
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     depends_on:
       - web
       - realtime-server
@@ -223,4 +223,3 @@ After deployment, verify:
 - Implement authentication (Auth0 or custom JWT)
 - Add monitoring and logging
 - Set up CI/CD pipeline
-

@@ -1,21 +1,21 @@
-import { NodeToolbar } from "reactflow";
+import { NodeToolbar } from 'reactflow';
 
 const fontSizes = [28, 32, 36, 40, 44, 48];
 
 const fontFamilies = [
-  { value: "Inter, sans-serif", label: "Inter" },
-  { value: "Arial, sans-serif", label: "Arial" },
-  { value: "Georgia, serif", label: "Georgia" },
-  { value: "Monaco, monospace", label: "Monospace" },
+  { value: 'Inter, sans-serif', label: 'Inter' },
+  { value: 'Arial, sans-serif', label: 'Arial' },
+  { value: 'Georgia, serif', label: 'Georgia' },
+  { value: 'Monaco, monospace', label: 'Monospace' },
 ];
 
 const colors = [
-  "#FFB3BA", // пастельный розовый
-  "#FFDFBA", // пастельный персиковый
-  "#FFFFBA", // пастельный желтый
-  "#BAFFC9", // пастельный мятный
-  "#BAE1FF", // пастельный голубой
-  "#E0BBE4", // пастельный лавандовый
+  '#FFB3BA', // пастельный розовый
+  '#FFDFBA', // пастельный персиковый
+  '#FFFFBA', // пастельный желтый
+  '#BAFFC9', // пастельный мятный
+  '#BAE1FF', // пастельный голубой
+  '#E0BBE4', // пастельный лавандовый
 ];
 
 type StickyToolbarProps = {
@@ -116,8 +116,8 @@ export function StickyToolbar({
             }}
             className={`px-1.5 py-0.5 rounded text-xs font-semibold transition-colors nodrag ${
               isBold
-                ? "bg-indigo-100 text-indigo-700 border border-indigo-300"
-                : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
+                ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+                : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
             }`}
             title="Bold"
             aria-label="Toggle bold"
@@ -139,8 +139,8 @@ export function StickyToolbar({
             }}
             className={`px-1.5 py-0.5 rounded text-xs italic transition-colors nodrag ${
               isItalic
-                ? "bg-indigo-100 text-indigo-700 border border-indigo-300"
-                : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
+                ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+                : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
             }`}
             title="Italic"
             aria-label="Toggle italic"
@@ -165,7 +165,7 @@ export function StickyToolbar({
                 e.preventDefault();
               }}
               style={{ backgroundColor: color }}
-              className={`color-swatch nodrag ${color === activeColor ? "active" : ""}`}
+              className={`color-swatch nodrag ${color === activeColor ? 'active' : ''}`}
               aria-label={`Select color ${color}`}
             />
           ))}
@@ -174,4 +174,3 @@ export function StickyToolbar({
     </NodeToolbar>
   );
 }
-

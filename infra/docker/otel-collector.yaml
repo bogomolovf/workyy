@@ -15,4 +15,3 @@ service:
     metrics:
       receivers: [otlp]
       exporters: [logging]
-

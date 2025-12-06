@@ -10,4 +10,3 @@ export type PenLine = {
     height: number;
   };
 };
-

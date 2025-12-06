@@ -25,7 +25,7 @@ async function bootstrap() {
   // CORS configuration: allow requests from landing page and product app
   const landingOrigin = process.env.LANDING_ORIGIN ?? 'http://localhost:5173';
   const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:3000';
-  
+
   await fastify.register(cors, {
     origin: [landingOrigin, appOrigin],
     credentials: true,
@@ -50,22 +50,19 @@ async function bootstrap() {
   });
 
   // Authenticate decorator
-  fastify.decorate(
-    'authenticate',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      try {
-        const decoded = await request.jwtVerify<{ userId: string; email?: string }>();
-        request.user = decoded;
-      } catch (err) {
-        reply.code(401).send({
-          type: 'about:blank',
-          title: 'Unauthorized',
-          status: 401,
-          detail: 'Authentication required',
-        });
-      }
-    },
-  );
+  fastify.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const decoded = await request.jwtVerify<{ userId: string; email?: string }>();
+      request.user = decoded;
+    } catch (err) {
+      reply.code(401).send({
+        type: 'about:blank',
+        title: 'Unauthorized',
+        status: 401,
+        detail: 'Authentication required',
+      });
+    }
+  });
 
   await fastify.register(rateLimit, {
     max: 100,
@@ -88,4 +85,3 @@ async function bootstrap() {
 }
 
 bootstrap();
-

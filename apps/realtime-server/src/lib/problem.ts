@@ -22,4 +22,3 @@ export function sendProblem(reply: FastifyReply, problem: ProblemDetails) {
       errors: problem.errors,
     });
 }
-

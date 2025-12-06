@@ -13,50 +13,41 @@ const snapshotSchema = z.object({
 });
 
 export async function drawingRoutes(app: FastifyInstance) {
-  app.get(
-    '/boards/:boardId/drawing',
-    async (request, reply) => {
-      const { boardId } = paramsSchema.parse(request.params);
-      const drawing = await prisma.boardDrawing.findUnique({ where: { boardId } });
-      if (!drawing) {
-        return reply.code(204).send();
-      }
-      return {
-        snapshot: drawing.snapshot,
-        rev: drawing.rev,
-        updatedAt: drawing.updatedAt.toISOString(),
-      };
-    },
-  );
+  app.get('/boards/:boardId/drawing', async (request, reply) => {
+    const { boardId } = paramsSchema.parse(request.params);
+    const drawing = await prisma.boardDrawing.findUnique({ where: { boardId } });
+    if (!drawing) {
+      return reply.code(204).send();
+    }
+    return {
+      snapshot: drawing.snapshot,
+      rev: drawing.rev,
+      updatedAt: drawing.updatedAt.toISOString(),
+    };
+  });
 
-  app.put(
-    '/boards/:boardId/drawing',
-    async (request, reply) => {
-      const { boardId } = paramsSchema.parse(request.params);
-      const payload = snapshotSchema.parse(request.body);
+  app.put('/boards/:boardId/drawing', async (request, reply) => {
+    const { boardId } = paramsSchema.parse(request.params);
+    const payload = snapshotSchema.parse(request.body);
 
-      const existing = await prisma.boardDrawing.findUnique({ where: { boardId } });
-      if (existing && payload.rev !== existing.rev) {
-        return reply
-          .code(409)
-          .send({ detail: 'revision-conflict', expected: existing.rev });
-      }
+    const existing = await prisma.boardDrawing.findUnique({ where: { boardId } });
+    if (existing && payload.rev !== existing.rev) {
+      return reply.code(409).send({ detail: 'revision-conflict', expected: existing.rev });
+    }
 
-      const next = await prisma.boardDrawing.upsert({
-        where: { boardId },
-        create: {
-          boardId,
-          snapshot: payload.snapshot,
-          rev: payload.rev,
-        },
-        update: {
-          snapshot: payload.snapshot,
-          rev: payload.rev + 1,
-        },
-      });
+    const next = await prisma.boardDrawing.upsert({
+      where: { boardId },
+      create: {
+        boardId,
+        snapshot: payload.snapshot,
+        rev: payload.rev,
+      },
+      update: {
+        snapshot: payload.snapshot,
+        rev: payload.rev + 1,
+      },
+    });
 
-      return { rev: next.rev };
-    },
-  );
+    return { rev: next.rev };
+  });
 }
-

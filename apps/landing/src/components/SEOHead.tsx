@@ -1,23 +1,23 @@
-import { Helmet } from 'react-helmet-async'
-import { useLanguage } from '../contexts/LanguageContext'
-import { useLocation } from 'react-router-dom'
+import { Helmet } from 'react-helmet-async';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useLocation } from 'react-router-dom';
 
 interface SEOHeadProps {
-  title: string
-  description: string
-  path?: string
+  title: string;
+  description: string;
+  path?: string;
 }
 
 export const SEOHead = ({ title, description, path }: SEOHeadProps) => {
-  const { language } = useLanguage()
-  const location = useLocation()
-  const currentPath = path || location.pathname
+  const { language } = useLanguage();
+  const location = useLocation();
+  const currentPath = path || location.pathname;
 
   // Remove language prefix for base URL
-  const basePath = currentPath.replace(/^\/(en|ru)/, '') || '/home'
-  const baseUrl = 'https://workyy.com'
-  const enUrl = `${baseUrl}/en${basePath}`
-  const ruUrl = `${baseUrl}/ru${basePath}`
+  const basePath = currentPath.replace(/^\/(en|ru)/, '') || '/home';
+  const baseUrl = 'https://workyy.com';
+  const enUrl = `${baseUrl}/en${basePath}`;
+  const ruUrl = `${baseUrl}/ru${basePath}`;
 
   return (
     <Helmet>
@@ -29,6 +29,5 @@ export const SEOHead = ({ title, description, path }: SEOHeadProps) => {
       <link rel="alternate" hrefLang="x-default" href={enUrl} />
       <link rel="canonical" href={language === 'en' ? enUrl : ruUrl} />
     </Helmet>
-  )
-}
-
+  );
+};

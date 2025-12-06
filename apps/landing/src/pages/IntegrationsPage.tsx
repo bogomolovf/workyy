@@ -1,15 +1,15 @@
-import { useParams, Link } from 'react-router-dom'
-import { useLanguage } from '../contexts/LanguageContext'
-import { SEOHead } from '../components/SEOHead'
+import { useParams, Link } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
+import { SEOHead } from '../components/SEOHead';
 
 const IntegrationsPage = () => {
-  const { integration } = useParams<{ integration?: string }>()
-  const { language, content } = useLanguage()
-  const integrationsContent = content.integrations
+  const { integration } = useParams<{ integration?: string }>();
+  const { language, content } = useLanguage();
+  const integrationsContent = content.integrations;
 
   const getPath = (path: string) => {
-    return `/${language}${path}`
-  }
+    return `/${language}${path}`;
+  };
 
   const integrationSlugs = [
     { slug: 'postgres', key: 'postgres' as const },
@@ -17,9 +17,9 @@ const IntegrationsPage = () => {
     { slug: 'bigquery', key: 'bigquery' as const },
     { slug: 'mysql', key: 'mysql' as const },
     { slug: 'csv-files', key: 'csv' as const },
-  ]
-  const currentConfig = integrationSlugs.find((item) => item.slug === integration)
-  const currentIntegration = currentConfig ? integrationsContent[currentConfig.key] : null
+  ];
+  const currentConfig = integrationSlugs.find((item) => item.slug === integration);
+  const currentIntegration = currentConfig ? integrationsContent[currentConfig.key] : null;
 
   if (currentIntegration) {
     return (
@@ -34,11 +34,13 @@ const IntegrationsPage = () => {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.08),transparent_55%),radial-gradient(circle_at_bottom,_rgba(124,58,237,0.15),transparent_45%)] pointer-events-none" />
           <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <h1 className="text-4xl font-bold mb-6">{currentIntegration.title}</h1>
-            <p className="text-lg text-[var(--color-text-secondary)] leading-relaxed">{currentIntegration.description}</p>
+            <p className="text-lg text-[var(--color-text-secondary)] leading-relaxed">
+              {currentIntegration.description}
+            </p>
           </div>
         </main>
       </div>
-    )
+    );
   }
 
   return (
@@ -46,7 +48,7 @@ const IntegrationsPage = () => {
       <SEOHead
         title="Integrations"
         description="Connect Workyy to your data sources."
-          path={getPath('/integrations')}
+        path={getPath('/integrations')}
       />
 
       <main className="relative overflow-hidden py-20">
@@ -64,7 +66,7 @@ const IntegrationsPage = () => {
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {integrationSlugs.map(({ slug, key }) => {
-              const integ = integrationsContent[key]
+              const integ = integrationsContent[key];
               return (
                 <Link
                   key={slug}
@@ -72,16 +74,17 @@ const IntegrationsPage = () => {
                   className="surface-panel p-6 rounded-2xl border border-[var(--color-border)] hover:bg-[var(--color-bg-surface)]/80 transition-smooth"
                 >
                   <h3 className="text-xl font-semibold mb-2">{integ.title}</h3>
-                  <p className="text-sm text-[var(--color-text-secondary)]">{integ.description.substring(0, 150)}...</p>
+                  <p className="text-sm text-[var(--color-text-secondary)]">
+                    {integ.description.substring(0, 150)}...
+                  </p>
                 </Link>
-              )
+              );
             })}
           </div>
         </div>
       </main>
     </div>
-  )
-}
+  );
+};
 
-export default IntegrationsPage
-
+export default IntegrationsPage;

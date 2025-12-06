@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { useRef, useState, useMemo, type PointerEvent } from "react";
-import { useReactFlow, type ReactFlowInstance } from "reactflow";
+import { useRef, useState, useMemo, type PointerEvent } from 'react';
+import { useReactFlow, type ReactFlowInstance } from 'reactflow';
 
-import { pointsToPath, pathOptions } from "./path";
-import type { PenPoint } from "./types";
-import type { PenNodeType } from "./PenNode";
+import { pointsToPath, pathOptions } from './path';
+import type { PenPoint } from './types';
+import type { PenNodeType } from './PenNode';
 
 type FreehandOverlayProps = {
   onAddPenNode?: (node: PenNodeType) => void;
@@ -13,7 +13,7 @@ type FreehandOverlayProps = {
 
 function processPoints(
   points: PenPoint[],
-  screenToFlowPosition: ReactFlowInstance["screenToFlowPosition"],
+  screenToFlowPosition: ReactFlowInstance['screenToFlowPosition'],
 ) {
   // points в page coordinates (pageX/pageY), конвертируем в flow coordinates
   // screenToFlowPosition ожидает clientX/clientY (координаты относительно viewport)
@@ -28,7 +28,7 @@ function processPoints(
     // Конвертируем pageX/pageY в clientX/clientY
     const clientX = point[0] - window.scrollX;
     const clientY = point[1] - window.scrollY;
-    
+
     // Конвертируем client coordinates в flow coordinates
     const { x, y } = screenToFlowPosition({ x: clientX, y: clientY });
     x1 = Math.min(x1, x);
@@ -58,7 +58,7 @@ function processPoints(
   const finalWidth = Math.max(width, minSize);
   const finalHeight = Math.max(height, minSize);
 
-  console.log("processPoints result:", {
+  console.log('processPoints result:', {
     width,
     height,
     finalWidth,
@@ -85,9 +85,7 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
   function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
     (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
     // Используем pageX/pageY как в оригинале
-    const nextPoints = [
-      [e.pageX, e.pageY, e.pressure || 0.5],
-    ] satisfies PenPoint[];
+    const nextPoints = [[e.pageX, e.pageY, e.pressure || 0.5]] satisfies PenPoint[];
     pointRef.current = nextPoints;
     setPoints(nextPoints);
   }
@@ -96,10 +94,7 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
     if (e.buttons !== 1) return;
     const points = pointRef.current;
     // Используем pageX/pageY как в оригинале
-    const nextPoints = [
-      ...points,
-      [e.pageX, e.pageY, e.pressure || 0.5],
-    ] satisfies PenPoint[];
+    const nextPoints = [...points, [e.pageX, e.pageY, e.pressure || 0.5]] satisfies PenPoint[];
     pointRef.current = nextPoints;
     setPoints(nextPoints);
   }
@@ -109,7 +104,7 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
 
     // Используем актуальные точки из ref для надежности
     const finalPoints = pointRef.current;
-    
+
     // Ignore lines with too few points (accidental clicks)
     if (finalPoints.length < 3) {
       setPoints([]);
@@ -120,11 +115,11 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
     const processed = processPoints(finalPoints, screenToFlowPosition);
     const newNode: PenNodeType = {
       id: crypto.randomUUID(),
-      type: "pen",
+      type: 'pen',
       ...processed,
     };
 
-    console.log("Creating pen node:", {
+    console.log('Creating pen node:', {
       id: newNode.id,
       position: newNode.position,
       width: newNode.width,
@@ -170,13 +165,9 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
     >
       <svg>
         {previewPoints.length > 0 && (
-          <path
-            d={pointsToPath(previewPoints, viewport.zoom)}
-            fill="#ef4444"
-          />
+          <path d={pointsToPath(previewPoints, viewport.zoom)} fill="#ef4444" />
         )}
       </svg>
     </div>
   );
 }
-

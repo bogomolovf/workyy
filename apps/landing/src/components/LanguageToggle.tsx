@@ -1,33 +1,33 @@
-import { useLanguage } from '../contexts/LanguageContext'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLanguage } from '../contexts/LanguageContext';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 export const LanguageToggle = () => {
-  const { language, setLanguage } = useLanguage()
-  const location = useLocation()
-  const navigate = useNavigate()
+  const { language, setLanguage } = useLanguage();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const toggleLanguage = () => {
-    const newLang = language === 'en' ? 'ru' : 'en'
-    setLanguage(newLang)
+    const newLang = language === 'en' ? 'ru' : 'en';
+    setLanguage(newLang);
 
     // Preserve current path and anchor
-    const path = location.pathname
-    const hash = location.hash
-    let newPath = path
+    const path = location.pathname;
+    const hash = location.hash;
+    let newPath = path;
 
     if (path.startsWith('/en/')) {
-      newPath = path.replace('/en/', '/ru/')
+      newPath = path.replace('/en/', '/ru/');
     } else if (path.startsWith('/ru/')) {
-      newPath = path.replace('/ru/', '/en/')
+      newPath = path.replace('/ru/', '/en/');
     } else if (path === '/' || path === '') {
-      newPath = `/${newLang}/home`
+      newPath = `/${newLang}/home`;
     } else {
       // If no language prefix, add one
-      newPath = `/${newLang}${path}`
+      newPath = `/${newLang}${path}`;
     }
 
-    navigate(newPath + hash)
-  }
+    navigate(newPath + hash);
+  };
 
   return (
     <button
@@ -36,6 +36,5 @@ export const LanguageToggle = () => {
     >
       {language === 'en' ? 'RU' : 'EN'}
     </button>
-  )
-}
-
+  );
+};

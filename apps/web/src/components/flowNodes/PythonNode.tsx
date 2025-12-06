@@ -1,12 +1,12 @@
-import dynamic from "next/dynamic";
-import { useMemo } from "react";
-import type { NodeProps } from "reactflow";
-import PlotlyPreview from "./PlotlyPreview";
-import { InteractiveResultTable } from "../InteractiveResultTable";
-import { useExecutionStore } from "../../state/executionStore";
-import type { NodeStatus } from "../../state/executionStore";
+import dynamic from 'next/dynamic';
+import { useMemo } from 'react';
+import type { NodeProps } from 'reactflow';
+import PlotlyPreview from './PlotlyPreview';
+import { InteractiveResultTable } from '../InteractiveResultTable';
+import { useExecutionStore } from '../../state/executionStore';
+import type { NodeStatus } from '../../state/executionStore';
 
-const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
 });
 
@@ -23,27 +23,38 @@ type StatusBadgeProps = {
 function StatusBadge({ status }: StatusBadgeProps) {
   const { label, className } = useMemo(() => {
     switch (status) {
-      case "running":
-        return { label: "Running", className: "bg-amber-500/20 text-amber-200 border border-amber-500/40" };
-      case "success":
-        return { label: "Success", className: "bg-emerald-500/20 text-emerald-200 border border-emerald-500/40" };
-      case "error":
-        return { label: "Error", className: "bg-rose-500/20 text-rose-200 border border-rose-500/40" };
+      case 'running':
+        return {
+          label: 'Running',
+          className: 'bg-amber-500/20 text-amber-200 border border-amber-500/40',
+        };
+      case 'success':
+        return {
+          label: 'Success',
+          className: 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40',
+        };
+      case 'error':
+        return {
+          label: 'Error',
+          className: 'bg-rose-500/20 text-rose-200 border border-rose-500/40',
+        };
       default:
-        return { label: "Idle", className: "bg-slate-700 text-slate-200" };
+        return { label: 'Idle', className: 'bg-slate-700 text-slate-200' };
     }
   }, [status]);
 
-  return <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${className}`}>{label}</span>;
+  return (
+    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${className}`}>{label}</span>
+  );
 }
 
 export function PythonNode({ data }: NodeProps<PythonNodeData>) {
   const entry = useExecutionStore((state) => state.entries[data.nodeId]);
-  const status = entry?.status ?? "idle";
-  const code = entry?.code ?? "";
+  const status = entry?.status ?? 'idle';
+  const code = entry?.code ?? '';
   const error = entry?.error ?? null;
-  const output = entry?.output?.kind === "python" ? entry.output.result : undefined;
-  const stderrContent = output?.stderr ?? "";
+  const output = entry?.output?.kind === 'python' ? entry.output.result : undefined;
+  const stderrContent = output?.stderr ?? '';
   const hasWarnings = Boolean(stderrContent.trim());
   const dismissError = useExecutionStore((state) => state.dismissError);
   const dismissWarnings = useExecutionStore((state) => state.dismissWarnings);
@@ -54,15 +65,17 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
   return (
     <div className="w-[380px] rounded-2xl border border-slate-700 bg-slate-900/80 shadow-lg">
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Python Node</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Python Node
+        </span>
         <div className="flex items-center gap-2">
           <StatusBadge status={status} />
           <button
             className="rounded-md bg-indigo-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-900/60"
             onClick={data.onRun}
-            disabled={status === "running"}
+            disabled={status === 'running'}
           >
-            {status === "running" ? "Running…" : "Run"}
+            {status === 'running' ? 'Running…' : 'Run'}
           </button>
         </div>
       </div>
@@ -71,12 +84,12 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
         <MonacoEditor
           language="python"
           value={code}
-          onChange={(value) => data.onChangeCode(value ?? "")}
+          onChange={(value) => data.onChangeCode(value ?? '')}
           theme="vs-dark"
           options={{
             minimap: { enabled: false },
             fontSize: 13,
-            lineNumbers: "off",
+            lineNumbers: 'off',
             scrollBeyondLastLine: false,
           }}
         />
@@ -100,7 +113,7 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
         <section>
           <span className="text-[10px] uppercase tracking-wide text-slate-500">Stdout</span>
           <div className="mt-1 rounded-md border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 whitespace-pre-wrap">
-            {output?.stdout?.trim() ? output.stdout : "(no output)"}
+            {output?.stdout?.trim() ? output.stdout : '(no output)'}
           </div>
         </section>
 
@@ -136,7 +149,9 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
 
         {output?.plotJson && (
           <section>
-            <span className="text-[10px] uppercase tracking-wide text-slate-500">Visualization</span>
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">
+              Visualization
+            </span>
             <div className="mt-1 rounded-md border border-slate-800 bg-slate-950/60">
               <PlotlyPreview plotJson={output.plotJson} />
             </div>

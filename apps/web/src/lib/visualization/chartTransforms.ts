@@ -1,11 +1,11 @@
-import type { SqlResult } from "../../state/executionStore";
+import type { SqlResult } from '../../state/executionStore';
 
 /**
  * Create bins for histogram
  */
 export function createBins(
   values: number[],
-  binCount: number = 20
+  binCount: number = 20,
 ): Array<{ start: number; end: number; count: number }> {
   if (values.length === 0) return [];
 
@@ -24,10 +24,7 @@ export function createBins(
 
   // Count values in each bin
   for (const value of values) {
-    const binIndex = Math.min(
-      Math.floor((value - min) / binWidth),
-      binCount - 1
-    );
+    const binIndex = Math.min(Math.floor((value - min) / binWidth), binCount - 1);
     bins[binIndex].count++;
   }
 
@@ -54,19 +51,13 @@ export function calculateBoxplotStats(values: number[]): {
   const min = sorted[0];
   const max = sorted[n - 1];
 
-  const median = n % 2 === 0
-    ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
-    : sorted[Math.floor(n / 2)];
+  const median = n % 2 === 0 ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2 : sorted[Math.floor(n / 2)];
 
   const q1Index = Math.floor(n * 0.25);
-  const q1 = n % 4 === 0
-    ? (sorted[q1Index - 1] + sorted[q1Index]) / 2
-    : sorted[q1Index];
+  const q1 = n % 4 === 0 ? (sorted[q1Index - 1] + sorted[q1Index]) / 2 : sorted[q1Index];
 
   const q3Index = Math.floor(n * 0.75);
-  const q3 = n % 4 === 0
-    ? (sorted[q3Index - 1] + sorted[q3Index]) / 2
-    : sorted[q3Index];
+  const q3 = n % 4 === 0 ? (sorted[q3Index - 1] + sorted[q3Index]) / 2 : sorted[q3Index];
 
   return { min, q1, median, q3, max };
 }
@@ -74,19 +65,16 @@ export function calculateBoxplotStats(values: number[]): {
 /**
  * Group data by facet column and return partitioned datasets
  */
-export function partitionByFacet(
-  data: SqlResult,
-  facetColumn: string
-): Map<string, SqlResult> {
+export function partitionByFacet(data: SqlResult, facetColumn: string): Map<string, SqlResult> {
   const facetIndex = data.columns.indexOf(facetColumn);
   if (facetIndex < 0) {
     return new Map();
   }
 
-  const partitions = new Map<string, SqlResult["rows"]>();
+  const partitions = new Map<string, SqlResult['rows']>();
 
   for (const row of data.rows) {
-    const facetValue = String(row[facetIndex] ?? "");
+    const facetValue = String(row[facetIndex] ?? '');
     if (!partitions.has(facetValue)) {
       partitions.set(facetValue, []);
     }
@@ -122,4 +110,3 @@ export function calculateFacetGrid(facetCount: number): {
   const rows = Math.ceil(facetCount / cols);
   return { rows, cols };
 }
-

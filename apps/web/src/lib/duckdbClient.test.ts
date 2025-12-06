@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
-import * as duckdbClient from "./duckdbClient";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import * as duckdbClient from './duckdbClient';
 
-const DEMO_BOARD_ID = "demo-board-id";
-const OTHER_BOARD_ID = "other-board-id";
+const DEMO_BOARD_ID = 'demo-board-id';
+const OTHER_BOARD_ID = 'other-board-id';
 
-describe("duckdbClient dataset isolation", () => {
+describe('duckdbClient dataset isolation', () => {
   let connection: { query: ReturnType<typeof vi.fn> };
   let currentTables: string[];
 
@@ -20,7 +20,7 @@ describe("duckdbClient dataset isolation", () => {
     currentTables = [];
     connection = {
       query: vi.fn(async (sql: string) => {
-        if (typeof sql === "string" && sql.includes("FROM information_schema.tables")) {
+        if (typeof sql === 'string' && sql.includes('FROM information_schema.tables')) {
           return {
             toArray: () => currentTables.map((table_name) => ({ table_name })),
           };
@@ -38,14 +38,16 @@ describe("duckdbClient dataset isolation", () => {
     window.localStorage.clear();
   });
 
-  it("drops all user tables in resetUserTables", async () => {
-    currentTables = ["demo_data", "team_metrics", "board_data"];
+  it('drops all user tables in resetUserTables', async () => {
+    currentTables = ['demo_data', 'team_metrics', 'board_data'];
 
     await duckdbClient.resetUserTables(connection as any);
 
     const dropCalls = connection.query.mock.calls
       .map(([sql]) => sql)
-      .filter((sql): sql is string => typeof sql === "string" && sql.startsWith("DROP TABLE IF EXISTS"));
+      .filter(
+        (sql): sql is string => typeof sql === 'string' && sql.startsWith('DROP TABLE IF EXISTS'),
+      );
 
     expect(dropCalls).toHaveLength(3);
     expect(dropCalls[0]).toBe('DROP TABLE IF EXISTS "demo_data";');
@@ -53,40 +55,44 @@ describe("duckdbClient dataset isolation", () => {
     expect(dropCalls[2]).toBe('DROP TABLE IF EXISTS "board_data";');
   });
 
-  it("resets user tables before restoring datasets for a different board", async () => {
+  it('resets user tables before restoring datasets for a different board', async () => {
     const datasetA = [
       {
-        tableName: "sales_a",
-        columns: ["region", "revenue"],
+        tableName: 'sales_a',
+        columns: ['region', 'revenue'],
         rows: [
-          ["EU", "100"],
-          ["US", "200"],
+          ['EU', '100'],
+          ['US', '200'],
         ],
       },
     ];
     const datasetB = [
       {
-        tableName: "sales_b",
-        columns: ["region", "revenue"],
-        rows: [
-          ["APAC", "300"],
-        ],
+        tableName: 'sales_b',
+        columns: ['region', 'revenue'],
+        rows: [['APAC', '300']],
       },
     ];
 
-    window.localStorage.setItem(`workyy_board_datasets_v2:${OTHER_BOARD_ID}`, JSON.stringify(datasetA));
-    window.localStorage.setItem(`workyy_board_datasets_v2:${OTHER_BOARD_ID}-2`, JSON.stringify(datasetB));
+    window.localStorage.setItem(
+      `workyy_board_datasets_v2:${OTHER_BOARD_ID}`,
+      JSON.stringify(datasetA),
+    );
+    window.localStorage.setItem(
+      `workyy_board_datasets_v2:${OTHER_BOARD_ID}-2`,
+      JSON.stringify(datasetB),
+    );
 
-    currentTables = ["demo_data", "legacy_temp"];
+    currentTables = ['demo_data', 'legacy_temp'];
     await duckdbClient.restoreDatasetsForBoard(OTHER_BOARD_ID);
 
-    currentTables = ["demo_data", "sales_a"];
+    currentTables = ['demo_data', 'sales_a'];
     connection.query.mockClear();
 
     await duckdbClient.restoreDatasetsForBoard(`${OTHER_BOARD_ID}-2`);
 
     const dropDemoCall = connection.query.mock.calls.some(
-      ([sql]) => typeof sql === "string" && sql.startsWith('DROP TABLE IF EXISTS "demo_data"'),
+      ([sql]) => typeof sql === 'string' && sql.startsWith('DROP TABLE IF EXISTS "demo_data"'),
     );
     expect(dropDemoCall).toBe(true);
 
@@ -94,7 +100,9 @@ describe("duckdbClient dataset isolation", () => {
       .map(([sql]) => sql)
       .filter(
         (sql): sql is string =>
-          typeof sql === "string" && !sql.includes("information_schema") && !sql.includes('"demo_data"'),
+          typeof sql === 'string' &&
+          !sql.includes('information_schema') &&
+          !sql.includes('"demo_data"'),
       );
 
     expect(userSqlCalls).toHaveLength(4);
@@ -102,26 +110,27 @@ describe("duckdbClient dataset isolation", () => {
     expect(userSqlCalls[1]).toBe('DROP TABLE IF EXISTS "sales_b";');
     expect(userSqlCalls[2]).toMatch('CREATE TABLE "sales_b"');
     expect(userSqlCalls[3]).toMatch('INSERT INTO "sales_b" VALUES');
-    expect(
-      userSqlCalls.some((sql) => sql.startsWith('CREATE TABLE "demo_data"')),
-    ).toBe(false);
+    expect(userSqlCalls.some((sql) => sql.startsWith('CREATE TABLE "demo_data"'))).toBe(false);
   });
 
-  it("keeps demo_data only for the demo board", async () => {
+  it('keeps demo_data only for the demo board', async () => {
     currentTables = [];
     await duckdbClient.restoreDatasetsForBoard(DEMO_BOARD_ID);
     const createCalls = connection.query.mock.calls
       .map(([sql]) => sql)
-      .filter((sql): sql is string => typeof sql === "string" && sql.includes('CREATE TABLE "demo_data"'));
+      .filter(
+        (sql): sql is string => typeof sql === 'string' && sql.includes('CREATE TABLE "demo_data"'),
+      );
     expect(createCalls.length).toBeGreaterThan(0);
 
     connection.query.mockClear();
-    currentTables = ["demo_data"];
-    await duckdbClient.restoreDatasetsForBoard("regular-board");
+    currentTables = ['demo_data'];
+    await duckdbClient.restoreDatasetsForBoard('regular-board');
     const createCallsRegular = connection.query.mock.calls
       .map(([sql]) => sql)
-      .filter((sql): sql is string => typeof sql === "string" && sql.includes('CREATE TABLE "demo_data"'));
+      .filter(
+        (sql): sql is string => typeof sql === 'string' && sql.includes('CREATE TABLE "demo_data"'),
+      );
     expect(createCallsRegular).toHaveLength(0);
   });
 });
-

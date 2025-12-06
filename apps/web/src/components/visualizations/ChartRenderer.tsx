@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { useMemo, useEffect, useRef } from "react";
-import type { SqlResult } from "../../state/executionStore";
-import type { ChartType, PlotConfig } from "../../lib/visualization/chartTypes";
-import { buildEChartsConfig } from "../../lib/visualization/chartBuilder";
-import { EChartsRenderer } from "./echarts/EChartsRenderer";
-import { validatePlotConfig } from "../../lib/visualization/dataAnalyzer";
+import { useMemo, useEffect, useRef } from 'react';
+import type { SqlResult } from '../../state/executionStore';
+import type { ChartType, PlotConfig } from '../../lib/visualization/chartTypes';
+import { buildEChartsConfig } from '../../lib/visualization/chartBuilder';
+import { EChartsRenderer } from './echarts/EChartsRenderer';
+import { validatePlotConfig } from '../../lib/visualization/dataAnalyzer';
 
 type ChartRendererProps = {
   chartType: ChartType;
@@ -13,7 +13,7 @@ type ChartRendererProps = {
   data: SqlResult | undefined;
   width?: number;
   height?: number;
-  theme?: "light" | "dark";
+  theme?: 'light' | 'dark';
   refreshToken?: number; // Token to force refresh without remounting
   onError?: (error: Error) => void;
   onEChartsInstance?: (instance: any | null) => void;
@@ -25,7 +25,7 @@ export function ChartRenderer({
   data,
   width = 400,
   height = 300,
-  theme = "light",
+  theme = 'light',
   refreshToken = 0,
   onError,
   onEChartsInstance,
@@ -80,7 +80,10 @@ export function ChartRenderer({
   // Now we can do conditional returns after all hooks
   if (!data) {
     return (
-      <div className="flex h-full w-full items-center justify-center text-sm text-slate-500" style={{ width, height }}>
+      <div
+        className="flex h-full w-full items-center justify-center text-sm text-slate-500"
+        style={{ width, height }}
+      >
         <div className="text-center">
           <p className="mb-1 font-medium">No data available</p>
           <p className="text-xs">Connect a SQL or Python node and run it to see data.</p>
@@ -93,7 +96,10 @@ export function ChartRenderer({
   const validation = validatePlotConfig(data, config);
   if (!validation.valid) {
     return (
-      <div className="flex h-full w-full items-center justify-center text-sm text-rose-500" style={{ width, height }}>
+      <div
+        className="flex h-full w-full items-center justify-center text-sm text-rose-500"
+        style={{ width, height }}
+      >
         <div className="text-center">
           <p className="mb-1 font-medium">Invalid configuration</p>
           <p className="text-xs">{validation.message}</p>
@@ -104,7 +110,10 @@ export function ChartRenderer({
 
   if (echartsOption === null) {
     return (
-      <div className="flex h-full w-full items-center justify-center text-sm text-rose-500" style={{ width, height }}>
+      <div
+        className="flex h-full w-full items-center justify-center text-sm text-rose-500"
+        style={{ width, height }}
+      >
         <div className="text-center">
           <p className="mb-1 font-medium">Failed to render chart</p>
         </div>
@@ -119,11 +128,10 @@ export function ChartRenderer({
       option={echartsOption}
       width={width}
       height={height}
-      theme={theme || config.styling.theme || "light"}
+      theme={theme || config.styling.theme || 'light'}
       refreshToken={refreshToken}
       onError={onError}
       onInstance={onEChartsInstance}
     />
   );
 }
-

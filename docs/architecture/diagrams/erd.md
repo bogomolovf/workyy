@@ -36,4 +36,3 @@ erDiagram
   Secret }o--|| Workspace : workspace
   RetentionPolicy }o--|| Board : scopedBoard
 ```
-

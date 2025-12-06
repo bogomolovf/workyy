@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import type { NodeProps } from "reactflow";
-import { Handle, Position } from "reactflow";
-import type { DatabaseNodePayload } from "../../lib/databaseNodeTypes";
-import { DatabaseConnectionModal } from "../DatabaseConnectionModal";
+import { useState } from 'react';
+import type { NodeProps } from 'reactflow';
+import { Handle, Position } from 'reactflow';
+import type { DatabaseNodePayload } from '../../lib/databaseNodeTypes';
+import { DatabaseConnectionModal } from '../DatabaseConnectionModal';
 
 type DatabaseNodeData = {
   nodeId: string;
@@ -13,44 +13,44 @@ type DatabaseNodeData = {
   payload?: Record<string, unknown>;
 };
 
-function StatusBadge({ status }: { status: "idle" | "connected" | "error" }) {
+function StatusBadge({ status }: { status: 'idle' | 'connected' | 'error' }) {
   const { label, className } = (() => {
     switch (status) {
-      case "connected":
+      case 'connected':
         return {
-          label: "Connected",
-          className: "bg-emerald-50 text-emerald-600 border border-emerald-200",
+          label: 'Connected',
+          className: 'bg-emerald-50 text-emerald-600 border border-emerald-200',
         };
-      case "error":
+      case 'error':
         return {
-          label: "Error",
-          className: "bg-rose-50 text-rose-600 border border-rose-200",
+          label: 'Error',
+          className: 'bg-rose-50 text-rose-600 border border-rose-200',
         };
       default:
         return {
-          label: "Idle",
-          className: "bg-slate-100 text-slate-500 border border-slate-200",
+          label: 'Idle',
+          className: 'bg-slate-100 text-slate-500 border border-slate-200',
         };
     }
   })();
 
   return (
-    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${className}`}>
-      {label}
-    </span>
+    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${className}`}>{label}</span>
   );
 }
 
 export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
-  const payload = (data.payload as DatabaseNodePayload | undefined) ?? {
-    connectionName: "New Database",
-    host: "",
-    port: 5432,
-    database: "",
-    username: "",
-    ssl: false,
-    status: "idle",
-  } satisfies DatabaseNodePayload;
+  const payload =
+    (data.payload as DatabaseNodePayload | undefined) ??
+    ({
+      connectionName: 'New Database',
+      host: '',
+      port: 5432,
+      database: '',
+      username: '',
+      ssl: false,
+      status: 'idle',
+    } satisfies DatabaseNodePayload);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -58,7 +58,7 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
     <>
       <div
         className={`relative rounded-lg border bg-gradient-to-br from-slate-50 to-slate-100 shadow-lg transition-all ${
-          selected ? "ring-2 ring-indigo-400" : ""
+          selected ? 'ring-2 ring-indigo-400' : ''
         }`}
         style={{ width: 280 }}
       >
@@ -70,11 +70,11 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
           style={{
             width: 16,
             height: 16,
-            borderRadius: "9999px",
-            background: "#6366f1",
+            borderRadius: '9999px',
+            background: '#6366f1',
             right: -8,
-            top: "50%",
-            transform: "translate(50%, -50%)",
+            top: '50%',
+            transform: 'translate(50%, -50%)',
             opacity: selected ? 1 : 0,
             pointerEvents: selected ? 'auto' : 'none',
           }}
@@ -102,7 +102,7 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
               </svg>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-900 truncate">
-                  {payload.connectionName || "New Database"}
+                  {payload.connectionName || 'New Database'}
                 </p>
                 {payload.host && (
                   <p className="text-xs text-slate-500 truncate">
@@ -111,7 +111,7 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
                 )}
               </div>
             </div>
-            <StatusBadge status={payload.status ?? "idle"} />
+            <StatusBadge status={payload.status ?? 'idle'} />
           </div>
           <button
             onClick={() => setIsModalOpen(true)}
@@ -134,4 +134,3 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
     </>
   );
 }
-

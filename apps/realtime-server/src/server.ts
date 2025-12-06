@@ -19,4 +19,3 @@ export async function createServer(app: FastifyInstance) {
     app.log.info({ address }, 'Realtime server ready');
   });
 }
-

@@ -1,14 +1,15 @@
-import { useLanguage } from '../contexts/LanguageContext'
-import { SEOHead } from '../components/SEOHead'
-import { AnimatedSection } from '../components/ui/AnimatedSection'
-import { AnimatedCard } from '../components/ui/AnimatedCard'
-import { PRODUCT_SIGNUP_URL, PRODUCT_HOME_URL } from '../config/appConfig'
+import { useLanguage } from '../contexts/LanguageContext';
+import { SEOHead } from '../components/SEOHead';
+import { AnimatedSection } from '../components/ui/AnimatedSection';
+import { AnimatedCard } from '../components/ui/AnimatedCard';
+import { PRODUCT_SIGNUP_URL, PRODUCT_HOME_URL } from '../config/appConfig';
 
 const heroContent = {
   en: {
     eyebrow: 'Analytics Canvas',
     headline: 'SQL, Python, and visualizations on one infinite canvas',
-    subheadline: 'Build data pipelines, create visualizations, and collaborate with your team—all in one place.',
+    subheadline:
+      'Build data pipelines, create visualizations, and collaborate with your team—all in one place.',
     ctas: {
       primary: 'Start for free',
       secondary: 'See demo boards',
@@ -18,14 +19,15 @@ const heroContent = {
   ru: {
     eyebrow: 'Канва для аналитики',
     headline: 'SQL, Python и визуализации на одном бесконечном полотне',
-    subheadline: 'Создавайте пайплайны данных, визуализации и работайте вместе с командой — всё в одном месте.',
+    subheadline:
+      'Создавайте пайплайны данных, визуализации и работайте вместе с командой — всё в одном месте.',
     ctas: {
       primary: 'Попробовать бесплатно',
       secondary: 'Посмотреть демо-доски',
     },
     trust: 'Без карты',
   },
-}
+};
 
 const socialProofLogos = [
   'Helios Pay',
@@ -34,7 +36,7 @@ const socialProofLogos = [
   'Atlas Freight',
   'Bloomly Health',
   'Voltwave Gaming',
-]
+];
 
 const valueProps = {
   en: [
@@ -73,7 +75,7 @@ const valueProps = {
       description: 'Делитесь досками, комментируйте и работайте вместе в реальном времени.',
     },
   ],
-}
+};
 
 const howSteps = {
   en: [
@@ -120,7 +122,7 @@ const howSteps = {
       icon: '👥',
     },
   ],
-}
+};
 
 const featureGroups = {
   en: [
@@ -191,15 +193,10 @@ const featureGroups = {
     },
     {
       title: 'Управление',
-      bullets: [
-        'Ролевой доступ',
-        'Журналы аудита',
-        'Плановые обновления',
-        'Экспорт в PDF/PNG',
-      ],
+      bullets: ['Ролевой доступ', 'Журналы аудита', 'Плановые обновления', 'Экспорт в PDF/PNG'],
     },
   ],
-}
+};
 
 const personas = {
   en: [
@@ -238,7 +235,7 @@ const personas = {
       description: 'Начинайте с шаблонов и подключайте таблицы.',
     },
   ],
-}
+};
 
 const pricingPlans = {
   en: [
@@ -275,7 +272,7 @@ const pricingPlans = {
       bullets: ['SSO/SAML', 'Журналы аудита', 'Премиум поддержка'],
     },
   ],
-}
+};
 
 const faqs = {
   en: [
@@ -311,7 +308,8 @@ const faqs = {
     },
     {
       question: 'Могу ли я контролировать доступ?',
-      answer: 'Устанавливайте роли на доску (просмотр, комментарии, редактирование) и аудируйте взаимодействия.',
+      answer:
+        'Устанавливайте роли на доску (просмотр, комментарии, редактирование) и аудируйте взаимодействия.',
     },
     {
       question: 'Есть ли бесплатный пробный период?',
@@ -319,24 +317,25 @@ const faqs = {
     },
     {
       question: 'Как работает коллаборация?',
-      answer: 'Многокурсорное редактирование, комментарии и обновления в реальном времени синхронизируют всех.',
+      answer:
+        'Многокурсорное редактирование, комментарии и обновления в реальном времени синхронизируют всех.',
     },
   ],
-}
+};
 
 const HomePage = () => {
-  const { language } = useLanguage()
-  const lang = language as 'en' | 'ru'
+  const { language } = useLanguage();
+  const lang = language as 'en' | 'ru';
 
-  const getPath = (path: string) => `/${language}${path}`
+  const getPath = (path: string) => `/${language}${path}`;
 
-  const hero = heroContent[lang]
-  const valuePropsList = valueProps[lang]
-  const howStepsList = howSteps[lang]
-  const featureGroupsList = featureGroups[lang]
-  const personasList = personas[lang]
-  const pricingPlansList = pricingPlans[lang]
-  const faqsList = faqs[lang]
+  const hero = heroContent[lang];
+  const valuePropsList = valueProps[lang];
+  const howStepsList = howSteps[lang];
+  const featureGroupsList = featureGroups[lang];
+  const personasList = personas[lang];
+  const pricingPlansList = pricingPlans[lang];
+  const faqsList = faqs[lang];
 
   return (
     <>
@@ -372,9 +371,14 @@ const HomePage = () => {
           </AnimatedSection>
 
           {/* Trusted by */}
-          <AnimatedSection className="section social-proof-section py-12 bg-wy-bg-subtle" id="trusted">
+          <AnimatedSection
+            className="section social-proof-section py-12 bg-wy-bg-subtle"
+            id="trusted"
+          >
             <div className="section-inner text-center space-y-4">
-              <p className="text-sm text-wy-muted uppercase tracking-wide">Trusted by data-driven teams</p>
+              <p className="text-sm text-wy-muted uppercase tracking-wide">
+                Trusted by data-driven teams
+              </p>
               <div className="logo-row">
                 {socialProofLogos.map((logo) => (
                   <span key={logo} className="text-wy-muted font-medium">
@@ -390,7 +394,9 @@ const HomePage = () => {
             <div className="section-inner">
               <div className="section-heading text-center mb-12">
                 <p className="eyebrow text-wy-muted">Why Workyy</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">Everything you need in one place</h2>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">
+                  Everything you need in one place
+                </h2>
               </div>
               <div className="cards-grid cards-grid-4">
                 {valuePropsList.map((card, index) => (
@@ -404,11 +410,16 @@ const HomePage = () => {
           </AnimatedSection>
 
           {/* How it works */}
-          <AnimatedSection className="section how-it-works py-20 md:py-28 bg-wy-bg-subtle" id="how-it-works">
+          <AnimatedSection
+            className="section how-it-works py-20 md:py-28 bg-wy-bg-subtle"
+            id="how-it-works"
+          >
             <div className="section-inner">
               <div className="section-heading text-center mb-12">
                 <p className="eyebrow text-wy-muted">How it works</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">Get started in four steps</h2>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">
+                  Get started in four steps
+                </h2>
               </div>
               <div className="cards-grid cards-grid-4">
                 {howStepsList.map((step, index) => (
@@ -429,7 +440,9 @@ const HomePage = () => {
             <div className="section-inner">
               <div className="section-heading text-center mb-12">
                 <p className="eyebrow text-wy-muted">Features</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">Powerful tools for data teams</h2>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">
+                  Powerful tools for data teams
+                </h2>
               </div>
               <div className="cards-grid cards-grid-2">
                 {featureGroupsList.map((group, index) => (
@@ -447,7 +460,10 @@ const HomePage = () => {
           </AnimatedSection>
 
           {/* Use Cases / Personas */}
-          <AnimatedSection className="section personas py-20 md:py-28 bg-wy-bg-subtle" id="personas">
+          <AnimatedSection
+            className="section personas py-20 md:py-28 bg-wy-bg-subtle"
+            id="personas"
+          >
             <div className="section-inner">
               <div className="section-heading text-center mb-12">
                 <p className="eyebrow text-wy-muted">Built for</p>
@@ -469,7 +485,9 @@ const HomePage = () => {
             <div className="section-inner">
               <div className="section-heading text-center mb-12">
                 <p className="eyebrow text-wy-muted">Pricing</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">Plans that scale with your team</h2>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">
+                  Plans that scale with your team
+                </h2>
               </div>
               <div className="cards-grid pricing-grid">
                 {pricingPlansList.map((plan, index) => (
@@ -539,7 +557,7 @@ const HomePage = () => {
         </main>
       </div>
     </>
-  )
-}
+  );
+};
 
-export default HomePage
+export default HomePage;

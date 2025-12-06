@@ -29,4 +29,3 @@ export class DependencyResolver {
     return getDownstreamNodeIds(nodeId, dagEdges);
   }
 }
-

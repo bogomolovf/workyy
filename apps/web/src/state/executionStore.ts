@@ -1,7 +1,7 @@
-import { create } from "zustand";
-import type { ChartType, PlotConfig } from "../lib/visualization/chartTypes";
+import { create } from 'zustand';
+import type { ChartType, PlotConfig } from '../lib/visualization/chartTypes';
 
-export type NodeStatus = "idle" | "running" | "success" | "error";
+export type NodeStatus = 'idle' | 'running' | 'success' | 'error';
 
 export type SqlResult = {
   columns: string[];
@@ -21,15 +21,15 @@ export type PlotResult = {
   config: PlotConfig;
   inputData: SqlResult;
   rendered?: {
-    library: "echarts";
+    library: 'echarts';
     spec: unknown;
   };
 };
 
 type NodeExecutionOutput =
-  | { kind: "sql"; result: SqlResult; code: string }
-  | { kind: "python"; result: PythonResult; code: string }
-  | { kind: "plot"; result: PlotResult; code?: string };
+  | { kind: 'sql'; result: SqlResult; code: string }
+  | { kind: 'python'; result: PythonResult; code: string }
+  | { kind: 'plot'; result: PlotResult; code?: string };
 
 type HiddenOutputs = {
   error?: boolean;
@@ -37,7 +37,7 @@ type HiddenOutputs = {
 };
 
 export type ExecutionEntry = {
-  nodeType: "sql" | "python" | "table" | "plot";
+  nodeType: 'sql' | 'python' | 'table' | 'plot';
   status: NodeStatus;
   code: string;
   error?: string | null;
@@ -48,29 +48,29 @@ export type ExecutionEntry = {
 };
 
 const DEFAULT_PYTHON_TEMPLATE = [
-  "import pandas as pd",
-  "import plotly.express as px",
-  "",
-  "if df is None:",
+  'import pandas as pd',
+  'import plotly.express as px',
+  '',
+  'if df is None:',
   "    print('⚠️ Run the upstream SQL node first.')",
-  "    result = None",
-  "else:",
+  '    result = None',
+  'else:',
   "    summary = df.groupby('region', as_index=False)['revenue'].sum()",
-  "    result = summary",
+  '    result = summary',
   "    plot = px.bar(summary, x='region', y='revenue', title='Revenue by region')",
-].join("\n");
+].join('\n');
 
-const HIDDEN_ERROR_KEY_PREFIX = "workyy:python:hidden-error:";
-const HIDDEN_WARNING_KEY_PREFIX = "workyy:python:hidden-warning:";
+const HIDDEN_ERROR_KEY_PREFIX = 'workyy:python:hidden-error:';
+const HIDDEN_WARNING_KEY_PREFIX = 'workyy:python:hidden-warning:';
 
 function hasBrowserStorage() {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
 function readHiddenFlag(key: string): boolean | undefined {
   if (!hasBrowserStorage()) return undefined;
   try {
-    return window.localStorage.getItem(key) === "1" ? true : undefined;
+    return window.localStorage.getItem(key) === '1' ? true : undefined;
   } catch {
     return undefined;
   }
@@ -80,7 +80,7 @@ function writeHiddenFlag(key: string, value: boolean) {
   if (!hasBrowserStorage()) return;
   try {
     if (value) {
-      window.localStorage.setItem(key, "1");
+      window.localStorage.setItem(key, '1');
     } else {
       window.localStorage.removeItem(key);
     }
@@ -112,7 +112,7 @@ function persistHiddenOutputs(nodeId: string, hiddenOutputs?: HiddenOutputs) {
 
 function normalizeMultiline(value?: string) {
   if (!value) return value;
-  return value.replace(/\r\n/g, "\n").replace(/\\n/g, "\n");
+  return value.replace(/\r\n/g, '\n').replace(/\\n/g, '\n');
 }
 
 export type ExecutionStoreState = {
@@ -120,13 +120,13 @@ export type ExecutionStoreState = {
   initFromNodes: (
     nodes: Array<{
       id: string;
-      type: "sql" | "python" | "table" | "plot";
+      type: 'sql' | 'python' | 'table' | 'plot';
       payload?: Record<string, unknown>;
     }>,
   ) => void;
   registerNode: (node: {
     id: string;
-    type: "sql" | "python" | "table" | "plot";
+    type: 'sql' | 'python' | 'table' | 'plot';
     payload?: Record<string, unknown>;
   }) => void;
   setCode: (nodeId: string, code: string) => void;
@@ -141,23 +141,23 @@ export type ExecutionStoreState = {
 };
 
 function getInitialCode(node: {
-  type: "sql" | "python" | "table" | "plot";
+  type: 'sql' | 'python' | 'table' | 'plot';
   payload?: Record<string, unknown>;
 }) {
-  if (node.type === "sql") {
+  if (node.type === 'sql') {
     const sqlPayload = node.payload?.sql as string | undefined;
-    return normalizeMultiline(sqlPayload) ?? "SELECT 1;";
+    return normalizeMultiline(sqlPayload) ?? 'SELECT 1;';
   }
-  if (node.type === "python") {
+  if (node.type === 'python') {
     const pythonPayload = node.payload?.python as string | undefined;
     const normalized = normalizeMultiline(pythonPayload);
     return normalized ?? DEFAULT_PYTHON_TEMPLATE;
   }
-  if (node.type === "plot") {
+  if (node.type === 'plot') {
     // Plot nodes don't have code, but we return empty string for consistency
-    return "";
+    return '';
   }
-  return "";
+  return '';
 }
 
 export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
@@ -183,7 +183,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
       const hiddenOutputs = resolveInitialHiddenOutputs(node.id, savedExecution?.hiddenOutputs);
       entries[node.id] = {
         nodeType: node.type,
-        status: savedExecution?.status ?? "idle",
+        status: savedExecution?.status ?? 'idle',
         code,
         error: savedExecution?.error ?? null,
         output: savedExecution?.output,
@@ -201,7 +201,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
         ...entries,
         [node.id]: {
           nodeType: node.type,
-          status: "idle",
+          status: 'idle',
           code: getInitialCode(node),
           error: null,
           hiddenOutputs,
@@ -223,8 +223,8 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
     set((state) => {
       const entry = state.entries[nodeId];
       if (!entry) return state;
-      const hiddenOutputs = status === "running" ? createHiddenOutputs() : entry.hiddenOutputs;
-      if (status === "running") {
+      const hiddenOutputs = status === 'running' ? createHiddenOutputs() : entry.hiddenOutputs;
+      if (status === 'running') {
         persistHiddenOutputs(nodeId, hiddenOutputs);
       }
       return {
@@ -233,10 +233,10 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
           [nodeId]: {
             ...entry,
             status,
-            startedAt: status === "running" ? Date.now() : entry.startedAt,
-            finishedAt: status !== "running" ? Date.now() : undefined,
-            error: status === "running" ? null : entry.error,
-            ...(status === "running" ? { output: undefined } : { output: entry.output }),
+            startedAt: status === 'running' ? Date.now() : entry.startedAt,
+            finishedAt: status !== 'running' ? Date.now() : undefined,
+            error: status === 'running' ? null : entry.error,
+            ...(status === 'running' ? { output: undefined } : { output: entry.output }),
             hiddenOutputs,
           },
         },
@@ -247,13 +247,13 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
       const entry = state.entries[nodeId];
       if (!entry) return state;
       let normalizedOutput: NodeExecutionOutput = output;
-      if (output.kind === "python") {
+      if (output.kind === 'python') {
         normalizedOutput = {
-          kind: "python",
+          kind: 'python',
           code: output.code,
           result: {
-            stdout: output.result.stdout ?? "",
-            stderr: output.result.stderr ?? "",
+            stdout: output.result.stdout ?? '',
+            stderr: output.result.stderr ?? '',
             table: output.result.table ?? null,
             plotJson: output.result.plotJson ?? null,
           },
@@ -268,7 +268,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
           ...state.entries,
           [nodeId]: {
             ...entry,
-            status: "success",
+            status: 'success',
             output: normalizedOutput,
             error: null,
             finishedAt: Date.now(),
@@ -289,7 +289,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
           ...state.entries,
           [nodeId]: {
             ...entry,
-            status: "error",
+            status: 'error',
             error: message,
             finishedAt: Date.now(),
             hiddenOutputs,
@@ -308,7 +308,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
           ...state.entries,
           [nodeId]: {
             ...entry,
-            status: "idle",
+            status: 'idle',
             error: null,
             output: undefined,
             hiddenOutputs,
@@ -320,7 +320,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
     set((state) => {
       const entry = state.entries[nodeId];
       if (!entry) return state;
-      if (entry.nodeType === "python") {
+      if (entry.nodeType === 'python') {
         const hiddenOutputs = createHiddenOutputs();
         persistHiddenOutputs(nodeId, hiddenOutputs);
         return {
@@ -328,16 +328,16 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
             ...state.entries,
             [nodeId]: {
               ...entry,
-              status: "idle",
+              status: 'idle',
               error: null,
               startedAt: undefined,
               finishedAt: undefined,
               output: {
-                kind: "python",
+                kind: 'python',
                 code: entry.code,
                 result: {
-                  stdout: "",
-                  stderr: "",
+                  stdout: '',
+                  stderr: '',
                   table: null,
                   plotJson: null,
                 },
@@ -347,7 +347,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
           },
         };
       }
-      if (entry.nodeType === "plot") {
+      if (entry.nodeType === 'plot') {
         // Plot nodes don't need special reset handling
         const hiddenOutputs = createHiddenOutputs();
         persistHiddenOutputs(nodeId, hiddenOutputs);
@@ -356,7 +356,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
             ...state.entries,
             [nodeId]: {
               ...entry,
-              status: "idle",
+              status: 'idle',
               error: null,
               startedAt: undefined,
               finishedAt: undefined,
@@ -373,7 +373,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
           ...state.entries,
           [nodeId]: {
             ...entry,
-            status: "idle",
+            status: 'idle',
             error: null,
             startedAt: undefined,
             finishedAt: undefined,
@@ -430,5 +430,3 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
       return { entries: nextEntries };
     }),
 }));
-
-

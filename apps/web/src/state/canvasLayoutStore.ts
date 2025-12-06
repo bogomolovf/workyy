@@ -1,5 +1,5 @@
 // file: apps/web/src/state/canvasLayoutStore.ts
-import { create } from "zustand";
+import { create } from 'zustand';
 
 const MIN_NODE_WIDTH = 360;
 const MAX_NODE_WIDTH = 920;
@@ -37,8 +37,11 @@ export const useCanvasLayoutStore = create<CanvasLayoutStore>((set) => ({
           width:
             size.width !== undefined
               ? Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.round(size.width)))
-              : state.nodeSizes[nodeId]?.width ?? DEFAULT_NODE_WIDTH,
-          height: size.height !== undefined ? Math.max(160, Math.round(size.height)) : state.nodeSizes[nodeId]?.height,
+              : (state.nodeSizes[nodeId]?.width ?? DEFAULT_NODE_WIDTH),
+          height:
+            size.height !== undefined
+              ? Math.max(160, Math.round(size.height))
+              : state.nodeSizes[nodeId]?.height,
         },
       },
     })),

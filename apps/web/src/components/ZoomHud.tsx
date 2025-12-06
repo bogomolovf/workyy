@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, memo } from "react";
-import { createPortal } from "react-dom";
-import type { ReactFlowInstance } from "reactflow";
+import { useEffect, useRef, useState, memo } from 'react';
+import { createPortal } from 'react-dom';
+import type { ReactFlowInstance } from 'reactflow';
 
 const clampZoom = (value: number) => Math.round(value * 100);
 
@@ -26,7 +26,7 @@ export const ZoomHud = memo(function ZoomHud({ instance }: ZoomHudProps) {
       });
     };
     update();
-    const unsubscribe = instance?.on?.("move", update);
+    const unsubscribe = instance?.on?.('move', update);
     return () => {
       cancelAnimationFrame(frame);
       unsubscribe?.();

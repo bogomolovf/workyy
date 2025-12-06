@@ -2,5 +2,5 @@
 // Keeping it for backward compatibility but it renders nothing
 
 export const ThemePicker = () => {
-  return null
-}
+  return null;
+};

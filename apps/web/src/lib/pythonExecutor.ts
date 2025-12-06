@@ -1,5 +1,5 @@
-import type { SqlResult, PythonResult } from "../state/executionStore";
-import { runPythonInPool } from "../workers/pythonClient";
+import type { SqlResult, PythonResult } from '../state/executionStore';
+import { runPythonInPool } from '../workers/pythonClient';
 
 function prepareSqlContext(sqlResult?: SqlResult | null) {
   if (!sqlResult) return null;
@@ -27,5 +27,3 @@ export async function runPython(
     { timeoutMs: options?.timeoutMs ?? 20000 },
   );
 }
-
-

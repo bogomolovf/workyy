@@ -1,23 +1,26 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { LanguageProvider } from './contexts/LanguageContext'
-import { ThemeProvider } from './contexts/ThemeContext'
-import { BackToTop } from './components/BackToTop'
-import { PageTransition } from './components/PageTransition'
-import { Header } from './components/Header'
-import { Footer } from './components/Footer'
-import HomePage from './pages/HomePage'
-import ProductPage from './pages/ProductPage'
-import PricingPage from './pages/PricingPage'
-import UseCasesPage from './pages/UseCasesPage'
-import ComparePage from './pages/ComparePage'
-import IntegrationsPage from './pages/IntegrationsPage'
-import ResourcesPage from './pages/ResourcesPage'
-import ChangelogPage from './pages/ChangelogPage'
-import RoadmapPage from './pages/RoadmapPage'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { LanguageProvider } from './contexts/LanguageContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { BackToTop } from './components/BackToTop';
+import { PageTransition } from './components/PageTransition';
+import { Header } from './components/Header';
+import { Footer } from './components/Footer';
+import HomePage from './pages/HomePage';
+import ProductPage from './pages/ProductPage';
+import PricingPage from './pages/PricingPage';
+import UseCasesPage from './pages/UseCasesPage';
+import ComparePage from './pages/ComparePage';
+import IntegrationsPage from './pages/IntegrationsPage';
+import ResourcesPage from './pages/ResourcesPage';
+import ChangelogPage from './pages/ChangelogPage';
+import RoadmapPage from './pages/RoadmapPage';
 
 const AppRoutes = () => {
   return (
-    <div className="app-shell flex min-h-screen flex-col bg-white text-wy-text" style={{ margin: 0, padding: 0, width: '100%' }}>
+    <div
+      className="app-shell flex min-h-screen flex-col bg-white text-wy-text"
+      style={{ margin: 0, padding: 0, width: '100%' }}
+    >
       <Header />
       <main id="main-content" className="flex-1">
         <PageTransition>
@@ -55,8 +58,8 @@ const AppRoutes = () => {
       <Footer />
       <BackToTop />
     </div>
-  )
-}
+  );
+};
 
 function App() {
   return (
@@ -67,7 +70,7 @@ function App() {
         </LanguageProvider>
       </ThemeProvider>
     </BrowserRouter>
-  )
+  );
 }
 
-export default App
+export default App;

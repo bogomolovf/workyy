@@ -9,7 +9,7 @@ export function useAuth() {
 
   useEffect(() => {
     if (initialized) return;
-    
+
     const init = async () => {
       setLoading(true);
       try {
@@ -47,4 +47,3 @@ export function useAuth() {
     logout,
   };
 }
-

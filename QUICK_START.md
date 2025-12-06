@@ -3,12 +3,14 @@
 ## Первый запуск
 
 1. **Клонируйте репозиторий:**
+
    ```bash
    git clone git@github.com:bogomolovf/workyy-fullproject-stable.git
    cd workyy-fullproject-stable
    ```
 
 2. **Запустите проект:**
+
    ```bash
    ./start.sh
    ```
@@ -44,23 +46,28 @@
 ### Регистрация не работает
 
 1. **Проверьте, что backend запущен:**
+
    ```bash
    curl http://localhost:4000/health
    ```
+
    Должен вернуть: `{"status":"ok"}`
 
 2. **Проверьте, что база данных запущена:**
+
    ```bash
    docker ps | grep postgres
    ```
 
 3. **Проверьте миграции:**
+
    ```bash
    cd apps/realtime-server
    pnpm prisma migrate status
    ```
 
 4. **Примените миграции вручную:**
+
    ```bash
    cd apps/realtime-server
    pnpm prisma migrate deploy

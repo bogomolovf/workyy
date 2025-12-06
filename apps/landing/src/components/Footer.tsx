@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom'
-import { useLanguage } from '../contexts/LanguageContext'
-import { LanguageToggle } from './LanguageToggle'
+import { Link } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
+import { LanguageToggle } from './LanguageToggle';
 
 const footerCopy = {
   en: {
@@ -63,17 +63,17 @@ const footerCopy = {
       },
     ],
   },
-}
+};
 
 export const Footer = () => {
-  const { language } = useLanguage()
-  const copy = footerCopy[language as 'en' | 'ru'] ?? footerCopy.en
+  const { language } = useLanguage();
+  const copy = footerCopy[language as 'en' | 'ru'] ?? footerCopy.en;
 
   const getPath = (path: string) => {
-    return `/${language}${path}`
-  }
+    return `/${language}${path}`;
+  };
 
-  const currentYear = new Date().getFullYear()
+  const currentYear = new Date().getFullYear();
 
   return (
     <footer className="bg-wy-bg-subtle border-t border-wy-border py-12 md:py-16">
@@ -114,5 +114,5 @@ export const Footer = () => {
         </div>
       </div>
     </footer>
-  )
-}
+  );
+};

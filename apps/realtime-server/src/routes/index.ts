@@ -21,4 +21,3 @@ export async function createServiceRouter(app: FastifyInstance) {
   await app.register(databaseConnectionsRoutes);
   await app.register(drawingRoutes);
 }
-

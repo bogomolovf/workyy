@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { fetchBoard } from "../lib/api";
+import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
+import { fetchBoard } from '../lib/api';
 
-const DEMO_BOARD_ID = process.env.NEXT_PUBLIC_DEMO_BOARD_ID ?? "";
+const DEMO_BOARD_ID = process.env.NEXT_PUBLIC_DEMO_BOARD_ID ?? '';
 
 export function BoardPreview() {
   const { data, status } = useQuery({
-    queryKey: ["board", DEMO_BOARD_ID, "preview"],
+    queryKey: ['board', DEMO_BOARD_ID, 'preview'],
     queryFn: () => fetchBoard(DEMO_BOARD_ID),
     enabled: Boolean(DEMO_BOARD_ID),
   });
@@ -38,23 +38,23 @@ export function BoardPreview() {
               Set <code>NEXT_PUBLIC_DEMO_BOARD_ID</code> to show a preview.
             </p>
           )}
-          {status === "pending" && DEMO_BOARD_ID && (
+          {status === 'pending' && DEMO_BOARD_ID && (
             <p className="mt-2 text-sm text-slate-400">Loading nodes…</p>
           )}
-          {status === "error" && DEMO_BOARD_ID && (
+          {status === 'error' && DEMO_BOARD_ID && (
             <p className="mt-2 text-sm text-red-400">
               Board preview unavailable. Проверьте `NEXT_PUBLIC_DEMO_BOARD_ID`.
             </p>
           )}
-          {status === "success" && (
+          {status === 'success' && (
             <ul className="mt-3 space-y-2 text-sm text-slate-200">
               {data.nodes.map((node) => (
                 <li key={node.id} className="rounded border border-slate-800 bg-slate-900/70 p-2">
                   <span className="font-semibold uppercase text-indigo-300">{node.type}</span>
                   <span className="ml-2 text-slate-300">
-                    {node.type === "sql"
-                      ? (node.payload?.sql as string)?.split("\n")[0]
-                      : (node.payload?.python as string)?.split("\n")[0]}
+                    {node.type === 'sql'
+                      ? (node.payload?.sql as string)?.split('\n')[0]
+                      : (node.payload?.python as string)?.split('\n')[0]}
                   </span>
                 </li>
               ))}
@@ -64,7 +64,7 @@ export function BoardPreview() {
 
         <div className="rounded-md border border-slate-800 bg-slate-950/60 p-4">
           <p className="text-xs uppercase tracking-wide text-slate-500">Edges</p>
-          {status === "success" ? (
+          {status === 'success' ? (
             <ul className="mt-3 space-y-2 text-sm text-slate-200">
               {data.edges.map((edge) => (
                 <li key={edge.id} className="rounded border border-slate-800 bg-slate-900/70 p-2">
@@ -80,11 +80,10 @@ export function BoardPreview() {
 
       <div className="mt-4 rounded-md border border-dashed border-slate-700 bg-slate-900/40 px-4 py-3 text-xs text-slate-400">
         <p>
-          API: <code>GET /api/boards/{DEMO_BOARD_ID || "…"}</code> •{" "}
-          <code>POST /api/runs</code> • <code>GET /api/runs</code>
+          API: <code>GET /api/boards/{DEMO_BOARD_ID || '…'}</code> • <code>POST /api/runs</code> •{' '}
+          <code>GET /api/runs</code>
         </p>
       </div>
     </div>
   );
 }
-

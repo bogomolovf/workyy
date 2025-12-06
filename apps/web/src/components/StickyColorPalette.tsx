@@ -1,12 +1,12 @@
-import { NodeToolbar } from "reactflow";
+import { NodeToolbar } from 'reactflow';
 
 const colors = [
-  "#FFB3BA", // пастельный розовый
-  "#FFDFBA", // пастельный персиковый
-  "#FFFFBA", // пастельный желтый
-  "#BAFFC9", // пастельный мятный
-  "#BAE1FF", // пастельный голубой
-  "#E0BBE4", // пастельный лавандовый
+  '#FFB3BA', // пастельный розовый
+  '#FFDFBA', // пастельный персиковый
+  '#FFFFBA', // пастельный желтый
+  '#BAFFC9', // пастельный мятный
+  '#BAE1FF', // пастельный голубой
+  '#E0BBE4', // пастельный лавандовый
 ];
 
 type StickyColorPaletteProps = {
@@ -27,7 +27,7 @@ export function StickyColorPalette({
             type="button"
             style={{ backgroundColor: color }}
             onClick={() => onColorChange(color)}
-            className={`color-swatch ${color === activeColor ? "active" : ""}`}
+            className={`color-swatch ${color === activeColor ? 'active' : ''}`}
             aria-label={`Select color ${color}`}
           />
         ))}
@@ -35,4 +35,3 @@ export function StickyColorPalette({
     </NodeToolbar>
   );
 }
-

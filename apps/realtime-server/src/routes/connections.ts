@@ -29,4 +29,3 @@ export async function connectionsRoutes(app: FastifyInstance) {
     });
   });
 }
-

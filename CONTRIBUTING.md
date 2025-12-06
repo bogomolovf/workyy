@@ -42,4 +42,3 @@ pnpm run test
 - `docs/architecture/adr/` — решения архитектуры.
 - `docs/api/openapi.yaml` — контракты API.
 - `docs/operations/runbook.md` — эксплуатация.
-

@@ -3,12 +3,14 @@
 ## Fastest Method: Mixamo (Free)
 
 ### Step 1: Get Character (2 min)
+
 1. Go to **https://www.mixamo.com**
 2. Click **"Characters"** → Search **"Samantha"** or **"Aria"**
 3. Click character → **Download** → Choose **FBX with skin**
 4. Save as `oracle_character.fbx`
 
 ### Step 2: Get Animation (1 min)
+
 1. Still on Mixamo, click **"Animations"**
 2. Search **"Idle"** → Choose **"Idle"** or **"Breathing Idle"**
 3. Click **Download** → Choose **FBX**
@@ -17,6 +19,7 @@
 ### Step 3: Convert to GLB (2 min)
 
 **Option A: Online Converter (Easiest)**
+
 1. Go to **https://products.aspose.app/3d/conversion/fbx-to-gltf**
 2. Upload `oracle_character.fbx`
 3. Convert to GLB
@@ -24,6 +27,7 @@
 5. Place in `public/models/oracle.glb`
 
 **Option B: Blender (More Control)**
+
 1. Download Blender (free): https://www.blender.org
 2. Open Blender → Delete default cube
 3. **File → Import → FBX** → Select `oracle_character.fbx`
@@ -34,9 +38,11 @@
 6. Save as `oracle.glb` in `public/models/`
 
 ### Step 4: Test
+
 ```bash
 pnpm run dev
 ```
+
 Navigate to `http://localhost:5173/en/tarot`
 
 **Done!** You now have a realistic 3D character! 🎉
@@ -55,4 +61,3 @@ Navigate to `http://localhost:5173/en/tarot`
 - **Model too big?** Use [glTF-Pipeline](https://github.com/CesiumGS/gltf-pipeline) to compress
 - **Animations missing?** The code will still work - just won't animate
 - **Wrong size/position?** Edit `OracleCanvas.tsx` → adjust `scale` and `position` in `<primitive>`
-

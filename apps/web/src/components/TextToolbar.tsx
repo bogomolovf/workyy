@@ -1,21 +1,21 @@
-import { NodeToolbar } from "reactflow";
+import { NodeToolbar } from 'reactflow';
 
 const fontSizes = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48];
 
 const fontFamilies = [
-  { value: "Inter, sans-serif", label: "Inter" },
-  { value: "Arial, sans-serif", label: "Arial" },
-  { value: "Georgia, serif", label: "Georgia" },
-  { value: "Monaco, monospace", label: "Monospace" },
+  { value: 'Inter, sans-serif', label: 'Inter' },
+  { value: 'Arial, sans-serif', label: 'Arial' },
+  { value: 'Georgia, serif', label: 'Georgia' },
+  { value: 'Monaco, monospace', label: 'Monospace' },
 ];
 
 const colors = [
-  "#CF4C2C", // orange-red
-  "#EA9C41", // orange
-  "#EBC347", // yellow
-  "#438D57", // green
-  "#3F8AE2", // blue
-  "#803DEC", // purple
+  '#CF4C2C', // orange-red
+  '#EA9C41', // orange
+  '#EBC347', // yellow
+  '#438D57', // green
+  '#3F8AE2', // blue
+  '#803DEC', // purple
 ];
 
 type TextToolbarProps = {
@@ -153,7 +153,7 @@ export function TextToolbar({
                 e.preventDefault();
               }}
               style={{ backgroundColor: color }}
-              className={`color-swatch nodrag ${color === activeColor ? "active" : ""}`}
+              className={`color-swatch nodrag ${color === activeColor ? 'active' : ''}`}
               aria-label={`Select color ${color}`}
             />
           ))}
@@ -162,4 +162,3 @@ export function TextToolbar({
     </NodeToolbar>
   );
 }
-

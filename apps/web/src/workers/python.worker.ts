@@ -1,18 +1,18 @@
 /// <reference lib="webworker" />
 
-import { tableFromIPC } from "apache-arrow";
-import { expose } from "comlink";
-import { cleanStderr, formatResultLine } from "./pythonUtils";
+import { tableFromIPC } from 'apache-arrow';
+import { expose } from 'comlink';
+import { cleanStderr, formatResultLine } from './pythonUtils';
 
 declare const self: DedicatedWorkerGlobalScope & {
   loadPyodide?: (options: { indexURL: string }) => Promise<any>;
 };
 
-const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
+const PYODIDE_INDEX_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
 const PYODIDE_JS_URL = `${PYODIDE_INDEX_URL}pyodide.js`;
 // Prefer pyodide prebuilt packages; fallback to micropip with a compatible wheel
 const PYTHON_WHEELS: string[] = [];
-const CORE_PACKAGES = ["pandas", "numpy", "matplotlib", "micropip"];
+const CORE_PACKAGES = ['pandas', 'numpy', 'matplotlib', 'micropip'];
 const DATA_STACK_BOOTSTRAP = `
 import numpy as np
 import pandas as pd
@@ -67,11 +67,11 @@ let dataStackReady: Promise<void> | null = null;
 
 async function ensurePyodide(): Promise<PyodideInstance> {
   if (!pyodidePromise) {
-    if (typeof self.loadPyodide !== "function") {
+    if (typeof self.loadPyodide !== 'function') {
       importScripts(PYODIDE_JS_URL);
     }
-    if (typeof self.loadPyodide !== "function") {
-      throw new Error("Failed to load Pyodide runtime");
+    if (typeof self.loadPyodide !== 'function') {
+      throw new Error('Failed to load Pyodide runtime');
     }
     pyodidePromise = self.loadPyodide({ indexURL: PYODIDE_INDEX_URL });
   }
@@ -91,20 +91,20 @@ async function ensurePackages(pyodide: PyodideInstance) {
           imported = false;
         }
         if (imported) return;
-        const micropip = pyodide.pyimport("micropip");
+        const micropip = pyodide.pyimport('micropip');
         try {
           await micropip.install(spec, { keep_going: true });
         } catch (error) {
-          const message = String(error ?? "");
-          if (!message.includes("already installed")) {
+          const message = String(error ?? '');
+          if (!message.includes('already installed')) {
             console.warn(`Failed to install ${moduleName} via micropip`, error);
             throw error;
           }
         }
       };
 
-      await ensureViaMicropip("seaborn", "seaborn==0.13.2");
-      await ensureViaMicropip("plotly", "plotly==5.18.0");
+      await ensureViaMicropip('seaborn', 'seaborn==0.13.2');
+      await ensureViaMicropip('plotly', 'plotly==5.18.0');
     })();
   }
   await packagesReady;
@@ -139,10 +139,10 @@ type WorkerResponse =
 
 function normalizeCell(value: unknown): string | number | null {
   if (value === null || value === undefined) return null;
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "string") return value;
-  if (typeof value === "boolean") return value ? 1 : 0;
-  if (typeof value === "bigint") {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'bigint') {
     const asNumber = Number(value);
     return Number.isNaN(asNumber) ? Number(value.toString()) : asNumber;
   }
@@ -160,7 +160,7 @@ function buildArrowContext(buffer?: ArrayBuffer | null) {
   for (const column of columns) {
     columnPayload[column] = [];
   }
-  const rows: WorkerTablePayload["rows"] = [];
+  const rows: WorkerTablePayload['rows'] = [];
   const iterable = table.toArray() as Array<Record<string, unknown>>;
   for (const record of iterable) {
     const normalizedRow: Array<string | number | null> = [];
@@ -175,12 +175,16 @@ function buildArrowContext(buffer?: ArrayBuffer | null) {
 }
 
 const workerApi = {
-  async runPython(params: { code: string; sqlResultJson?: string | null; sqlArrowIpc?: ArrayBuffer | null }): Promise<WorkerResponse> {
+  async runPython(params: {
+    code: string;
+    sqlResultJson?: string | null;
+    sqlArrowIpc?: ArrayBuffer | null;
+  }): Promise<WorkerResponse> {
     const pyodide = await ensurePyodide();
     await ensurePackages(pyodide);
     await ensureDataStack(pyodide);
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
     const restoreStdout = pyodide.setStdout({
       batched: (msg: string) => {
         stdout += msg;
@@ -195,13 +199,13 @@ const workerApi = {
     try {
       const arrowContext = buildArrowContext(params.sqlArrowIpc);
       if (arrowContext) {
-        pyodide.globals.set("arrow_context", arrowContext.dataframePayload);
-        pyodide.globals.set("arrow_snapshot", arrowContext.snapshot);
-        pyodide.globals.set("sql_result_json", null);
+        pyodide.globals.set('arrow_context', arrowContext.dataframePayload);
+        pyodide.globals.set('arrow_snapshot', arrowContext.snapshot);
+        pyodide.globals.set('sql_result_json', null);
       } else {
-        pyodide.globals.set("arrow_context", null);
-        pyodide.globals.set("arrow_snapshot", null);
-        pyodide.globals.set("sql_result_json", params.sqlResultJson ?? null);
+        pyodide.globals.set('arrow_context', null);
+        pyodide.globals.set('arrow_snapshot', null);
+        pyodide.globals.set('sql_result_json', params.sqlResultJson ?? null);
       }
 
       await pyodide.runPythonAsync(`
@@ -261,21 +265,19 @@ _candidate = _resolve_plot()
 json.dumps({"has": _candidate is not None, "json": _candidate.to_json() if _candidate is not None else None})
 `);
         const parsed = JSON.parse(plotProbe);
-        if (parsed?.has && typeof parsed.json === "string") {
+        if (parsed?.has && typeof parsed.json === 'string') {
           plotJson = parsed.json;
         }
       } catch (error) {
-        console.warn("Failed to capture plot payload", error);
+        console.warn('Failed to capture plot payload', error);
       }
 
-      let resolvedResultPayload:
-        | {
-            hasCandidate?: boolean;
-            hasExplicitResult?: boolean;
-            table?: WorkerTablePayload;
-            payload?: unknown;
-          }
-        | null = null;
+      let resolvedResultPayload: {
+        hasCandidate?: boolean;
+        hasExplicitResult?: boolean;
+        table?: WorkerTablePayload;
+        payload?: unknown;
+      } | null = null;
       try {
         const candidateProbe = pyodide.runPython(`
 import json
@@ -321,7 +323,7 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
 `);
         resolvedResultPayload = JSON.parse(candidateProbe);
       } catch (error) {
-        console.warn("Failed to interpret python result payload", error);
+        console.warn('Failed to interpret python result payload', error);
       }
 
       let tablePayload: WorkerTablePayload | null = null;
@@ -344,7 +346,11 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
         };
       }
 
-      if (resolvedResultPayload?.hasCandidate && resolvedResultPayload.hasExplicitResult && resolvedResultPayload.payload) {
+      if (
+        resolvedResultPayload?.hasCandidate &&
+        resolvedResultPayload.hasExplicitResult &&
+        resolvedResultPayload.payload
+      ) {
         const formattedLine = formatResultLine(resolvedResultPayload.payload);
         if (formattedLine) {
           stdout += `\nresult = ${formattedLine}\n`;
@@ -352,7 +358,13 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
       }
 
       const cleanedStderr = cleanStderr(stderr);
-      return { success: true, stdout, stderr: cleanedStderr, table: null, plotJson: plotJson ?? null };
+      return {
+        success: true,
+        stdout,
+        stderr: cleanedStderr,
+        table: null,
+        plotJson: plotJson ?? null,
+      };
     } catch (error) {
       const cleanedStderr = cleanStderr(stderr);
       return {
@@ -362,17 +374,17 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
         error: error instanceof Error ? error.message : String(error),
       };
     } finally {
-      if (typeof restoreStdout === "function") restoreStdout();
-      if (typeof restoreStderr === "function") restoreStderr();
-      pyodide.globals.set("sql_result_json", null);
-      pyodide.globals.set("arrow_context", null);
-      pyodide.globals.set("arrow_snapshot", null);
-      pyodide.globals.set("result", null);
-      pyodide.globals.set("plot", null);
-      pyodide.globals.set("fig", null);
-      pyodide.globals.set("figure", null);
-      pyodide.globals.set("_workyy_last_plot", null);
-      pyodide.globals.set("__workyy_last_df", null);
+      if (typeof restoreStdout === 'function') restoreStdout();
+      if (typeof restoreStderr === 'function') restoreStderr();
+      pyodide.globals.set('sql_result_json', null);
+      pyodide.globals.set('arrow_context', null);
+      pyodide.globals.set('arrow_snapshot', null);
+      pyodide.globals.set('result', null);
+      pyodide.globals.set('plot', null);
+      pyodide.globals.set('fig', null);
+      pyodide.globals.set('figure', null);
+      pyodide.globals.set('_workyy_last_plot', null);
+      pyodide.globals.set('__workyy_last_df', null);
     }
   },
 };
@@ -380,4 +392,3 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
 export type PythonWorkerApi = typeof workerApi;
 
 expose(workerApi);
-

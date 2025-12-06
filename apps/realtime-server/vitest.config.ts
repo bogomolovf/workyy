@@ -4,10 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      '@workyy/dag-executor': path.resolve(
-        __dirname,
-        '../../packages/dag-executor/src/index.ts',
-      ),
+      '@workyy/dag-executor': path.resolve(__dirname, '../../packages/dag-executor/src/index.ts'),
     },
   },
   test: {
@@ -16,4 +13,3 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
   },
 });
-

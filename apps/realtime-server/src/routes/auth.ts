@@ -135,41 +135,36 @@ export async function authRoutes(app: FastifyInstance) {
     reply.send({ ok: true });
   });
 
-  app.get(
-    '/auth/me',
-    { preValidation: [app.authenticate] },
-    async (request, reply) => {
-      if (!request.user?.userId) {
-        reply.code(401).send({
-          type: 'about:blank',
-          title: 'Unauthorized',
-          status: 401,
-        });
-        return;
-      }
-
-      const user = await getUserById(request.user.userId);
-      if (!user) {
-        clearAuthCookie(reply);
-        reply.code(401).send({
-          type: 'about:blank',
-          title: 'Unauthorized',
-          status: 401,
-        });
-        return;
-      }
-
-      reply.send({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        workspaces: user.roles.map((r) => ({
-          id: r.workspaceId,
-          name: r.workspace.name,
-          role: r.role,
-        })),
+  app.get('/auth/me', { preValidation: [app.authenticate] }, async (request, reply) => {
+    if (!request.user?.userId) {
+      reply.code(401).send({
+        type: 'about:blank',
+        title: 'Unauthorized',
+        status: 401,
       });
-    },
-  );
-}
+      return;
+    }
 
+    const user = await getUserById(request.user.userId);
+    if (!user) {
+      clearAuthCookie(reply);
+      reply.code(401).send({
+        type: 'about:blank',
+        title: 'Unauthorized',
+        status: 401,
+      });
+      return;
+    }
+
+    reply.send({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      workspaces: user.roles.map((r) => ({
+        id: r.workspaceId,
+        name: r.workspace.name,
+        role: r.role,
+      })),
+    });
+  });
+}

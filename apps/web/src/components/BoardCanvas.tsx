@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from 'next/dynamic';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -23,38 +23,38 @@ import ReactFlow, {
   NodeResizer,
   useReactFlow,
   useViewport,
-} from "reactflow";
-import "reactflow/dist/style.css";
+} from 'reactflow';
+import 'reactflow/dist/style.css';
 
-import type { ExecutionEntry, NodeStatus, ExecutionStoreState } from "../state/executionStore";
-import { useExecutionStore } from "../state/executionStore";
-import { InteractiveResultTable } from "./InteractiveResultTable";
-import { PlotPreview } from "./PlotPreview";
+import type { ExecutionEntry, NodeStatus, ExecutionStoreState } from '../state/executionStore';
+import { useExecutionStore } from '../state/executionStore';
+import { InteractiveResultTable } from './InteractiveResultTable';
+import { PlotPreview } from './PlotPreview';
 import {
   getDefaultNodeWidth,
   useCanvasLayoutStore,
   MIN_NODE_WIDTH,
   MAX_NODE_WIDTH,
   type CanvasLayoutState,
-} from "../state/canvasLayoutStore";
-import { useAddNode } from "../state/useAddNode";
-import { ConnectionArrow } from "./ConnectionArrow";
+} from '../state/canvasLayoutStore';
+import { useAddNode } from '../state/useAddNode';
+import { ConnectionArrow } from './ConnectionArrow';
 import {
   resolveConnectionEndpoints,
   type ConnectionOrigin,
   findNearestHandleId,
-} from "./connectionUtils";
-import { BoardInspector } from "./BoardInspector";
-import { BoardCommandBar, type CanvasTool } from "./BoardCommandBar";
-import { FreehandOverlay } from "./pen/FreehandOverlay";
-import { PenNode } from "./pen/PenNode";
-import { TextNode } from "./TextNode";
-import { DatabaseNode } from "./flowNodes/DatabaseNode";
-import { PlotNode } from "./flowNodes/PlotNode";
-import ShapeNode, { type ShapeType } from "./flowNodes/ShapeNode";
-import CustomConnectionLine from "./flowEdges/CustomConnectionLine";
+} from './connectionUtils';
+import { BoardInspector } from './BoardInspector';
+import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
+import { FreehandOverlay } from './pen/FreehandOverlay';
+import { PenNode } from './pen/PenNode';
+import { TextNode } from './TextNode';
+import { DatabaseNode } from './flowNodes/DatabaseNode';
+import { PlotNode } from './flowNodes/PlotNode';
+import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
+import CustomConnectionLine from './flowEdges/CustomConnectionLine';
 
-const MonacoEditor = dynamic(async () => import("@monaco-editor/react"), {
+const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
   ssr: false,
   loading: () => (
     <div className="flex h-32 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/80 text-xs text-slate-400">
@@ -64,16 +64,16 @@ const MonacoEditor = dynamic(async () => import("@monaco-editor/react"), {
 });
 
 type CanvasNodeType =
-  | "sql"
-  | "python"
-  | "table"
-  | "plot"
-  | "note"
-  | "text"
-  | "shape"
-  | "image"
-  | "pen"
-  | "database";
+  | 'sql'
+  | 'python'
+  | 'table'
+  | 'plot'
+  | 'note'
+  | 'text'
+  | 'shape'
+  | 'image'
+  | 'pen'
+  | 'database';
 
 type BoardCanvasProps = {
   board: {
@@ -100,14 +100,14 @@ type BoardCanvasProps = {
   onRunDownstream: (nodeId: string) => void;
   selectedNodeId?: string | null;
   onSelectNode?: (nodeId: string | null) => void;
-  onNodesChange?: (nodes: BoardCanvasProps["nodes"]) => void;
-  onEdgesChange?: (edges: BoardCanvasProps["edges"]) => void;
+  onNodesChange?: (nodes: BoardCanvasProps['nodes']) => void;
+  onEdgesChange?: (edges: BoardCanvasProps['edges']) => void;
 };
 
 type NodeData = {
   nodeId: string;
-  nodeType: "sql" | "python";
-  nodeKind: "sql" | "python" | "table" | "plot";
+  nodeType: 'sql' | 'python';
+  nodeKind: 'sql' | 'python' | 'table' | 'plot';
   execution?: ExecutionEntry;
   onCodeChange: (code: string) => void;
   onRun: () => void;
@@ -118,18 +118,18 @@ type NodeData = {
 };
 
 const statusColors: Record<NodeStatus, string> = {
-  idle: "border-slate-200",
-  running: "border-amber-300 shadow-[0_0_14px_rgba(251,191,36,0.18)]",
-  success: "border-emerald-300 shadow-[0_0_14px_rgba(34,197,94,0.18)]",
-  error: "border-rose-300 shadow-[0_0_14px_rgba(244,63,94,0.2)]",
+  idle: 'border-slate-200',
+  running: 'border-amber-300 shadow-[0_0_14px_rgba(251,191,36,0.18)]',
+  success: 'border-emerald-300 shadow-[0_0_14px_rgba(34,197,94,0.18)]',
+  error: 'border-rose-300 shadow-[0_0_14px_rgba(244,63,94,0.2)]',
 };
 
-export const DATA_NODE_HANDLE_CLASS = "!h-3 !w-3 !bg-slate-400";
+export const DATA_NODE_HANDLE_CLASS = '!h-3 !w-3 !bg-slate-400';
 const dataNodeHandles = [
-  { id: "left", type: "target" as const, position: Position.Left },
-  { id: "top", type: "target" as const, position: Position.Top },
-  { id: "right", type: "source" as const, position: Position.Right },
-  { id: "bottom", type: "source" as const, position: Position.Bottom },
+  { id: 'left', type: 'target' as const, position: Position.Left },
+  { id: 'top', type: 'target' as const, position: Position.Top },
+  { id: 'right', type: 'source' as const, position: Position.Right },
+  { id: 'bottom', type: 'source' as const, position: Position.Bottom },
 ];
 
 export function DataNodeHandles({ selected }: { selected?: boolean }) {
@@ -152,19 +152,19 @@ export function DataNodeHandles({ selected }: { selected?: boolean }) {
 
 function getNodeColor(type: string) {
   switch (type) {
-    case "sql":
-      return "#3b82f6";
-    case "python":
-      return "#22c55e";
-    case "plot":
-      return "#a855f7";
+    case 'sql':
+      return '#3b82f6';
+    case 'python':
+      return '#22c55e';
+    case 'plot':
+      return '#a855f7';
     default:
-      return "#f97316";
+      return '#f97316';
   }
 }
 
 function createEdgeId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
   return `edge-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -172,22 +172,24 @@ function createEdgeId() {
 
 function StatusBadge({ status }: { status: NodeStatus }) {
   const text =
-    status === "idle"
-      ? "IDLE"
-      : status === "running"
-      ? "RUNNING"
-      : status === "success"
-      ? "SUCCESS"
-      : "ERROR";
+    status === 'idle'
+      ? 'IDLE'
+      : status === 'running'
+        ? 'RUNNING'
+        : status === 'success'
+          ? 'SUCCESS'
+          : 'ERROR';
   const tone =
-    status === "running"
-      ? "bg-amber-100 text-amber-600 border border-amber-200"
-      : status === "success"
-      ? "bg-emerald-100 text-emerald-600 border border-emerald-200"
-      : status === "error"
-      ? "bg-rose-100 text-rose-600 border border-rose-200"
-      : "bg-slate-200 text-slate-600";
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>{text}</span>;
+    status === 'running'
+      ? 'bg-amber-100 text-amber-600 border border-amber-200'
+      : status === 'success'
+        ? 'bg-emerald-100 text-emerald-600 border border-emerald-200'
+        : status === 'error'
+          ? 'bg-rose-100 text-rose-600 border border-rose-200'
+          : 'bg-slate-200 text-slate-600';
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>{text}</span>
+  );
 }
 
 function ErrorMessage({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
@@ -216,15 +218,15 @@ function StdoutBlock({
 }: {
   title: string;
   content: string;
-  tone: "stdout" | "stderr" | "warning";
+  tone: 'stdout' | 'stderr' | 'warning';
   onDismiss?: () => void;
 }) {
   const styles =
-    tone === "stderr"
-      ? "border border-rose-200 bg-rose-50 text-rose-600"
-      : tone === "warning"
-      ? "border border-amber-200 bg-amber-50 text-amber-700"
-      : "border border-slate-200 bg-slate-100 text-slate-600";
+    tone === 'stderr'
+      ? 'border border-rose-200 bg-rose-50 text-rose-600'
+      : tone === 'warning'
+        ? 'border border-amber-200 bg-amber-50 text-amber-700'
+        : 'border border-slate-200 bg-slate-100 text-slate-600';
   return (
     <div className={`relative rounded-lg px-4 py-2 text-xs ${styles}`}>
       {onDismiss && (
@@ -245,17 +247,17 @@ function StdoutBlock({
 
 const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   const execution = data.execution;
-  const status: NodeStatus = execution?.status ?? "idle";
-  const result = execution?.output?.kind === "sql" ? execution.output.result : undefined;
-  const code = execution?.code ?? "";
-  const codeLines = code.split("\n").length;
+  const status: NodeStatus = execution?.status ?? 'idle';
+  const result = execution?.output?.kind === 'sql' ? execution.output.result : undefined;
+  const code = execution?.code ?? '';
+  const codeLines = code.split('\n').length;
   const expandedHeight = Math.max(240, codeLines * 18 + 60);
   const editorHeight = data.isCodeCollapsed ? Math.min(220, expandedHeight) : expandedHeight;
   return (
     <div
       className={`group rounded-md border bg-white shadow-lg px-5 pb-5 pt-4 transition-all ${
         statusColors[status]
-      } ${selected ? "ring-2 ring-indigo-400" : ""}`}
+      } ${selected ? 'ring-2 ring-indigo-400' : ''}`}
       style={{ width: data.width, minHeight: 320 }}
     >
       <NodeResizer
@@ -264,7 +266,13 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
         maxWidth={MAX_NODE_WIDTH}
         minHeight={240}
         lineClassName="!border-indigo-200"
-        handleStyle={{ width: 12, height: 12, borderRadius: 6, border: "2px solid #6366f1", background: "#EEF2FF" }}
+        handleStyle={{
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          border: '2px solid #6366f1',
+          background: '#EEF2FF',
+        }}
       />
       <DataNodeHandles selected={selected} />
       <div className="mb-3 flex items-center justify-between">
@@ -280,14 +288,14 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           <StatusBadge status={status} />
           <button
             onClick={data.onRun}
-            disabled={status === "running"}
+            disabled={status === 'running'}
             className="rounded-md bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-200"
           >
-            {status === "running" ? "Running…" : "Run"}
+            {status === 'running' ? 'Running…' : 'Run'}
           </button>
           <button
             onClick={data.onRunDownstream}
-            disabled={status === "running"}
+            disabled={status === 'running'}
             className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Run downstream
@@ -296,7 +304,7 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
             onClick={data.onToggleCodeCollapsed}
             className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-100"
           >
-            {data.isCodeCollapsed ? "Expand code" : "Collapse code"}
+            {data.isCodeCollapsed ? 'Expand code' : 'Collapse code'}
           </button>
         </div>
       </div>
@@ -321,16 +329,16 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           theme="vs-light"
           value={code}
           height={`${editorHeight}px`}
-          path={`${data.nodeId}-sql-${data.isCodeCollapsed ? "compact" : "full"}`}
+          path={`${data.nodeId}-sql-${data.isCodeCollapsed ? 'compact' : 'full'}`}
           options={{
             minimap: { enabled: false },
             fontSize: 13,
             automaticLayout: true,
             scrollBeyondLastLine: false,
-            renderLineHighlight: "none",
+            renderLineHighlight: 'none',
             padding: { top: 8 },
           }}
-          onChange={(next) => data.onCodeChange(next ?? "")}
+          onChange={(next) => data.onCodeChange(next ?? '')}
         />
       </div>
 
@@ -346,16 +354,17 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
 
 const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   const execution = data.execution;
-  const status: NodeStatus = execution?.status ?? "idle";
-  const output = execution?.output?.kind === "python" ? execution.output.result : undefined;
-  const code = execution?.code ?? "";
-  const codeLines = code.split("\n").length;
+  const status: NodeStatus = execution?.status ?? 'idle';
+  const output = execution?.output?.kind === 'python' ? execution.output.result : undefined;
+  const code = execution?.code ?? '';
+  const codeLines = code.split('\n').length;
   const expandedHeight = Math.max(240, codeLines * 18 + 60);
   const editorHeight = data.isCodeCollapsed ? Math.min(220, expandedHeight) : expandedHeight;
-  const stdoutContent = output?.stdout && output.stdout.trim().length > 0 ? output.stdout : "";
-  const stderrContent = output?.stderr && output.stderr.trim().length > 0 ? output.stderr.trim() : "";
-  const stderrTone = execution?.error ? "stderr" : "warning";
-  const stderrTitle = execution?.error ? "Stderr" : "Warnings";
+  const stdoutContent = output?.stdout && output.stdout.trim().length > 0 ? output.stdout : '';
+  const stderrContent =
+    output?.stderr && output.stderr.trim().length > 0 ? output.stderr.trim() : '';
+  const stderrTone = execution?.error ? 'stderr' : 'warning';
+  const stderrTitle = execution?.error ? 'Stderr' : 'Warnings';
   const dismissError = useExecutionStore((state: ExecutionStoreState) => state.dismissError);
   const dismissWarnings = useExecutionStore((state: ExecutionStoreState) => state.dismissWarnings);
   const hiddenOutputs = execution?.hiddenOutputs ?? { error: false, warnings: false };
@@ -365,7 +374,7 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
     <div
       className={`group rounded-md border bg-white shadow-lg px-5 pb-5 pt-4 transition-all ${
         statusColors[status]
-      } ${selected ? "ring-2 ring-indigo-400" : ""}`}
+      } ${selected ? 'ring-2 ring-indigo-400' : ''}`}
       style={{ width: data.width, minHeight: 320 }}
     >
       <NodeResizer
@@ -374,7 +383,13 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
         maxWidth={MAX_NODE_WIDTH}
         minHeight={260}
         lineClassName="!border-indigo-200"
-        handleStyle={{ width: 12, height: 12, borderRadius: 6, border: "2px solid #6366f1", background: "#EEF2FF" }}
+        handleStyle={{
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          border: '2px solid #6366f1',
+          background: '#EEF2FF',
+        }}
       />
       <DataNodeHandles selected={selected} />
       <div className="mb-3 flex items-center justify-between">
@@ -390,14 +405,14 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           <StatusBadge status={status} />
           <button
             onClick={data.onRun}
-            disabled={status === "running"}
+            disabled={status === 'running'}
             className="rounded-md bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-200"
           >
-            {status === "running" ? "Running…" : "Run"}
+            {status === 'running' ? 'Running…' : 'Run'}
           </button>
           <button
             onClick={data.onRunDownstream}
-            disabled={status === "running"}
+            disabled={status === 'running'}
             className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Run downstream
@@ -406,7 +421,7 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
             onClick={data.onToggleCodeCollapsed}
             className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-100"
           >
-            {data.isCodeCollapsed ? "Expand code" : "Collapse code"}
+            {data.isCodeCollapsed ? 'Expand code' : 'Collapse code'}
           </button>
         </div>
       </div>
@@ -431,16 +446,16 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           theme="vs-light"
           value={code}
           height={`${editorHeight}px`}
-          path={`${data.nodeId}-python-${data.isCodeCollapsed ? "compact" : "full"}`}
+          path={`${data.nodeId}-python-${data.isCodeCollapsed ? 'compact' : 'full'}`}
           options={{
             minimap: { enabled: false },
             fontSize: 13,
             automaticLayout: true,
             scrollBeyondLastLine: false,
-            renderLineHighlight: "none",
+            renderLineHighlight: 'none',
             padding: { top: 8 },
           }}
-          onChange={(next) => data.onCodeChange(next ?? "")}
+          onChange={(next) => data.onCodeChange(next ?? '')}
         />
       </div>
 
@@ -472,25 +487,29 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           <PlotPreview plotJson={output.plotJson} height={480} />
         </div>
       )}
-      {status === "success" && !output?.stdout && !output?.stderr && !output?.table && !output?.plotJson && (
-        <div className="mt-3 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500 shadow-sm">
-          Execution finished without captured output. Use <code>print()</code>, assign to <code>result</code>, or set {" "}
-          <code>plot</code>.
-        </div>
-      )}
+      {status === 'success' &&
+        !output?.stdout &&
+        !output?.stderr &&
+        !output?.table &&
+        !output?.plotJson && (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500 shadow-sm">
+            Execution finished without captured output. Use <code>print()</code>, assign to{' '}
+            <code>result</code>, or set <code>plot</code>.
+          </div>
+        )}
     </div>
   );
 };
 
-  const nodeTypes = {
-    sqlNode: SqlNodeComponent,
-    pythonNode: PythonNodeComponent,
-    pen: PenNode,
-    textNode: TextNode,
-    databaseNode: DatabaseNode,
-    plotNode: PlotNode,
-    shapeNode: ShapeNode, // Заметки теперь тоже shape nodes
-  };
+const nodeTypes = {
+  sqlNode: SqlNodeComponent,
+  pythonNode: PythonNodeComponent,
+  pen: PenNode,
+  textNode: TextNode,
+  databaseNode: DatabaseNode,
+  plotNode: PlotNode,
+  shapeNode: ShapeNode, // Заметки теперь тоже shape nodes
+};
 
 type ConnectionArrowsOverlayProps = {
   edges: Edge[];
@@ -501,7 +520,11 @@ function ConnectionArrowsOverlay({ edges }: ConnectionArrowsOverlayProps) {
   const viewport = useViewport();
 
   const segments = useMemo(() => {
-    const pairs: Array<{ id: string; from: { x: number; y: number }; to: { x: number; y: number } }> = [];
+    const pairs: Array<{
+      id: string;
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+    }> = [];
 
     for (const edge of edges) {
       const source = getNode(edge.source);
@@ -540,7 +563,7 @@ function ConnectionArrowsOverlay({ edges }: ConnectionArrowsOverlayProps) {
   return (
     <svg
       className="pointer-events-none absolute inset-0 z-10"
-      style={{ transform, transformOrigin: "0 0" }}
+      style={{ transform, transformOrigin: '0 0' }}
       role="presentation"
     >
       {segments.map((segment) => (
@@ -566,7 +589,8 @@ export function BoardCanvas({
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
   const inspectorEntry = selectedNode ? executionEntries[selectedNode.id] : undefined;
   const inspectorKind =
-    selectedNode && (selectedNode.type === "sql" || selectedNode.type === "python" || selectedNode.type === "plot")
+    selectedNode &&
+    (selectedNode.type === 'sql' || selectedNode.type === 'python' || selectedNode.type === 'plot')
       ? selectedNode.type
       : null;
   const [inspectorCollapsed, setInspectorCollapsed] = useState(true);
@@ -598,38 +622,45 @@ export function BoardCanvas({
           onEdgesChange={onEdgesChange}
         />
         {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
-        <div className="flex-none transition-all duration-200" style={{ width: `${inspectorWidth}px`, minWidth: `${inspectorWidth}px`, maxWidth: `${inspectorWidth}px` }}>
+        <div
+          className="flex-none transition-all duration-200"
+          style={{
+            width: `${inspectorWidth}px`,
+            minWidth: `${inspectorWidth}px`,
+            maxWidth: `${inspectorWidth}px`,
+          }}
+        >
           {inspectorKind && selectedNode ? (
             <BoardInspector
               nodeLabel={
                 (selectedNode.payload?.label as string | undefined) ??
-                `${inspectorKind === "sql" ? "SQL" : inspectorKind === "python" ? "Python" : "Plot"} ${selectedNode.id.slice(0, 6)}`
+                `${inspectorKind === 'sql' ? 'SQL' : inspectorKind === 'python' ? 'Python' : 'Plot'} ${selectedNode.id.slice(0, 6)}`
               }
               kind={inspectorKind}
-              status={inspectorEntry?.status ?? "idle"}
+              status={inspectorEntry?.status ?? 'idle'}
               error={inspectorEntry?.error}
               lastStartedAt={inspectorEntry?.startedAt}
               lastFinishedAt={inspectorEntry?.finishedAt}
-              code={inspectorEntry?.code ?? ""}
-              onChange={(value) => onCodeChange(selectedNode.id, value ?? "")}
+              code={inspectorEntry?.code ?? ''}
+              onChange={(value) => onCodeChange(selectedNode.id, value ?? '')}
               onCollapseChange={setInspectorCollapsed}
               result={
-                inspectorKind === "sql"
-                  ? inspectorEntry?.output?.kind === "sql"
+                inspectorKind === 'sql'
+                  ? inspectorEntry?.output?.kind === 'sql'
                     ? inspectorEntry.output.result
                     : undefined
-                  : inspectorKind === "python"
-                  ? inspectorEntry?.output?.kind === "python"
-                    ? inspectorEntry.output.result
+                  : inspectorKind === 'python'
+                    ? inspectorEntry?.output?.kind === 'python'
+                      ? inspectorEntry.output.result
+                      : undefined
                     : undefined
-                  : undefined
               }
               nodeId={selectedNode.id}
               nodes={nodes}
               edges={edges}
               executionEntries={executionEntries}
               onPlotConfigChange={
-                inspectorKind === "plot"
+                inspectorKind === 'plot'
                   ? (nodeId, newPayload) => {
                       // Update nodes through onNodesChange callback
                       const updatedNodes = nodes.map((n) =>
@@ -641,7 +672,7 @@ export function BoardCanvas({
                                 ...newPayload,
                               },
                             }
-                          : n
+                          : n,
                       );
                       onNodesChange?.(updatedNodes);
                     }
@@ -676,7 +707,9 @@ function InnerBoardCanvas({
   const nodeSizes = useCanvasLayoutStore((state: CanvasLayoutState) => state.nodeSizes);
   const setNodeWidth = useCanvasLayoutStore((state: CanvasLayoutState) => state.setNodeWidth);
   const codeCollapsedMap = useCanvasLayoutStore((state: CanvasLayoutState) => state.codeCollapsed);
-  const toggleCodeCollapsed = useCanvasLayoutStore((state: CanvasLayoutState) => state.toggleCodeCollapsed);
+  const toggleCodeCollapsed = useCanvasLayoutStore(
+    (state: CanvasLayoutState) => state.toggleCodeCollapsed,
+  );
   const registerNode = useExecutionStore((state: ExecutionStoreState) => state.registerNode);
   const addNodeHelpers = useAddNode();
   const rf = useReactFlow();
@@ -714,52 +747,59 @@ function InnerBoardCanvas({
   }, []);
 
   // Helper to notify parent AFTER current render tick to avoid render-phase setState warning
-  const lastEmittedRef = useRef<string>("");
-  const sanitizeExternalNodes = useCallback((arr: BoardCanvasProps["nodes"]) => {
+  const lastEmittedRef = useRef<string>('');
+  const sanitizeExternalNodes = useCallback((arr: BoardCanvasProps['nodes']) => {
     return arr.map((n) => {
       const id =
-        (typeof n.id === "string" && n.id) ||
-        (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `node_${Date.now()}`);
+        (typeof n.id === 'string' && n.id) ||
+        (typeof crypto !== 'undefined' && (crypto as any).randomUUID
+          ? (crypto as any).randomUUID()
+          : `node_${Date.now()}`);
       const position = {
         x: Number.isFinite(Number((n as any).position?.x)) ? Number((n as any).position?.x) : 0,
         y: Number.isFinite(Number((n as any).position?.y)) ? Number((n as any).position?.y) : 0,
       };
-      const type = (n.type === "sticky" ? ("note" as const) : (n.type as any)) as BoardCanvasProps["nodes"][number]["type"];
-      const basePayload = (n.payload && typeof n.payload === "object" ? n.payload : {}) as Record<string, unknown>;
+      const type = (
+        n.type === 'sticky' ? ('note' as const) : (n.type as any)
+      ) as BoardCanvasProps['nodes'][number]['type'];
+      const basePayload = (n.payload && typeof n.payload === 'object' ? n.payload : {}) as Record<
+        string,
+        unknown
+      >;
       const payload =
-        type === "note"
+        type === 'note'
           ? {
               ...(basePayload ?? {}),
-              text: typeof (basePayload as any).text === "string" ? (basePayload as any).text : ((basePayload as any).noteContent ?? ""),
+              text:
+                typeof (basePayload as any).text === 'string'
+                  ? (basePayload as any).text
+                  : ((basePayload as any).noteContent ?? ''),
               // дублируем ключ для обратной совместимости с бэком, если он ожидает другое имя
               noteContent:
-                typeof (basePayload as any).noteContent === "string"
+                typeof (basePayload as any).noteContent === 'string'
                   ? (basePayload as any).noteContent
-                  : typeof (basePayload as any).text === "string"
-                  ? (basePayload as any).text
-                  : "",
+                  : typeof (basePayload as any).text === 'string'
+                    ? (basePayload as any).text
+                    : '',
             }
           : basePayload;
       return { id, type, position, payload };
     });
   }, []);
-  const sanitizeExternalEdges = useCallback(
-    (arr: BoardCanvasProps["edges"]) => {
-      const nodeIds = new Set((localNodesRef.current ?? []).map((n) => n.id));
-      return arr
-        .filter((e) => !!e.id && !!e.sourceId && !!e.targetId)
-        .filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId))
-        .map((e) => ({
-          id: String(e.id),
-          sourceId: String(e.sourceId),
-          targetId: String(e.targetId),
-          metadata: e.metadata ?? {},
-        }));
-    },
-    [],
-  );
+  const sanitizeExternalEdges = useCallback((arr: BoardCanvasProps['edges']) => {
+    const nodeIds = new Set((localNodesRef.current ?? []).map((n) => n.id));
+    return arr
+      .filter((e) => !!e.id && !!e.sourceId && !!e.targetId)
+      .filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId))
+      .map((e) => ({
+        id: String(e.id),
+        sourceId: String(e.sourceId),
+        targetId: String(e.targetId),
+        metadata: e.metadata ?? {},
+      }));
+  }, []);
   const emitNodesChange = useCallback(
-    (next: BoardCanvasProps["nodes"]) => {
+    (next: BoardCanvasProps['nodes']) => {
       if (!onNodesChange) return;
       const sanitized = sanitizeExternalNodes(next);
       const signature = JSON.stringify(sanitized);
@@ -771,9 +811,9 @@ function InnerBoardCanvas({
     },
     [onNodesChange, sanitizeExternalNodes],
   );
-  const lastEdgesEmittedRef = useRef<string>("");
+  const lastEdgesEmittedRef = useRef<string>('');
   const emitEdgesChange = useCallback(
-    (next: BoardCanvasProps["edges"]) => {
+    (next: BoardCanvasProps['edges']) => {
       if (!onEdgesChange) return;
       const sanitized = sanitizeExternalEdges(next);
       const sig = JSON.stringify(sanitized);
@@ -788,17 +828,17 @@ function InnerBoardCanvas({
     setLocalEdges(edges);
   }, [edges]);
 
-  const [tool, setTool] = useState<CanvasTool>("select");
-  const [selectedShape, setSelectedShape] = useState<ShapeType | null>("rectangle");
-  const isStickyMode = tool === "note";
-  const isPenMode = tool === "pen";
-  const isTextMode = tool === "text";
-  const isShapeMode = tool === "shape";
-  
+  const [tool, setTool] = useState<CanvasTool>('select');
+  const [selectedShape, setSelectedShape] = useState<ShapeType | null>('rectangle');
+  const isStickyMode = tool === 'note';
+  const isPenMode = tool === 'pen';
+  const isTextMode = tool === 'text';
+  const isShapeMode = tool === 'shape';
+
   // Автоматически выбираем rectangle при переключении на режим shape
   useEffect(() => {
-    if (tool === "shape" && !selectedShape) {
-      setSelectedShape("rectangle");
+    if (tool === 'shape' && !selectedShape) {
+      setSelectedShape('rectangle');
     }
   }, [tool, selectedShape]);
 
@@ -806,16 +846,18 @@ function InnerBoardCanvas({
     if (!selectedNodeId) return null;
     const node = localNodes.find((n) => n.id === selectedNodeId);
     if (!node) return null;
-    if (node.type === "sql" || node.type === "python" || node.type === "plot") {
+    if (node.type === 'sql' || node.type === 'python' || node.type === 'plot') {
       return node;
     }
     return null;
   }, [selectedNodeId, localNodes]);
 
   const selectedDataNodeId = selectedDataNode?.id ?? null;
-  const selectedDataNodeType = selectedDataNode ? (selectedDataNode.type as "sql" | "python" | "plot") : null;
+  const selectedDataNodeType = selectedDataNode
+    ? (selectedDataNode.type as 'sql' | 'python' | 'plot')
+    : null;
   const selectedDataNodeStatus: NodeStatus | undefined = selectedDataNodeId
-    ? executionEntries[selectedDataNodeId]?.status ?? "idle"
+    ? (executionEntries[selectedDataNodeId]?.status ?? 'idle')
     : undefined;
   const canRunSelectedNode = Boolean(selectedDataNodeId);
   const canRunDownstream = canRunSelectedNode;
@@ -850,25 +892,25 @@ function InnerBoardCanvas({
 
       if (!event.ctrlKey && !event.metaKey && !event.altKey) {
         if (!event.shiftKey) {
-          if (key === "v") {
-            setTool("select");
+          if (key === 'v') {
+            setTool('select');
             return;
           }
-          if (key === "n") {
-            setTool((prev) => (prev === "note" ? "select" : "note"));
+          if (key === 'n') {
+            setTool((prev) => (prev === 'note' ? 'select' : 'note'));
             return;
           }
-          if (key === "p") {
-            setTool((prev) => (prev === "pen" ? "select" : "pen"));
+          if (key === 'p') {
+            setTool((prev) => (prev === 'pen' ? 'select' : 'pen'));
             return;
           }
-          if (key === "t") {
-            setTool((prev) => (prev === "text" ? "select" : "text"));
+          if (key === 't') {
+            setTool((prev) => (prev === 'text' ? 'select' : 'text'));
             return;
           }
         }
 
-        if (event.key === "Enter" && event.shiftKey && !event.metaKey && !event.ctrlKey) {
+        if (event.key === 'Enter' && event.shiftKey && !event.metaKey && !event.ctrlKey) {
           if (canRunSelectedNode) {
             event.preventDefault();
             handleRunSelectedNode();
@@ -877,7 +919,7 @@ function InnerBoardCanvas({
         }
 
         if (
-          event.key === "Enter" &&
+          event.key === 'Enter' &&
           event.shiftKey &&
           (event.metaKey || event.ctrlKey) &&
           canRunDownstream
@@ -889,322 +931,404 @@ function InnerBoardCanvas({
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canRunDownstream, canRunSelectedNode, handleRunDownstreamSelectedNode, handleRunSelectedNode, setTool]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    canRunDownstream,
+    canRunSelectedNode,
+    handleRunDownstreamSelectedNode,
+    handleRunSelectedNode,
+    setTool,
+  ]);
 
   const mapNodes = useCallback(() => {
-    const penNodes = localNodes.filter((n) => n.type === "pen");
+    const penNodes = localNodes.filter((n) => n.type === 'pen');
     if (penNodes.length > 0) {
-      console.log("mapNodes: Found pen nodes in localNodes:", penNodes.length, penNodes.map((n) => ({
-        id: n.id,
-        hasPayload: !!n.payload,
-        hasPoints: !!(n.payload as any)?.points,
-        hasInitialSize: !!(n.payload as any)?.initialSize,
-      })));
+      console.log(
+        'mapNodes: Found pen nodes in localNodes:',
+        penNodes.length,
+        penNodes.map((n) => ({
+          id: n.id,
+          hasPayload: !!n.payload,
+          hasPoints: !!(n.payload as any)?.points,
+          hasInitialSize: !!(n.payload as any)?.initialSize,
+        })),
+      );
     }
-    return localNodes
-      .filter((node) => node.type !== "draw") // draw nodes не отображаются в React Flow (legacy)
-      .map((node) => {
-        const isSql = node.type === "sql";
-        const isPython = node.type === "python";
-        const isDatabase = node.type === "database";
-        const isPlot = node.type === "plot";
-        const isPen = node.type === "pen";
-        const isText = node.type === "text";
-        const isShape = node.type === "shape";
-        const isNote = node.type === "note"; // Заметки теперь тоже shape nodes
-        const type = isSql ? "sqlNode" : isPython ? "pythonNode" : isDatabase ? "databaseNode" : isPlot ? "plotNode" : isPen ? "pen" : isText ? "textNode" : (isShape || isNote) ? "shapeNode" : "default";
-        
-        // Определяем тип слоя для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
-        const isDataNode = isSql || isPython || isDatabase || isPlot;
-        const isCanvasNode = isPen || isText || isShape || isNote;
-        
-        if (isPen) {
-          console.log("mapNodes: Mapping pen node", {
-            id: node.id,
-            payload: node.payload,
-            points: (node.payload as any)?.points?.length,
-            initialSize: (node.payload as any)?.initialSize,
-          });
-        }
-      const entry = executionEntries[node.id];
-      const storedWidth = nodeSizes[node.id]?.width ?? getDefaultNodeWidth();
-      const isCodeCollapsed = codeCollapsedMap[node.id] ?? false;
-      
-      // Базовые стили для каждого типа
-      const baseStyle =
-        type === "default"
-          ? { width: 280, borderRadius: 16 }
-          : isPen
-          ? {
-              width: ((node.payload as any)?.initialSize?.width ?? 100),
-              height: ((node.payload as any)?.initialSize?.height ?? 100),
-              background: "transparent",
-              border: "none",
-              boxShadow: "none",
-            }
-          : isText
-          ? {
-              width: ((node.payload as any)?.ui?.width ?? 240),
-              height: ((node.payload as any)?.ui?.height ?? 80),
-              background: "transparent",
-              border: "none",
-              boxShadow: "none",
-            }
-          : (isShape || isNote)
-          ? {
-              width: isNote ? ((node.payload as any)?.ui?.width ?? 280) : ((node.payload as any)?.width ?? 160),
-              height: isNote ? ((node.payload as any)?.ui?.height ?? 280) : ((node.payload as any)?.height ?? 96),
-              background: "transparent",
-              border: "none",
-              boxShadow: "none",
-            }
-          : {
-              width: storedWidth,
-              minWidth: MIN_NODE_WIDTH,
-              maxWidth: MAX_NODE_WIDTH,
-            };
-      
-      return {
-        id: node.id,
-        position: node.position,
-        type,
-        data: isPen
-          ? {
-              points: ((node.payload as any)?.points ?? []) as any,
-              initialSize: ((node.payload as any)?.initialSize ?? { width: 100, height: 100 }) as { width: number; height: number },
-            }
-          : isText
-          ? (() => {
-              const payload = (node.payload ?? {}) as any;
-              const text = payload.text ?? payload.textContent ?? "";
-              const fontSize = payload.fontSize ?? 18;
-              const fontFamily = payload.fontFamily ?? "Inter, sans-serif";
-              const color = payload.color ?? "#0f172a";
-              const textAlign = payload.textAlign ?? "left";
-              const richContent = payload.richContent ?? payload.richTextHtml ?? null;
+    return (
+      localNodes
+        .filter((node) => node.type !== 'draw') // draw nodes не отображаются в React Flow (legacy)
+        .map((node) => {
+          const isSql = node.type === 'sql';
+          const isPython = node.type === 'python';
+          const isDatabase = node.type === 'database';
+          const isPlot = node.type === 'plot';
+          const isPen = node.type === 'pen';
+          const isText = node.type === 'text';
+          const isShape = node.type === 'shape';
+          const isNote = node.type === 'note'; // Заметки теперь тоже shape nodes
+          const type = isSql
+            ? 'sqlNode'
+            : isPython
+              ? 'pythonNode'
+              : isDatabase
+                ? 'databaseNode'
+                : isPlot
+                  ? 'plotNode'
+                  : isPen
+                    ? 'pen'
+                    : isText
+                      ? 'textNode'
+                      : isShape || isNote
+                        ? 'shapeNode'
+                        : 'default';
 
-              return {
-                nodeId: node.id,
-                nodeType: "text" as const,
-                text,
-                fontSize,
-                fontFamily,
-                color,
-                textAlign,
-                richContentHtml: richContent,
-                onChangeText: (id: string, newText: string) => {
-                  setLocalNodes((prev) => {
-                    const next = prev.map((n) =>
-                      n.id === id && n.type === "text"
-                        ? {
-                            ...n,
-                            payload: {
-                              ...(n.payload ?? {}),
-                              text: newText,
-                              textContent: newText,
-                            },
-                          }
-                        : n
-                    );
-                    emitNodesChange(next);
-                    return next;
-                  });
-                },
-                onChangeFormat: (
-                  id: string,
-                  patch: Partial<{
-                    text: string;
-                    fontSize: number;
-                    fontFamily: string;
-                    color: string;
-                    textAlign: "left" | "center" | "right";
-                    richContent: string;
-                  }>
-                ) => {
-                  setLocalNodes((prev) => {
-                    const next = prev.map((n) =>
-                      n.id === id && n.type === "text"
-                        ? {
-                            ...n,
-                            payload: {
-                              ...(n.payload ?? {}),
-                              ...patch,
-                            },
-                          }
-                        : n
-                    );
-                    emitNodesChange(next);
-                    return next;
-                  });
-                },
-              };
-            })()
-          : (isShape || isNote)
-          ? (() => {
-              if (isNote) {
-                // Заметки - это shape nodes с типом rectangle и текстом
-                const text = (node.payload as any)?.text ?? (node.payload as any)?.noteContent ?? "";
-                const color = (node.payload as any)?.color ?? "#FFFFBA";
-                const fontSize = (node.payload as any)?.fontSize ?? 48;
-                const fontFamily = (node.payload as any)?.fontFamily ?? "Inter, sans-serif";
-                const isBold = (node.payload as any)?.isBold ?? false;
-                const isItalic = (node.payload as any)?.isItalic ?? false;
-                
-                return {
-                  shapeType: "rectangle" as const,
-                  shapeColor: color,
-                  text,
-                  fontSize,
-                  fontFamily,
-                  isBold,
-                  isItalic,
-                  width: (node.payload as any)?.ui?.width ?? 280,
-                  height: (node.payload as any)?.ui?.height ?? 280,
-                  onChangeText: (nid: string, newText: string) => {
-                    setLocalNodes((prev) => {
-                      const next = prev.map((n) =>
-                        n.id === nid && n.type === "note"
-                          ? { ...n, payload: { ...(n.payload ?? {}), text: newText, noteContent: newText } }
-                          : n
-                      );
-                      emitNodesChange(next);
-                      return next;
-                    });
-                  },
-                  onChangeColor: (nid: string, newColor: string) => {
-                    setLocalNodes((prev) => {
-                      const next = prev.map((n) =>
-                        n.id === nid && n.type === "note"
-                          ? { ...n, payload: { ...(n.payload ?? {}), color: newColor } }
-                          : n
-                      );
-                      emitNodesChange(next);
-                      return next;
-                    });
-                  },
-                  onChangeFontSize: (nid: string, newFontSize: number) => {
-                    setLocalNodes((prev) => {
-                      const next = prev.map((n) =>
-                        n.id === nid && n.type === "note"
-                          ? { ...n, payload: { ...(n.payload ?? {}), fontSize: newFontSize } }
-                          : n
-                      );
-                      emitNodesChange(next);
-                      return next;
-                    });
-                  },
-                  onChangeFontFamily: (nid: string, newFontFamily: string) => {
-                    setLocalNodes((prev) => {
-                      const next = prev.map((n) =>
-                        n.id === nid && n.type === "note"
-                          ? { ...n, payload: { ...(n.payload ?? {}), fontFamily: newFontFamily } }
-                          : n
-                      );
-                      emitNodesChange(next);
-                      return next;
-                    });
-                  },
-                  onChangeBold: (nid: string, newIsBold: boolean) => {
-                    setLocalNodes((prev) => {
-                      const next = prev.map((n) =>
-                        n.id === nid && n.type === "note"
-                          ? { ...n, payload: { ...(n.payload ?? {}), isBold: newIsBold } }
-                          : n
-                      );
-                      emitNodesChange(next);
-                      return next;
-                    });
-                  },
-                  onChangeItalic: (nid: string, newIsItalic: boolean) => {
-                    setLocalNodes((prev) => {
-                      const next = prev.map((n) =>
-                        n.id === nid && n.type === "note"
-                          ? { ...n, payload: { ...(n.payload ?? {}), isItalic: newIsItalic } }
-                          : n
-                      );
-                      emitNodesChange(next);
-                      return next;
-                    });
-                  },
-                };
-              } else {
-                // Обычные shape nodes
-                return {
-                  shapeType: ((node.payload as any)?.shapeType ?? "rectangle") as any,
-                  shapeColor: (node.payload as any)?.shapeColor ?? "#BFDBFE",
-                  shapeLabel: (node.payload as any)?.shapeLabel ?? "Фигура",
-                  width: (node.payload as any)?.width ?? 160,
-                  height: (node.payload as any)?.height ?? 96,
-                };
-              }
-            })()
-          : isDatabase
-          ? {
-              nodeId: node.id,
-              workspaceId: board.workspaceId,
-              onUpdatePayload: (nodeId: string, payload: Record<string, unknown>) => {
-                setLocalNodes((prev) => {
-                  const next = prev.map((n) =>
-                    n.id === nodeId
-                      ? {
-                          ...n,
-                          payload: {
-                            ...(n.payload ?? {}),
-                            ...payload,
+          // Определяем тип слоя для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
+          const isDataNode = isSql || isPython || isDatabase || isPlot;
+          const isCanvasNode = isPen || isText || isShape || isNote;
+
+          if (isPen) {
+            console.log('mapNodes: Mapping pen node', {
+              id: node.id,
+              payload: node.payload,
+              points: (node.payload as any)?.points?.length,
+              initialSize: (node.payload as any)?.initialSize,
+            });
+          }
+          const entry = executionEntries[node.id];
+          const storedWidth = nodeSizes[node.id]?.width ?? getDefaultNodeWidth();
+          const isCodeCollapsed = codeCollapsedMap[node.id] ?? false;
+
+          // Базовые стили для каждого типа
+          const baseStyle =
+            type === 'default'
+              ? { width: 280, borderRadius: 16 }
+              : isPen
+                ? {
+                    width: (node.payload as any)?.initialSize?.width ?? 100,
+                    height: (node.payload as any)?.initialSize?.height ?? 100,
+                    background: 'transparent',
+                    border: 'none',
+                    boxShadow: 'none',
+                  }
+                : isText
+                  ? {
+                      width: (node.payload as any)?.ui?.width ?? 240,
+                      height: (node.payload as any)?.ui?.height ?? 80,
+                      background: 'transparent',
+                      border: 'none',
+                      boxShadow: 'none',
+                    }
+                  : isShape || isNote
+                    ? {
+                        width: isNote
+                          ? ((node.payload as any)?.ui?.width ?? 280)
+                          : ((node.payload as any)?.width ?? 160),
+                        height: isNote
+                          ? ((node.payload as any)?.ui?.height ?? 280)
+                          : ((node.payload as any)?.height ?? 96),
+                        background: 'transparent',
+                        border: 'none',
+                        boxShadow: 'none',
+                      }
+                    : {
+                        width: storedWidth,
+                        minWidth: MIN_NODE_WIDTH,
+                        maxWidth: MAX_NODE_WIDTH,
+                      };
+
+          return {
+            id: node.id,
+            position: node.position,
+            type,
+            data: isPen
+              ? {
+                  points: ((node.payload as any)?.points ?? []) as any,
+                  initialSize: ((node.payload as any)?.initialSize ?? {
+                    width: 100,
+                    height: 100,
+                  }) as { width: number; height: number },
+                }
+              : isText
+                ? (() => {
+                    const payload = (node.payload ?? {}) as any;
+                    const text = payload.text ?? payload.textContent ?? '';
+                    const fontSize = payload.fontSize ?? 18;
+                    const fontFamily = payload.fontFamily ?? 'Inter, sans-serif';
+                    const color = payload.color ?? '#0f172a';
+                    const textAlign = payload.textAlign ?? 'left';
+                    const richContent = payload.richContent ?? payload.richTextHtml ?? null;
+
+                    return {
+                      nodeId: node.id,
+                      nodeType: 'text' as const,
+                      text,
+                      fontSize,
+                      fontFamily,
+                      color,
+                      textAlign,
+                      richContentHtml: richContent,
+                      onChangeText: (id: string, newText: string) => {
+                        setLocalNodes((prev) => {
+                          const next = prev.map((n) =>
+                            n.id === id && n.type === 'text'
+                              ? {
+                                  ...n,
+                                  payload: {
+                                    ...(n.payload ?? {}),
+                                    text: newText,
+                                    textContent: newText,
+                                  },
+                                }
+                              : n,
+                          );
+                          emitNodesChange(next);
+                          return next;
+                        });
+                      },
+                      onChangeFormat: (
+                        id: string,
+                        patch: Partial<{
+                          text: string;
+                          fontSize: number;
+                          fontFamily: string;
+                          color: string;
+                          textAlign: 'left' | 'center' | 'right';
+                          richContent: string;
+                        }>,
+                      ) => {
+                        setLocalNodes((prev) => {
+                          const next = prev.map((n) =>
+                            n.id === id && n.type === 'text'
+                              ? {
+                                  ...n,
+                                  payload: {
+                                    ...(n.payload ?? {}),
+                                    ...patch,
+                                  },
+                                }
+                              : n,
+                          );
+                          emitNodesChange(next);
+                          return next;
+                        });
+                      },
+                    };
+                  })()
+                : isShape || isNote
+                  ? (() => {
+                      if (isNote) {
+                        // Заметки - это shape nodes с типом rectangle и текстом
+                        const text =
+                          (node.payload as any)?.text ?? (node.payload as any)?.noteContent ?? '';
+                        const color = (node.payload as any)?.color ?? '#FFFFBA';
+                        const fontSize = (node.payload as any)?.fontSize ?? 48;
+                        const fontFamily = (node.payload as any)?.fontFamily ?? 'Inter, sans-serif';
+                        const isBold = (node.payload as any)?.isBold ?? false;
+                        const isItalic = (node.payload as any)?.isItalic ?? false;
+
+                        return {
+                          shapeType: 'rectangle' as const,
+                          shapeColor: color,
+                          text,
+                          fontSize,
+                          fontFamily,
+                          isBold,
+                          isItalic,
+                          width: (node.payload as any)?.ui?.width ?? 280,
+                          height: (node.payload as any)?.ui?.height ?? 280,
+                          onChangeText: (nid: string, newText: string) => {
+                            setLocalNodes((prev) => {
+                              const next = prev.map((n) =>
+                                n.id === nid && n.type === 'note'
+                                  ? {
+                                      ...n,
+                                      payload: {
+                                        ...(n.payload ?? {}),
+                                        text: newText,
+                                        noteContent: newText,
+                                      },
+                                    }
+                                  : n,
+                              );
+                              emitNodesChange(next);
+                              return next;
+                            });
                           },
+                          onChangeColor: (nid: string, newColor: string) => {
+                            setLocalNodes((prev) => {
+                              const next = prev.map((n) =>
+                                n.id === nid && n.type === 'note'
+                                  ? { ...n, payload: { ...(n.payload ?? {}), color: newColor } }
+                                  : n,
+                              );
+                              emitNodesChange(next);
+                              return next;
+                            });
+                          },
+                          onChangeFontSize: (nid: string, newFontSize: number) => {
+                            setLocalNodes((prev) => {
+                              const next = prev.map((n) =>
+                                n.id === nid && n.type === 'note'
+                                  ? {
+                                      ...n,
+                                      payload: { ...(n.payload ?? {}), fontSize: newFontSize },
+                                    }
+                                  : n,
+                              );
+                              emitNodesChange(next);
+                              return next;
+                            });
+                          },
+                          onChangeFontFamily: (nid: string, newFontFamily: string) => {
+                            setLocalNodes((prev) => {
+                              const next = prev.map((n) =>
+                                n.id === nid && n.type === 'note'
+                                  ? {
+                                      ...n,
+                                      payload: { ...(n.payload ?? {}), fontFamily: newFontFamily },
+                                    }
+                                  : n,
+                              );
+                              emitNodesChange(next);
+                              return next;
+                            });
+                          },
+                          onChangeBold: (nid: string, newIsBold: boolean) => {
+                            setLocalNodes((prev) => {
+                              const next = prev.map((n) =>
+                                n.id === nid && n.type === 'note'
+                                  ? { ...n, payload: { ...(n.payload ?? {}), isBold: newIsBold } }
+                                  : n,
+                              );
+                              emitNodesChange(next);
+                              return next;
+                            });
+                          },
+                          onChangeItalic: (nid: string, newIsItalic: boolean) => {
+                            setLocalNodes((prev) => {
+                              const next = prev.map((n) =>
+                                n.id === nid && n.type === 'note'
+                                  ? {
+                                      ...n,
+                                      payload: { ...(n.payload ?? {}), isItalic: newIsItalic },
+                                    }
+                                  : n,
+                              );
+                              emitNodesChange(next);
+                              return next;
+                            });
+                          },
+                        };
+                      } else {
+                        // Обычные shape nodes
+                        return {
+                          shapeType: ((node.payload as any)?.shapeType ?? 'rectangle') as any,
+                          shapeColor: (node.payload as any)?.shapeColor ?? '#BFDBFE',
+                          shapeLabel: (node.payload as any)?.shapeLabel ?? 'Фигура',
+                          width: (node.payload as any)?.width ?? 160,
+                          height: (node.payload as any)?.height ?? 96,
+                        };
+                      }
+                    })()
+                  : isDatabase
+                    ? {
+                        nodeId: node.id,
+                        workspaceId: board.workspaceId,
+                        onUpdatePayload: (nodeId: string, payload: Record<string, unknown>) => {
+                          setLocalNodes((prev) => {
+                            const next = prev.map((n) =>
+                              n.id === nodeId
+                                ? {
+                                    ...n,
+                                    payload: {
+                                      ...(n.payload ?? {}),
+                                      ...payload,
+                                    },
+                                  }
+                                : n,
+                            );
+                            emitNodesChange(next);
+                            return next;
+                          });
+                        },
+                        payload: node.payload,
+                      }
+                    : isPlot
+                      ? {
+                          nodeId: node.id,
+                          payload: node.payload,
+                          edges: localEdges,
+                          width: storedWidth,
                         }
-                      : n
-                  );
-                  emitNodesChange(next);
-                  return next;
-                });
-              },
-              payload: node.payload,
-            }
-          : isPlot
-          ? {
-              nodeId: node.id,
-              payload: node.payload,
-              edges: localEdges,
-              width: storedWidth,
-            }
-          : {
-              nodeId: node.id,
-              nodeType: isSql ? "sql" : isPython ? "python" : "sql",
-              execution: entry,
-              onCodeChange: (code: string) => onCodeChange(node.id, code),
-              onRun: () => onRunNode(node.id),
-              onRunDownstream: () => onRunDownstream(node.id),
-              onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
-              width: storedWidth,
-              isCodeCollapsed,
-              nodeKind: node.type,
+                      : {
+                          nodeId: node.id,
+                          nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
+                          execution: entry,
+                          onCodeChange: (code: string) => onCodeChange(node.id, code),
+                          onRun: () => onRunNode(node.id),
+                          onRunDownstream: () => onRunDownstream(node.id),
+                          onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
+                          width: storedWidth,
+                          isCodeCollapsed,
+                          nodeKind: node.type,
+                        },
+            // Для shape nodes (включая заметки) передаем width и height как пропсы, чтобы NodeResizer мог обновлять их в реальном времени
+            ...(isShape || isNote
+              ? {
+                  width: isNote
+                    ? ((node.payload as any)?.ui?.width ?? 280)
+                    : ((node.payload as any)?.width ?? 160),
+                  height: isNote
+                    ? ((node.payload as any)?.ui?.height ?? 280)
+                    : ((node.payload as any)?.height ?? 96),
+                }
+              : {}),
+            style: {
+              ...baseStyle,
+              // Явный zIndex: дата-клетки = 1, элементы канвы pen = 10, shape = 12, text = 15, заметки = 20
+              zIndex: isDataNode ? 1 : isPen ? 10 : isShape ? 12 : isText ? 15 : isNote ? 20 : 1,
             },
-        // Для shape nodes (включая заметки) передаем width и height как пропсы, чтобы NodeResizer мог обновлять их в реальном времени
-        ...((isShape || isNote) ? {
-          width: isNote ? ((node.payload as any)?.ui?.width ?? 280) : ((node.payload as any)?.width ?? 160),
-          height: isNote ? ((node.payload as any)?.ui?.height ?? 280) : ((node.payload as any)?.height ?? 96),
-        } : {}),
-        style: {
-          ...baseStyle,
-          // Явный zIndex: дата-клетки = 1, элементы канвы pen = 10, shape = 12, text = 15, заметки = 20
-          zIndex: isDataNode ? 1 : isPen ? 10 : isShape ? 12 : isText ? 15 : isNote ? 20 : 1,
-        },
-        // Pen nodes draggable только когда не в режиме pen
-        // Text nodes draggable только когда не в режиме text (в режиме select можно перетаскивать)
-        // Shape nodes и заметки draggable всегда (как обычные элементы канвы), кроме режимов создания других элементов
-        // Остальные ноды draggable всегда (если не в режиме создания sticky/pen/text)
-        draggable: isPen ? !isPenMode : isText ? !isTextMode : (isShape || isNote) ? !isPenMode && !isTextMode && !isShapeMode : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode,
-        selectable: isPen ? !isPenMode : isText ? !isTextMode : (isShape || isNote) ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode,
-        // Служебное поле для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
-        _sortOrder: isDataNode ? 0 : isCanvasNode ? 1 : 0,
-      } as Node & { _sortOrder: number };
-    })
-    // Сортируем: сначала дата-клетки (_sortOrder 0), потом элементы канвы (_sortOrder 1)
-    .sort((a, b) => a._sortOrder - b._sortOrder);
-  }, [executionEntries, localNodes, nodeSizes, codeCollapsedMap, onCodeChange, onRunNode, onRunDownstream, toggleCodeCollapsed, isPenMode, isTextMode, emitNodesChange, setLocalNodes, board.workspaceId]);
+            // Pen nodes draggable только когда не в режиме pen
+            // Text nodes draggable только когда не в режиме text (в режиме select можно перетаскивать)
+            // Shape nodes и заметки draggable всегда (как обычные элементы канвы), кроме режимов создания других элементов
+            // Остальные ноды draggable всегда (если не в режиме создания sticky/pen/text)
+            draggable: isPen
+              ? !isPenMode
+              : isText
+                ? !isTextMode
+                : isShape || isNote
+                  ? !isPenMode && !isTextMode && !isShapeMode
+                  : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode,
+            selectable: isPen
+              ? !isPenMode
+              : isText
+                ? !isTextMode
+                : isShape || isNote
+                  ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode
+                  : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode,
+            // Служебное поле для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
+            _sortOrder: isDataNode ? 0 : isCanvasNode ? 1 : 0,
+          } as Node & { _sortOrder: number };
+        })
+        // Сортируем: сначала дата-клетки (_sortOrder 0), потом элементы канвы (_sortOrder 1)
+        .sort((a, b) => a._sortOrder - b._sortOrder)
+    );
+  }, [
+    executionEntries,
+    localNodes,
+    nodeSizes,
+    codeCollapsedMap,
+    onCodeChange,
+    onRunNode,
+    onRunDownstream,
+    toggleCodeCollapsed,
+    isPenMode,
+    isTextMode,
+    emitNodesChange,
+    setLocalNodes,
+    board.workspaceId,
+  ]);
 
   const [flowNodes, setFlowNodes] = useState<Node[]>(() =>
     mapNodes().map((node) => ({
@@ -1222,12 +1346,12 @@ function InnerBoardCanvas({
         const shouldBeSelected = node.id === selectedNodeId;
         return node.selected !== shouldBeSelected;
       });
-      
+
       // Если selected уже правильный, не обновляем
       if (!needsUpdate) {
         return prev;
       }
-      
+
       // Обновляем только selected для всех узлов
       return prev.map((node) => ({
         ...node,
@@ -1238,31 +1362,37 @@ function InnerBoardCanvas({
 
   useEffect(() => {
     const mapped = mapNodes();
-    const penNodesInMapped = mapped.filter((n) => n.type === "pen");
-    console.log("useEffect mapNodes: mapped nodes:", mapped.length, "pen nodes:", penNodesInMapped.length);
-    
+    const penNodesInMapped = mapped.filter((n) => n.type === 'pen');
+    console.log(
+      'useEffect mapNodes: mapped nodes:',
+      mapped.length,
+      'pen nodes:',
+      penNodesInMapped.length,
+    );
+
     setFlowNodes((prev) => {
       // Объединяем mapped nodes с существующими, чтобы сохранить позиции и состояние
       const mappedById = new Map(mapped.map((n) => [n.id, n]));
       const existingById = new Map(prev.map((n) => [n.id, n]));
-      
-      const existingPenNodes = Array.from(existingById.values()).filter((n) => n.type === "pen");
-      console.log("useEffect mapNodes: existing pen nodes:", existingPenNodes.length);
-      
+
+      const existingPenNodes = Array.from(existingById.values()).filter((n) => n.type === 'pen');
+      console.log('useEffect mapNodes: existing pen nodes:', existingPenNodes.length);
+
       // Создаем новый массив: сначала mapped nodes, потом существующие, которых нет в mapped
       const result = mapped.map((node) => {
         const existing = existingById.get(node.id);
-        const isDataNode = node.type === "sqlNode" || node.type === "pythonNode";
-        
+        const isDataNode = node.type === 'sqlNode' || node.type === 'pythonNode';
+
         // Для data nodes сохраняем width в data из существующего node или из node.width
         const existingWidth = existing?.width ?? existing?.data?.width;
-        const updatedData = isDataNode && existingWidth
-          ? {
-              ...(node.data as any),
-              width: existingWidth,
-            }
-          : node.data;
-        
+        const updatedData =
+          isDataNode && existingWidth
+            ? {
+                ...(node.data as any),
+                width: existingWidth,
+              }
+            : node.data;
+
         // Важно: не перезаписываем position/width/height из existing, если они были обновлены React Flow
         // React Flow автоматически обновляет их через applyNodeChanges при ресайзе
         // Сохраняем selected из existing, чтобы не перезаписывать обновления из другого useEffect
@@ -1272,7 +1402,7 @@ function InnerBoardCanvas({
           // Используем position из mapped node (он будет обновлен через applyNodeChanges)
           position: node.position,
           // Сохраняем selected из existing (обновляется отдельным useEffect)
-          selected: existing?.selected ?? (node.id === selectedNodeId),
+          selected: existing?.selected ?? node.id === selectedNodeId,
           // Используем width/height из mapped node (React Flow обновляет их через applyNodeChanges)
           width: node.width ?? existing?.width,
           height: node.height ?? existing?.height,
@@ -1282,11 +1412,11 @@ function InnerBoardCanvas({
             // Используем width/height из mapped node style (React Flow обновляет их)
             width: node.style?.width ?? existing?.style?.width,
             height: node.style?.height ?? existing?.style?.height,
-            zIndex: node.style?.zIndex ?? (node.type === "pen" ? 10 : 1),
+            zIndex: node.style?.zIndex ?? (node.type === 'pen' ? 10 : 1),
           },
         };
       });
-      
+
       // Добавляем существующие nodes, которых нет в mapped
       // Это важно для pen nodes, которые могут быть добавлены напрямую в flowNodes
       // до того, как они попадут в localNodes и будут обработаны mapNodes
@@ -1294,9 +1424,9 @@ function InnerBoardCanvas({
         if (!mappedById.has(id)) {
           // Сохраняем pen nodes даже если их еще нет в mapped
           // Они появятся в следующем обновлении когда localNodes обновится
-          const isPenNode = existing.type === "pen";
+          const isPenNode = existing.type === 'pen';
           if (isPenNode && existing.data && (existing.data as any).points) {
-            console.log("useEffect mapNodes: Preserving pen node from existing:", id);
+            console.log('useEffect mapNodes: Preserving pen node from existing:', id);
             result.push({
               ...existing,
               // Обновляем selected для синхронизации с selectedNodeId
@@ -1310,27 +1440,30 @@ function InnerBoardCanvas({
           }
         }
       }
-      
+
       // Убеждаемся, что результат отсортирован по слоям: сначала data nodes, потом canvas nodes
       const sortedResult = result.sort((a, b) => {
-        const aOrder = (a as any)._sortOrder ?? (a.type === "pen" ? 1 : 0);
-        const bOrder = (b as any)._sortOrder ?? (b.type === "pen" ? 1 : 0);
+        const aOrder = (a as any)._sortOrder ?? (a.type === 'pen' ? 1 : 0);
+        const bOrder = (b as any)._sortOrder ?? (b.type === 'pen' ? 1 : 0);
         return aOrder - bOrder;
       });
-      
-      const finalPenNodes = sortedResult.filter((n) => n.type === "pen");
-      console.log("useEffect mapNodes: Final result pen nodes:", finalPenNodes.length);
+
+      const finalPenNodes = sortedResult.filter((n) => n.type === 'pen');
+      console.log('useEffect mapNodes: Final result pen nodes:', finalPenNodes.length);
       if (finalPenNodes.length > 0) {
-        console.log("useEffect mapNodes: Final pen nodes details:", finalPenNodes.map((n) => ({
-          id: n.id,
-          width: n.width,
-          height: n.height,
-          position: n.position,
-          hasData: !!n.data,
-          hasPoints: !!(n.data as any)?.points,
-        })));
+        console.log(
+          'useEffect mapNodes: Final pen nodes details:',
+          finalPenNodes.map((n) => ({
+            id: n.id,
+            width: n.width,
+            height: n.height,
+            position: n.position,
+            hasData: !!n.data,
+            hasPoints: !!(n.data as any)?.points,
+          })),
+        );
       }
-      
+
       return sortedResult;
     });
   }, [mapNodes]);
@@ -1352,10 +1485,10 @@ function InnerBoardCanvas({
           target: edge.targetId,
           sourceHandle: meta.sourceHandleId ?? undefined,
           targetHandle: meta.targetHandleId ?? undefined,
-          type: "step",
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
+          type: 'step',
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
           animated: true,
-          style: { stroke: "#94a3b8", strokeWidth: 4, strokeDasharray: "none" },
+          style: { stroke: '#94a3b8', strokeWidth: 4, strokeDasharray: 'none' },
         };
       }),
     [localEdges],
@@ -1368,18 +1501,25 @@ function InnerBoardCanvas({
       let mutated = false;
       const nextLocalCore = nextFlowNodes.map((flowNode) => {
         const previous = prevById.get(flowNode.id);
-        const position = flowNode.position ?? { x: previous?.position.x ?? 0, y: previous?.position.y ?? 0 };
+        const position = flowNode.position ?? {
+          x: previous?.position.x ?? 0,
+          y: previous?.position.y ?? 0,
+        };
         // Для pen nodes используем тип из data или previous
         const isPenNode = (flowNode.data as any)?.points !== undefined;
-        const isShapeNode = flowNode.type === "shapeNode";
-        const isNoteNode = isShapeNode && ((flowNode.data as any)?.text !== undefined || (flowNode.data as any)?.onChangeText);
+        const isShapeNode = flowNode.type === 'shapeNode';
+        const isNoteNode =
+          isShapeNode &&
+          ((flowNode.data as any)?.text !== undefined || (flowNode.data as any)?.onChangeText);
         const nodeKind = isPenNode
-          ? "pen"
+          ? 'pen'
           : isShapeNode && isNoteNode
-          ? "note"
-          : isShapeNode
-          ? "shape"
-          : ((flowNode.data as NodeData | undefined)?.nodeKind ?? previous?.type ?? "sql") as BoardCanvasProps["nodes"][number]["type"];
+            ? 'note'
+            : isShapeNode
+              ? 'shape'
+              : (((flowNode.data as NodeData | undefined)?.nodeKind ??
+                  previous?.type ??
+                  'sql') as BoardCanvasProps['nodes'][number]['type']);
         // Для pen nodes сохраняем points и initialSize из data
         // Для shape nodes сохраняем размеры из flowNode (width/height) и остальной payload
         // Для заметок сохраняем размеры в ui, а текст и форматирование в payload
@@ -1389,44 +1529,56 @@ function InnerBoardCanvas({
               initialSize: (flowNode.data as any).initialSize,
             }
           : isShapeNode && isNoteNode
-          ? {
-              ...(previous?.payload ?? {}),
-              text: (flowNode.data as any)?.text ?? (previous?.payload as any)?.text,
-              noteContent: (flowNode.data as any)?.text ?? (previous?.payload as any)?.noteContent,
-              color: (flowNode.data as any)?.shapeColor ?? (previous?.payload as any)?.color,
-              fontSize: (flowNode.data as any)?.fontSize ?? (previous?.payload as any)?.fontSize,
-              fontFamily: (flowNode.data as any)?.fontFamily ?? (previous?.payload as any)?.fontFamily,
-              isBold: (flowNode.data as any)?.isBold ?? (previous?.payload as any)?.isBold,
-              isItalic: (flowNode.data as any)?.isItalic ?? (previous?.payload as any)?.isItalic,
-              ui: {
-                ...((previous?.payload as any)?.ui ?? {}),
-                width: typeof flowNode.width === "number" ? flowNode.width : ((previous?.payload as any)?.ui as any)?.width ?? 280,
-                height: typeof flowNode.height === "number" ? flowNode.height : ((previous?.payload as any)?.ui as any)?.height ?? 280,
-              },
-            }
-          : isShapeNode
-          ? {
-              ...(previous?.payload ?? {}),
-              ...((flowNode.data as any) ?? {}),
-              // Сохраняем размеры из flowNode, если они есть
-              width: typeof flowNode.width === "number" ? flowNode.width : (previous?.payload as any)?.width,
-              height: typeof flowNode.height === "number" ? flowNode.height : (previous?.payload as any)?.height,
-            }
-          : previous?.payload ?? {};
+            ? {
+                ...(previous?.payload ?? {}),
+                text: (flowNode.data as any)?.text ?? (previous?.payload as any)?.text,
+                noteContent:
+                  (flowNode.data as any)?.text ?? (previous?.payload as any)?.noteContent,
+                color: (flowNode.data as any)?.shapeColor ?? (previous?.payload as any)?.color,
+                fontSize: (flowNode.data as any)?.fontSize ?? (previous?.payload as any)?.fontSize,
+                fontFamily:
+                  (flowNode.data as any)?.fontFamily ?? (previous?.payload as any)?.fontFamily,
+                isBold: (flowNode.data as any)?.isBold ?? (previous?.payload as any)?.isBold,
+                isItalic: (flowNode.data as any)?.isItalic ?? (previous?.payload as any)?.isItalic,
+                ui: {
+                  ...((previous?.payload as any)?.ui ?? {}),
+                  width:
+                    typeof flowNode.width === 'number'
+                      ? flowNode.width
+                      : (((previous?.payload as any)?.ui as any)?.width ?? 280),
+                  height:
+                    typeof flowNode.height === 'number'
+                      ? flowNode.height
+                      : (((previous?.payload as any)?.ui as any)?.height ?? 280),
+                },
+              }
+            : isShapeNode
+              ? {
+                  ...(previous?.payload ?? {}),
+                  ...((flowNode.data as any) ?? {}),
+                  // Сохраняем размеры из flowNode, если они есть
+                  width:
+                    typeof flowNode.width === 'number'
+                      ? flowNode.width
+                      : (previous?.payload as any)?.width,
+                  height:
+                    typeof flowNode.height === 'number'
+                      ? flowNode.height
+                      : (previous?.payload as any)?.height,
+                }
+              : (previous?.payload ?? {});
         // Проверяем изменения: position, type, или для shape nodes - размеры
-        const positionChanged = !previous || previous.position.x !== position.x || previous.position.y !== position.y;
+        const positionChanged =
+          !previous || previous.position.x !== position.x || previous.position.y !== position.y;
         const typeChanged = previous?.type !== nodeKind;
-        const shapeSizeChanged = isShapeNode && previous && (
-          isNoteNode
-            ? (
-                ((previous.payload as any)?.ui as any)?.width !== (payload as any)?.ui?.width ||
-                ((previous.payload as any)?.ui as any)?.height !== (payload as any)?.ui?.height
-              )
-            : (
-                (previous.payload as any)?.width !== payload.width ||
-                (previous.payload as any)?.height !== payload.height
-              )
-        );
+        const shapeSizeChanged =
+          isShapeNode &&
+          previous &&
+          (isNoteNode
+            ? ((previous.payload as any)?.ui as any)?.width !== (payload as any)?.ui?.width ||
+              ((previous.payload as any)?.ui as any)?.height !== (payload as any)?.ui?.height
+            : (previous.payload as any)?.width !== payload.width ||
+              (previous.payload as any)?.height !== payload.height);
         if (positionChanged || typeChanged || shapeSizeChanged) {
           mutated = true;
         }
@@ -1439,8 +1591,8 @@ function InnerBoardCanvas({
       });
       // preserve sticky notes and pen nodes that are not part of nextFlowNodes
       const nextIds = new Set(nextFlowNodes.map((n) => n.id));
-      const preservedNotes = prev.filter((n) => n.type === "note" && !nextIds.has(n.id));
-      const preservedPen = prev.filter((n) => n.type === "pen" && !nextIds.has(n.id));
+      const preservedNotes = prev.filter((n) => n.type === 'note' && !nextIds.has(n.id));
+      const preservedPen = prev.filter((n) => n.type === 'pen' && !nextIds.has(n.id));
       const nextLocal = [...nextLocalCore, ...preservedNotes, ...preservedPen];
 
       if (mutated) {
@@ -1458,10 +1610,7 @@ function InnerBoardCanvas({
   const hasSelection = useMemo(() => {
     const nodes = flowNodes ?? [];
     const edges = flowEdges ?? [];
-    return (
-      nodes.some((n: any) => n?.selected) ||
-      edges.some((e: any) => e?.selected)
-    );
+    return nodes.some((n: any) => n?.selected) || edges.some((e: any) => e?.selected);
   }, [flowNodes, flowEdges]);
 
   const handleNodesChange = useCallback(
@@ -1469,139 +1618,171 @@ function InnerBoardCanvas({
       // Все изменения обрабатываются как flowChanges (заметки теперь shape nodes)
       const flowChanges: NodeChange[] = changes;
       if (flowChanges.length) {
-        const shouldCommit = flowChanges.some((change) => change.type === "position" && change.dragging !== true);
+        const shouldCommit = flowChanges.some(
+          (change) => change.type === 'position' && change.dragging !== true,
+        );
         setFlowNodes((current) => {
           const next = applyNodeChanges(flowChanges, current);
           // Убеждаемся, что zIndex сохраняется после изменений и сортировка по слоям
           // Также обновляем selected для синхронизации с selectedNodeId
-          const nextWithZIndex = next.map((node) => {
-            const isPen = node.type === "pen";
-            const isText = node.type === "textNode";
-            const isShape = node.type === "shapeNode";
-            const isDataNode = node.type === "sqlNode" || node.type === "pythonNode";
-            
-            // Для data nodes обновляем data.width из node.width (который React Flow обновляет через dimensions)
-            // Важно: используем node.width напрямую из applyNodeChanges, который уже содержит обновленные размеры и position
-            const updatedData = isDataNode && node.width
-              ? {
-                  ...(node.data as any),
-                  width: node.width,
-                }
-              : node.data;
-            
-            return {
-              ...node,
-              data: updatedData,
-              // Сохраняем position из applyNodeChanges (React Flow автоматически обновляет его при ресайзе)
-              position: node.position,
-              // Сохраняем selected из applyNodeChanges (React Flow управляет этим через onNodeClick)
-              // Не обновляем selected здесь, чтобы избежать бесконечных циклов
-              selected: node.selected,
-              // Сохраняем width/height из applyNodeChanges (важно для shape nodes - NodeResizer обновляет их напрямую)
-              width: node.width,
-              height: node.height,
-              style: {
-                ...node.style,
-                // Для shape nodes обновляем width/height в style из пропсов, чтобы они синхронизировались
-                ...(isShape ? {
-                  width: typeof node.width === "number" ? node.width : node.style?.width,
-                  height: typeof node.height === "number" ? node.height : node.style?.height,
-                } : {
-                  width: node.style?.width,
-                  height: node.style?.height,
-                }),
-                zIndex: node.style?.zIndex ?? (isPen ? 10 : isShape ? 12 : isText ? 15 : isDataNode ? 1 : 1),
-              },
-              // Сохраняем _sortOrder для корректной сортировки
-              _sortOrder: isDataNode ? 0 : (isPen || isText || isShape) ? 1 : 0,
-            };
-          }).sort((a, b) => (a._sortOrder ?? 0) - (b._sortOrder ?? 0));
+          const nextWithZIndex = next
+            .map((node) => {
+              const isPen = node.type === 'pen';
+              const isText = node.type === 'textNode';
+              const isShape = node.type === 'shapeNode';
+              const isDataNode = node.type === 'sqlNode' || node.type === 'pythonNode';
+
+              // Для data nodes обновляем data.width из node.width (который React Flow обновляет через dimensions)
+              // Важно: используем node.width напрямую из applyNodeChanges, который уже содержит обновленные размеры и position
+              const updatedData =
+                isDataNode && node.width
+                  ? {
+                      ...(node.data as any),
+                      width: node.width,
+                    }
+                  : node.data;
+
+              return {
+                ...node,
+                data: updatedData,
+                // Сохраняем position из applyNodeChanges (React Flow автоматически обновляет его при ресайзе)
+                position: node.position,
+                // Сохраняем selected из applyNodeChanges (React Flow управляет этим через onNodeClick)
+                // Не обновляем selected здесь, чтобы избежать бесконечных циклов
+                selected: node.selected,
+                // Сохраняем width/height из applyNodeChanges (важно для shape nodes - NodeResizer обновляет их напрямую)
+                width: node.width,
+                height: node.height,
+                style: {
+                  ...node.style,
+                  // Для shape nodes обновляем width/height в style из пропсов, чтобы они синхронизировались
+                  ...(isShape
+                    ? {
+                        width: typeof node.width === 'number' ? node.width : node.style?.width,
+                        height: typeof node.height === 'number' ? node.height : node.style?.height,
+                      }
+                    : {
+                        width: node.style?.width,
+                        height: node.style?.height,
+                      }),
+                  zIndex:
+                    node.style?.zIndex ??
+                    (isPen ? 10 : isShape ? 12 : isText ? 15 : isDataNode ? 1 : 1),
+                },
+                // Сохраняем _sortOrder для корректной сортировки
+                _sortOrder: isDataNode ? 0 : isPen || isText || isShape ? 1 : 0,
+              };
+            })
+            .sort((a, b) => (a._sortOrder ?? 0) - (b._sortOrder ?? 0));
           if (shouldCommit) {
             commitFlowNodesToLocal(nextWithZIndex, true);
           }
           return nextWithZIndex;
         });
         flowChanges.forEach((change) => {
-          if (change.type === "dimensions" && change.id && change.dimensions) {
+          if (change.type === 'dimensions' && change.id && change.dimensions) {
             const width = change.dimensions.width;
             const height = change.dimensions.height;
-            
+
             // Проверяем, есть ли активный dragging или resizing для этого node
             const hasActiveDragging = flowChanges.some(
-              (ch) => ch.type === "position" && (ch as any).id === change.id && (ch as any).dragging === true
+              (ch) =>
+                ch.type === 'position' &&
+                (ch as any).id === change.id &&
+                (ch as any).dragging === true,
             );
             // Проверяем, есть ли другие dimensions изменения для этого node (активный ресайз)
             const hasActiveResizing = flowChanges.some(
-              (ch) => ch.type === "dimensions" && (ch as any).id === change.id && ch !== change
+              (ch) => ch.type === 'dimensions' && (ch as any).id === change.id && ch !== change,
             );
-            
+
             const node = localNodes.find((n) => n.id === change.id);
-            
+
             // Для text nodes используем debounce, чтобы избежать дергания при ресайзе
-            if (node?.type === "text" && width && height) {
+            if (node?.type === 'text' && width && height) {
               // Очищаем предыдущий таймер для этого узла
               const existingTimer = textNodeResizeTimerRef.current.get(change.id);
               if (existingTimer) {
                 clearTimeout(existingTimer);
               }
-              
+
               // Устанавливаем новый таймер для debounce (200ms после последнего изменения)
               const timer = setTimeout(() => {
                 setLocalNodes((prev) => {
-                  const currentNode = prev.find((n) => n.id === change.id && n.type === "text");
+                  const currentNode = prev.find((n) => n.id === change.id && n.type === 'text');
                   if (!currentNode) return prev;
-                  
+
                   const next = prev.map((n) =>
-                    n.id === change.id && n.type === "text"
+                    n.id === change.id && n.type === 'text'
                       ? {
                           ...n,
                           payload: {
                             ...(n.payload ?? {}),
                             ui: {
                               ...((n.payload as any)?.ui ?? {}),
-                              width: typeof width === "number" ? width : parseFloat(String(width)) || 240,
-                              height: typeof height === "number" ? height : parseFloat(String(height)) || 80,
+                              width:
+                                typeof width === 'number'
+                                  ? width
+                                  : parseFloat(String(width)) || 240,
+                              height:
+                                typeof height === 'number'
+                                  ? height
+                                  : parseFloat(String(height)) || 80,
                             },
                           },
                         }
-                      : n
+                      : n,
                   );
                   emitNodesChange(next);
                   return next;
                 });
                 textNodeResizeTimerRef.current.delete(change.id);
               }, 200);
-              
+
               textNodeResizeTimerRef.current.set(change.id, timer);
-            } else if ((node?.type === "shape" || node?.type === "note") && width && height && !hasActiveDragging && !hasActiveResizing) {
+            } else if (
+              (node?.type === 'shape' || node?.type === 'note') &&
+              width &&
+              height &&
+              !hasActiveDragging &&
+              !hasActiveResizing
+            ) {
               // Для shape nodes используем debounce для сохранения размеров в payload
               // Сохраняем только после завершения ресайза, чтобы не конфликтовать с React Flow
               const existingTimer = shapeNodeResizeTimerRef.current.get(change.id);
               if (existingTimer) {
                 clearTimeout(existingTimer);
               }
-              
+
               const timer = setTimeout(() => {
                 // Получаем актуальные размеры из flowNodes через setFlowNodes callback
                 setFlowNodes((currentFlowNodes) => {
                   const currentFlowNode = currentFlowNodes.find((n) => n.id === change.id);
-                  const isNote = node?.type === "note";
+                  const isNote = node?.type === 'note';
                   const defaultWidth = isNote ? 280 : 160;
                   const defaultHeight = isNote ? 280 : 96;
-                  
-                  const finalWidth = typeof currentFlowNode?.width === "number" && currentFlowNode.width > 0 
-                    ? currentFlowNode.width 
-                    : (typeof width === "number" ? width : parseFloat(String(width)) || defaultWidth);
-                  const finalHeight = typeof currentFlowNode?.height === "number" && currentFlowNode.height > 0 
-                    ? currentFlowNode.height 
-                    : (typeof height === "number" ? height : parseFloat(String(height)) || defaultHeight);
-                  
+
+                  const finalWidth =
+                    typeof currentFlowNode?.width === 'number' && currentFlowNode.width > 0
+                      ? currentFlowNode.width
+                      : typeof width === 'number'
+                        ? width
+                        : parseFloat(String(width)) || defaultWidth;
+                  const finalHeight =
+                    typeof currentFlowNode?.height === 'number' && currentFlowNode.height > 0
+                      ? currentFlowNode.height
+                      : typeof height === 'number'
+                        ? height
+                        : parseFloat(String(height)) || defaultHeight;
+
                   setLocalNodes((prev) => {
-                    const currentNode = prev.find((n) => n.id === change.id && (n.type === "shape" || n.type === "note"));
+                    const currentNode = prev.find(
+                      (n) => n.id === change.id && (n.type === 'shape' || n.type === 'note'),
+                    );
                     if (!currentNode) return prev;
-                    
+
                     const next = prev.map((n) => {
-                      if (n.id === change.id && n.type === "shape") {
+                      if (n.id === change.id && n.type === 'shape') {
                         return {
                           ...n,
                           position: currentFlowNode?.position ?? n.position,
@@ -1611,7 +1792,7 @@ function InnerBoardCanvas({
                             height: finalHeight,
                           },
                         };
-                      } else if (n.id === change.id && n.type === "note") {
+                      } else if (n.id === change.id && n.type === 'note') {
                         return {
                           ...n,
                           position: currentFlowNode?.position ?? n.position,
@@ -1630,30 +1811,43 @@ function InnerBoardCanvas({
                     emitNodesChange(next);
                     return next;
                   });
-                  
+
                   return currentFlowNodes;
                 });
                 shapeNodeResizeTimerRef.current.delete(change.id);
               }, 300); // Увеличиваем debounce до 300ms для более плавного ресайза
-              
+
               shapeNodeResizeTimerRef.current.set(change.id, timer);
-            } else if (node?.type !== "text" && node?.type !== "shape" && node?.type !== "note" && width && !hasActiveDragging) {
-                // Для data nodes сохраняем только width
-                requestAnimationFrame(() => {
-                  setNodeWidth(change.id!, width);
-                });
-              }
-              // Для pen nodes также сохраняем height
-              if (height && node?.type === "pen") {
-                requestAnimationFrame(() => {
-                  useCanvasLayoutStore.getState().setNodeSize(change.id!, { width, height });
-                });
-              }
+            } else if (
+              node?.type !== 'text' &&
+              node?.type !== 'shape' &&
+              node?.type !== 'note' &&
+              width &&
+              !hasActiveDragging
+            ) {
+              // Для data nodes сохраняем только width
+              requestAnimationFrame(() => {
+                setNodeWidth(change.id!, width);
+              });
+            }
+            // Для pen nodes также сохраняем height
+            if (height && node?.type === 'pen') {
+              requestAnimationFrame(() => {
+                useCanvasLayoutStore.getState().setNodeSize(change.id!, { width, height });
+              });
+            }
           }
         });
       }
     },
-    [commitFlowNodesToLocal, setNodeWidth, localNodes, emitNodesChange, setLocalNodes, setFlowNodes],
+    [
+      commitFlowNodesToLocal,
+      setNodeWidth,
+      localNodes,
+      emitNodesChange,
+      setLocalNodes,
+      setFlowNodes,
+    ],
   );
 
   const handleNodeClick = useCallback(
@@ -1681,13 +1875,18 @@ function InnerBoardCanvas({
     const viewportCenterX = window.innerWidth / 2;
     const viewportCenterY = window.innerHeight / 2;
     const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
-    
+
     // Создаем узел с пустым кодом
-    const template = addNodeHelpers.createSqlNode(position) as BoardCanvasProps["nodes"][number];
+    const template = addNodeHelpers.createSqlNode(position) as BoardCanvasProps['nodes'][number];
     // Перезаписываем payload, чтобы узел был пустым
-    template.payload = { sql: "" };
-    
-    registerNode({ id: template.id, type: "sql", position: template.position, payload: template.payload });
+    template.payload = { sql: '' };
+
+    registerNode({
+      id: template.id,
+      type: 'sql',
+      position: template.position,
+      payload: template.payload,
+    });
     setLocalNodes((prev) => {
       const next = [...prev, template];
       emitNodesChange(next);
@@ -1701,13 +1900,18 @@ function InnerBoardCanvas({
     const viewportCenterX = window.innerWidth / 2;
     const viewportCenterY = window.innerHeight / 2;
     const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
-    
+
     // Создаем узел с пустым кодом
-    const template = addNodeHelpers.createPythonNode(position) as BoardCanvasProps["nodes"][number];
+    const template = addNodeHelpers.createPythonNode(position) as BoardCanvasProps['nodes'][number];
     // Перезаписываем payload, чтобы узел был пустым
-    template.payload = { python: "" };
-    
-    registerNode({ id: template.id, type: "python", position: template.position, payload: template.payload });
+    template.payload = { python: '' };
+
+    registerNode({
+      id: template.id,
+      type: 'python',
+      position: template.position,
+      payload: template.payload,
+    });
     setLocalNodes((prev) => {
       const next = [...prev, template];
       emitNodesChange(next);
@@ -1721,10 +1925,17 @@ function InnerBoardCanvas({
     const viewportCenterX = window.innerWidth / 2;
     const viewportCenterY = window.innerHeight / 2;
     const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
-    
-    const template = addNodeHelpers.createDatabaseNode(position) as BoardCanvasProps["nodes"][number];
-    
-    registerNode({ id: template.id, type: "database", position: template.position, payload: template.payload });
+
+    const template = addNodeHelpers.createDatabaseNode(
+      position,
+    ) as BoardCanvasProps['nodes'][number];
+
+    registerNode({
+      id: template.id,
+      type: 'database',
+      position: template.position,
+      payload: template.payload,
+    });
     setLocalNodes((prev) => {
       const next = [...prev, template];
       emitNodesChange(next);
@@ -1738,10 +1949,15 @@ function InnerBoardCanvas({
     const viewportCenterX = window.innerWidth / 2;
     const viewportCenterY = window.innerHeight / 2;
     const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
-    
-    const template = addNodeHelpers.createPlotNode(position) as BoardCanvasProps["nodes"][number];
-    
-    registerNode({ id: template.id, type: "plot", position: template.position, payload: template.payload });
+
+    const template = addNodeHelpers.createPlotNode(position) as BoardCanvasProps['nodes'][number];
+
+    registerNode({
+      id: template.id,
+      type: 'plot',
+      position: template.position,
+      payload: template.payload,
+    });
     setLocalNodes((prev) => {
       const next = [...prev, template];
       emitNodesChange(next);
@@ -1750,29 +1966,28 @@ function InnerBoardCanvas({
     onSelectNode?.(template.id);
   }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
 
-
   const handleConnectStart = useCallback(
     (_event: React.MouseEvent | React.TouchEvent, params: ConnectionStartParams) => {
-    connectOriginRef.current = {
-      nodeId: params?.nodeId ?? null,
-      handleType: params?.handleType ?? null,
-      handleId: params?.handleId ?? null,
-    };
-    connectionCreatedRef.current = false;
-    
-    // Start tracking mouse position
-    const handleMouseMove = (e: MouseEvent) => {
-      if (connectOriginRef.current) {
-        const flowPos = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-        lastMousePositionRef.current = flowPos;
-      }
-    };
-    
-    window.addEventListener("mousemove", handleMouseMove);
-    // Store cleanup function
-    mouseMoveCleanupRef.current = () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-    };
+      connectOriginRef.current = {
+        nodeId: params?.nodeId ?? null,
+        handleType: params?.handleType ?? null,
+        handleId: params?.handleId ?? null,
+      };
+      connectionCreatedRef.current = false;
+
+      // Start tracking mouse position
+      const handleMouseMove = (e: MouseEvent) => {
+        if (connectOriginRef.current) {
+          const flowPos = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+          lastMousePositionRef.current = flowPos;
+        }
+      };
+
+      window.addEventListener('mousemove', handleMouseMove);
+      // Store cleanup function
+      mouseMoveCleanupRef.current = () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+      };
     },
     [rf],
   );
@@ -1784,30 +1999,34 @@ function InnerBoardCanvas({
         mouseMoveCleanupRef.current();
         mouseMoveCleanupRef.current = null;
       }
-      
+
       // If connection was not created through onConnect, try to create it manually
-      if (!connectionCreatedRef.current && connectOriginRef.current?.nodeId && lastMousePositionRef.current) {
+      if (
+        !connectionCreatedRef.current &&
+        connectOriginRef.current?.nodeId &&
+        lastMousePositionRef.current
+      ) {
         const sourceNodeId = connectOriginRef.current.nodeId;
         const sourceNode = rf.getNode(sourceNodeId);
-        
+
         if (sourceNode && lastMousePositionRef.current) {
           // Find node under mouse cursor or nearest node
           const mousePos = lastMousePositionRef.current;
           const allNodes = rf.getNodes();
-          
+
           // First, try to find node that contains the mouse position
           let targetNode: Node | null = null;
           let minDistance = Infinity;
-          
+
           for (const node of allNodes) {
             if (node.id === sourceNodeId) continue; // Skip source node
-            
+
             const nodePos = node.positionAbsolute ?? node.position;
             const nodeWidth = node.width ?? 280;
             const nodeHeight = node.height ?? 320;
             const nodeCenterX = nodePos.x + nodeWidth / 2;
             const nodeCenterY = nodePos.y + nodeHeight / 2;
-            
+
             // Check if mouse is inside node bounds
             if (
               mousePos.x >= nodePos.x &&
@@ -1818,10 +2037,10 @@ function InnerBoardCanvas({
               targetNode = node;
               break; // Found node containing cursor, use it
             }
-            
+
             // Otherwise, track distance to node center for fallback
             const distance = Math.sqrt(
-              Math.pow(mousePos.x - nodeCenterX, 2) + Math.pow(mousePos.y - nodeCenterY, 2)
+              Math.pow(mousePos.x - nodeCenterX, 2) + Math.pow(mousePos.y - nodeCenterY, 2),
             );
             if (distance < minDistance) {
               minDistance = distance;
@@ -1831,26 +2050,27 @@ function InnerBoardCanvas({
               }
             }
           }
-          
+
           if (targetNode) {
             // Create connection manually
             const originHandleType = connectOriginRef.current.handleType;
             const originHandleId = connectOriginRef.current.handleId;
-            const isConnectingFromSource = originHandleType === "source";
-            
+            const isConnectingFromSource = originHandleType === 'source';
+
             // Determine source handle - use the actual handle ID from connectStart if available
             let sourceHandle: string | null = null;
-            if (originHandleId && (
-              originHandleId === "left" || 
-              originHandleId === "top" || 
-              originHandleId === "right" || 
-              originHandleId === "bottom"
-            )) {
+            if (
+              originHandleId &&
+              (originHandleId === 'left' ||
+                originHandleId === 'top' ||
+                originHandleId === 'right' ||
+                originHandleId === 'bottom')
+            ) {
               // Use the handle ID from where we started
               sourceHandle = originHandleId;
             } else {
               // Fallback: find nearest handle if ID is not available
-              if (originHandleType === "source") {
+              if (originHandleType === 'source') {
                 const sourceNodePos = sourceNode.positionAbsolute ?? sourceNode.position;
                 const sourceNodeWidth = sourceNode.width ?? 280;
                 const sourceNodeHeight = sourceNode.height ?? 320;
@@ -1858,8 +2078,8 @@ function InnerBoardCanvas({
                   x: sourceNodePos.x + sourceNodeWidth / 2,
                   y: sourceNodePos.y + sourceNodeHeight / 2,
                 };
-                sourceHandle = findNearestHandleId(sourceNode, sourceCenter, "source") ?? null;
-              } else if (originHandleType === "target") {
+                sourceHandle = findNearestHandleId(sourceNode, sourceCenter, 'source') ?? null;
+              } else if (originHandleType === 'target') {
                 const sourceNodePos = sourceNode.positionAbsolute ?? sourceNode.position;
                 const sourceNodeWidth = sourceNode.width ?? 280;
                 const sourceNodeHeight = sourceNode.height ?? 320;
@@ -1867,22 +2087,23 @@ function InnerBoardCanvas({
                   x: sourceNodePos.x + sourceNodeWidth / 2,
                   y: sourceNodePos.y + sourceNodeHeight / 2,
                 };
-                sourceHandle = findNearestHandleId(sourceNode, sourceCenter, "target") ?? null;
+                sourceHandle = findNearestHandleId(sourceNode, sourceCenter, 'target') ?? null;
               }
             }
-            
+
             // Determine target handle - use mouse position to find nearest handle
-            const neededTargetHandleType = isConnectingFromSource ? "target" : "source";
+            const neededTargetHandleType = isConnectingFromSource ? 'target' : 'source';
             // Use actual mouse position instead of node center for better accuracy
-            const targetHandle = findNearestHandleId(targetNode, mousePos, neededTargetHandleType) ?? null;
-            
+            const targetHandle =
+              findNearestHandleId(targetNode, mousePos, neededTargetHandleType) ?? null;
+
             if (sourceHandle && targetHandle) {
               // Create the connection
               const sourceId = isConnectingFromSource ? sourceNodeId : targetNode.id;
               const targetId = isConnectingFromSource ? targetNode.id : sourceNodeId;
               const finalSourceHandle = isConnectingFromSource ? sourceHandle : targetHandle;
               const finalTargetHandle = isConnectingFromSource ? targetHandle : sourceHandle;
-              
+
               setLocalEdges((prev) => {
                 if (prev.some((edge) => edge.sourceId === sourceId && edge.targetId === targetId)) {
                   return prev;
@@ -1906,7 +2127,7 @@ function InnerBoardCanvas({
           }
         }
       }
-      
+
       connectOriginRef.current = null;
       connectionCreatedRef.current = false;
       lastMousePositionRef.current = null;
@@ -1916,19 +2137,19 @@ function InnerBoardCanvas({
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      let {
-        sourceId,
-        targetId,
-        sourceHandle,
-        targetHandle,
-      } = resolveConnectionEndpoints(connection, connectOriginRef.current);
+      let { sourceId, targetId, sourceHandle, targetHandle } = resolveConnectionEndpoints(
+        connection,
+        connectOriginRef.current,
+      );
 
       // Determine the handle type we started from (from connectOriginRef)
       const originHandleType = connectOriginRef.current?.handleType;
-      const isConnectingFromSource = originHandleType === "source" || 
-        sourceHandle === "right" || 
-        sourceHandle === "bottom" ||
-        (connection.sourceHandle && (connection.sourceHandle === "right" || connection.sourceHandle === "bottom"));
+      const isConnectingFromSource =
+        originHandleType === 'source' ||
+        sourceHandle === 'right' ||
+        sourceHandle === 'bottom' ||
+        (connection.sourceHandle &&
+          (connection.sourceHandle === 'right' || connection.sourceHandle === 'bottom'));
 
       // Auto-complete targetHandle if missing
       if (targetId && !targetHandle && connection.target) {
@@ -1938,7 +2159,7 @@ function InnerBoardCanvas({
           const targetNodePos = targetNode.positionAbsolute ?? targetNode.position;
           const targetNodeWidth = targetNode.width ?? 280;
           const targetNodeHeight = targetNode.height ?? 320;
-          
+
           // Try to get mouse position from connection, fallback to node center
           const mousePosition = {
             x: targetNodePos.x + targetNodeWidth / 2,
@@ -1946,13 +2167,9 @@ function InnerBoardCanvas({
           };
 
           // If connecting from source, we need target handle (and vice versa)
-          const neededHandleType = isConnectingFromSource ? "target" : "source";
+          const neededHandleType = isConnectingFromSource ? 'target' : 'source';
 
-          const nearestHandleId = findNearestHandleId(
-            targetNode,
-            mousePosition,
-            neededHandleType
-          );
+          const nearestHandleId = findNearestHandleId(targetNode, mousePosition, neededHandleType);
 
           if (nearestHandleId) {
             targetHandle = nearestHandleId;
@@ -1973,15 +2190,14 @@ function InnerBoardCanvas({
           };
 
           // If target is target handle, we need source handle (and vice versa)
-          const neededHandleType = targetHandle && (targetHandle === "left" || targetHandle === "top")
-            ? "source"
-            : originHandleType === "target" ? "source" : "target";
+          const neededHandleType =
+            targetHandle && (targetHandle === 'left' || targetHandle === 'top')
+              ? 'source'
+              : originHandleType === 'target'
+                ? 'source'
+                : 'target';
 
-          const nearestHandleId = findNearestHandleId(
-            sourceNode,
-            mousePosition,
-            neededHandleType
-          );
+          const nearestHandleId = findNearestHandleId(sourceNode, mousePosition, neededHandleType);
 
           if (nearestHandleId) {
             sourceHandle = nearestHandleId;
@@ -2018,7 +2234,9 @@ function InnerBoardCanvas({
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      const removedIds = changes.filter((change) => change.type === "remove").map((change) => change.id);
+      const removedIds = changes
+        .filter((change) => change.type === 'remove')
+        .map((change) => change.id);
       if (removedIds.length === 0) {
         return;
       }
@@ -2044,12 +2262,22 @@ function InnerBoardCanvas({
     );
     if (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) return;
 
-    console.log("handleDeleteSelection: Deleting nodes:", Array.from(selectedNodeIds), "edges:", Array.from(selectedEdgeIds));
+    console.log(
+      'handleDeleteSelection: Deleting nodes:',
+      Array.from(selectedNodeIds),
+      'edges:',
+      Array.from(selectedEdgeIds),
+    );
 
     // remove from localNodes (regular + mirrored notes + pen nodes)
     setLocalNodes((prev) => {
       const next = prev.filter((n) => !selectedNodeIds.has(n.id));
-      console.log("handleDeleteSelection: localNodes after filter:", next.length, "removed:", prev.length - next.length);
+      console.log(
+        'handleDeleteSelection: localNodes after filter:',
+        next.length,
+        'removed:',
+        prev.length - next.length,
+      );
       emitNodesChange(next);
       return next;
     });
@@ -2058,7 +2286,9 @@ function InnerBoardCanvas({
     setLocalEdges((prev) => {
       const next = prev.filter(
         (e) =>
-          !selectedEdgeIds.has(e.id) && !selectedNodeIds.has(e.sourceId) && !selectedNodeIds.has(e.targetId),
+          !selectedEdgeIds.has(e.id) &&
+          !selectedNodeIds.has(e.sourceId) &&
+          !selectedNodeIds.has(e.targetId),
       );
       emitEdgesChange(next);
       return next;
@@ -2067,7 +2297,12 @@ function InnerBoardCanvas({
     // remove from flowNodes directly
     setFlowNodes((prev) => {
       const next = prev.filter((n) => !selectedNodeIds.has(n.id));
-      console.log("handleDeleteSelection: flowNodes after filter:", next.length, "removed:", prev.length - next.length);
+      console.log(
+        'handleDeleteSelection: flowNodes after filter:',
+        next.length,
+        'removed:',
+        prev.length - next.length,
+      );
       return next;
     });
 
@@ -2077,50 +2312,52 @@ function InnerBoardCanvas({
   // Keyboard bindings for Delete / Backspace
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       const active = (document.activeElement as HTMLElement | null) ?? null;
       if (active) {
         const tag = active.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA") return;
-        if (active.getAttribute("contenteditable") === "true") return;
-        if (active.closest(".monaco-editor")) return;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (active.getAttribute('contenteditable') === 'true') return;
+        if (active.closest('.monaco-editor')) return;
       }
       e.preventDefault();
       handleDeleteSelection();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [handleDeleteSelection]);
 
   // Ensure Space and Tab are not intercepted by global listeners when editing
   useEffect(() => {
     const onKeyCapture = (e: KeyboardEvent) => {
       const active = (document.activeElement as HTMLElement | null) ?? null;
-      const isMonaco = !!active?.closest(".monaco-editor");
-      const isTextArea = !!active?.closest("textarea");
-      const isInput = !!active?.closest("input[type='text'], input[type='search'], input[type='password']");
-      const key = e.key || "";
-      const isSpace = key === " " || key === "Spacebar" || (e as any).code === "Space";
-      const isTab = key === "Tab";
+      const isMonaco = !!active?.closest('.monaco-editor');
+      const isTextArea = !!active?.closest('textarea');
+      const isInput = !!active?.closest(
+        "input[type='text'], input[type='search'], input[type='password']",
+      );
+      const key = e.key || '';
+      const isSpace = key === ' ' || key === 'Spacebar' || (e as any).code === 'Space';
+      const isTab = key === 'Tab';
       if ((isMonaco || isTextArea || isInput) && (isSpace || isTab)) {
         // Allow editors to handle Space / Tab; do not block default, but stop bubbling
         e.stopPropagation();
       }
     };
     // capture phase to stop other global handlers (e.g., tldraw) from seeing it
-    window.addEventListener("keydown", onKeyCapture, true);
-    return () => window.removeEventListener("keydown", onKeyCapture, true);
+    window.addEventListener('keydown', onKeyCapture, true);
+    return () => window.removeEventListener('keydown', onKeyCapture, true);
   }, []);
 
   const handleZoomIn = useCallback(() => {
     if (!flowInstance) return;
-    const currentZoom = typeof flowInstance.getZoom === "function" ? flowInstance.getZoom() : 1;
+    const currentZoom = typeof flowInstance.getZoom === 'function' ? flowInstance.getZoom() : 1;
     flowInstance.zoomTo(Math.min(currentZoom * 1.2, 4));
   }, [flowInstance]);
 
   const handleZoomOut = useCallback(() => {
     if (!flowInstance) return;
-    const currentZoom = typeof flowInstance.getZoom === "function" ? flowInstance.getZoom() : 1;
+    const currentZoom = typeof flowInstance.getZoom === 'function' ? flowInstance.getZoom() : 1;
     flowInstance.zoomTo(Math.max(currentZoom / 1.2, 0.1));
   }, [flowInstance]);
 
@@ -2134,35 +2371,37 @@ function InnerBoardCanvas({
     try {
       // Most environments
       // eslint-disable-next-line no-undef
-      if (typeof crypto !== "undefined" && (crypto as any).randomUUID) {
+      if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
         // eslint-disable-next-line no-undef
         return (crypto as any).randomUUID() as string;
       }
     } catch {}
     // Fallback RFC4122 v4
     const rnd = (n = 16) =>
-      Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+      Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     return `${rnd(8)}-${rnd(4)}-4${rnd(3)}-${((8 + Math.random() * 4) | 0).toString(16)}${rnd(3)}-${rnd(12)}`;
   }, []);
   const getClientXY = (e: any): { x: number; y: number } | null => {
-    const x = e?.clientX ?? e?.event?.clientX ?? e?.sourceEvent?.clientX ?? e?.nativeEvent?.clientX ?? null;
-    const y = e?.clientY ?? e?.event?.clientY ?? e?.sourceEvent?.clientY ?? e?.nativeEvent?.clientY ?? null;
-    if (typeof x === "number" && typeof y === "number") return { x, y };
+    const x =
+      e?.clientX ?? e?.event?.clientX ?? e?.sourceEvent?.clientX ?? e?.nativeEvent?.clientX ?? null;
+    const y =
+      e?.clientY ?? e?.event?.clientY ?? e?.sourceEvent?.clientY ?? e?.nativeEvent?.clientY ?? null;
+    if (typeof x === 'number' && typeof y === 'number') return { x, y };
     return null;
   };
   const addExternalSticky = useCallback(
-    (id: string, pos: { x: number; y: number }, text = "") => {
-      const defaultColor = "#FFFFBA"; // пастельный желтый по умолчанию
+    (id: string, pos: { x: number; y: number }, text = '') => {
+      const defaultColor = '#FFFFBA'; // пастельный желтый по умолчанию
       const defaultFontSize = 48;
-      const defaultFontFamily = "Inter, sans-serif";
+      const defaultFontFamily = 'Inter, sans-serif';
       const externalSticky = {
         id,
-        type: "note" as const,
+        type: 'note' as const,
         position: pos,
         payload: {
           text,
           noteContent: text,
-          noteColor: "#FFFFBA",
+          noteColor: '#FFFFBA',
           color: defaultColor,
           fontSize: defaultFontSize, // явно устанавливаем 48
           fontFamily: defaultFontFamily,
@@ -2179,25 +2418,22 @@ function InnerBoardCanvas({
     },
     [emitNodesChange],
   );
-  const combineForPersist = useCallback(
-    (stickies: Node[]) => {
-      const stickyExternal =
-        stickies.map((n) => ({
-          id: n.id,
-          type: "note" as const,
-          position: n.position ?? { x: 0, y: 0 },
-          payload: { text: (n.data as any)?.text ?? "" },
-        })) ?? [];
-      return [...(localNodesRef.current ?? []), ...stickyExternal];
-    },
-    [],
-  );
+  const combineForPersist = useCallback((stickies: Node[]) => {
+    const stickyExternal =
+      stickies.map((n) => ({
+        id: n.id,
+        type: 'note' as const,
+        position: n.position ?? { x: 0, y: 0 },
+        payload: { text: (n.data as any)?.text ?? '' },
+      })) ?? [];
+    return [...(localNodesRef.current ?? []), ...stickyExternal];
+  }, []);
 
   return (
     <div
       ref={canvasRootRef}
       className="board-canvas-root relative flex h-full min-h-0 w-full flex-1 overflow-hidden"
-      style={{ position: "relative" }}
+      style={{ position: 'relative' }}
     >
       <div className="relative h-full w-full overflow-hidden">
         <div className="relative h-full w-full">
@@ -2215,7 +2451,7 @@ function InnerBoardCanvas({
             elementsSelectable={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
             proOptions={{ hideAttribution: true }}
             className="h-full bg-white"
-            style={{ width: "100%", height: "100%" }}
+            style={{ width: '100%', height: '100%' }}
             onInit={(instance) => setFlowInstance(instance)}
             selectNodesOnDrag={false}
             onNodesChange={handleNodesChange}
@@ -2224,14 +2460,14 @@ function InnerBoardCanvas({
             onConnectStart={handleConnectStart}
             onConnectEnd={handleConnectEnd}
             connectionLineComponent={CustomConnectionLine}
-            connectionLineStyle={{ stroke: "#94a3b8", strokeWidth: 4 }}
+            connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 4 }}
             onNodeClick={handleNodeClick}
             onNodeDataChange={(id, data) => {
               // Синхронизируем изменения данных узла (цвет, форматирование) с localNodes
               // Заметки теперь shape nodes, изменения обрабатываются через callbacks в data
-              if (data && typeof data === "object") {
+              if (data && typeof data === 'object') {
                 const node = flowNodes.find((n) => n.id === id);
-                if (node && node.type === "shapeNode") {
+                if (node && node.type === 'shapeNode') {
                   const nodeData = node.data as any;
                   // Если это заметка (есть text или onChangeText), обновляем localNodes
                   if (nodeData?.text !== undefined || nodeData?.onChangeText) {
@@ -2241,18 +2477,28 @@ function InnerBoardCanvas({
                     const newFontFamily = (data as any)?.fontFamily;
                     const newIsBold = (data as any)?.isBold;
                     const newIsItalic = (data as any)?.isItalic;
-                    
+
                     // Обновляем только если есть изменения
-                    if (newColor || newText !== undefined || newFontSize !== undefined || newFontFamily || newIsBold !== undefined || newIsItalic !== undefined) {
+                    if (
+                      newColor ||
+                      newText !== undefined ||
+                      newFontSize !== undefined ||
+                      newFontFamily ||
+                      newIsBold !== undefined ||
+                      newIsItalic !== undefined
+                    ) {
                       setLocalNodes((prev) => {
                         const next = prev.map((ext) =>
-                          ext.id === id && ext.type === "note"
+                          ext.id === id && ext.type === 'note'
                             ? {
                                 ...ext,
                                 payload: {
                                   ...(ext.payload ?? {}),
                                   ...(newColor && { color: newColor }),
-                                  ...(newText !== undefined && { text: newText, noteContent: newText }),
+                                  ...(newText !== undefined && {
+                                    text: newText,
+                                    noteContent: newText,
+                                  }),
                                   ...(newFontSize !== undefined && { fontSize: newFontSize }),
                                   ...(newFontFamily && { fontFamily: newFontFamily }),
                                   ...(newIsBold !== undefined && { isBold: newIsBold }),
@@ -2274,11 +2520,11 @@ function InnerBoardCanvas({
             onPaneClick={(e) => {
               // Всегда снимаем выделение при клике на свободную область
               handlePaneClick();
-              
+
               const xy = getClientXY(e);
               if (!xy) return;
               const p = rf.screenToFlowPosition({ x: xy.x, y: xy.y });
-              
+
               // Создаем новый текст-ноду в режиме text
               if (isTextMode) {
                 const textNode = addNodeHelpers.createTextNode(p);
@@ -2289,10 +2535,12 @@ function InnerBoardCanvas({
                 });
                 return;
               }
-              
+
               // Создаем новую фигуру в режиме shape
               if (isShapeMode && selectedShape) {
-                const shapeNode = addNodeHelpers.createShapeNode(p) as BoardCanvasProps["nodes"][number];
+                const shapeNode = addNodeHelpers.createShapeNode(
+                  p,
+                ) as BoardCanvasProps['nodes'][number];
                 // Обновляем payload с выбранной формой
                 shapeNode.payload = {
                   ...shapeNode.payload,
@@ -2306,10 +2554,12 @@ function InnerBoardCanvas({
                 onSelectNode?.(shapeNode.id);
                 return;
               }
-              
+
               // Создаем новую заметку в режиме стикеров (как shape node с типом rectangle и текстом)
               if (!isStickyMode) return;
-              const noteNode = addNodeHelpers.createNoteNode(p) as BoardCanvasProps["nodes"][number];
+              const noteNode = addNodeHelpers.createNoteNode(
+                p,
+              ) as BoardCanvasProps['nodes'][number];
               setLocalNodes((prev) => {
                 const next = [...prev, noteNode];
                 emitNodesChange(next);
@@ -2326,69 +2576,80 @@ function InnerBoardCanvas({
               nodeColor={(node) => {
                 const nodeType = node.type;
                 const nodeData = node.data as any;
-                
+
                 // Проверяем, является ли узел pen-узлом по всем возможным признакам
-                const isPenNode = 
-                  nodeType === "pen" ||
-                  (nodeData?.initialSize && typeof nodeData.initialSize === "object" && !nodeData?.nodeId) ||
+                const isPenNode =
+                  nodeType === 'pen' ||
+                  (nodeData?.initialSize &&
+                    typeof nodeData.initialSize === 'object' &&
+                    !nodeData?.nodeId) ||
                   (nodeData?.points && Array.isArray(nodeData.points) && !nodeData?.nodeId);
-                
+
                 // Исключаем pen узлы - возвращаем null, чтобы они не отображались
                 if (isPenNode) {
                   return null;
                 }
-                
+
                 // Для остальных узлов возвращаем цвет через стандартную функцию
-                return getNodeColor((nodeData as any)?.nodeKind ?? "sql");
+                return getNodeColor((nodeData as any)?.nodeKind ?? 'sql');
               }}
               nodeFilter={(node) => {
                 const nodeType = node.type;
                 const nodeData = node.data as any;
-                
+
                 // Проверяем, является ли узел pen-узлом по всем возможным признакам
-                const isPenNode = 
-                  nodeType === "pen" ||
-                  (nodeData?.initialSize && typeof nodeData.initialSize === "object" && !nodeData?.nodeId) ||
+                const isPenNode =
+                  nodeType === 'pen' ||
+                  (nodeData?.initialSize &&
+                    typeof nodeData.initialSize === 'object' &&
+                    !nodeData?.nodeId) ||
                   (nodeData?.points && Array.isArray(nodeData.points) && !nodeData?.nodeId);
-                
+
                 // Исключаем pen узлы
                 if (isPenNode) {
                   return false;
                 }
-                
+
                 // Показываем только заметки (shape nodes с текстом) и дата-клетки
                 // Явно разрешаем только эти типы узлов
-                const isNote = nodeType === "shapeNode" && ((nodeData as any)?.text !== undefined || (nodeData as any)?.onChangeText);
-                return (
-                  isNote ||
-                  nodeType === "sqlNode" ||
-                  nodeType === "pythonNode"
-                );
+                const isNote =
+                  nodeType === 'shapeNode' &&
+                  ((nodeData as any)?.text !== undefined || (nodeData as any)?.onChangeText);
+                return isNote || nodeType === 'sqlNode' || nodeType === 'pythonNode';
               }}
               zoomable
               pannable
               style={{ right: 0, bottom: 0 }}
             />
-            <Controls position="bottom-left" showInteractive={false} style={{ left: 0, bottom: 0 }} />
+            <Controls
+              position="bottom-left"
+              showInteractive={false}
+              style={{ left: 0, bottom: 0 }}
+            />
             <ConnectionArrowsOverlay edges={flowEdges} />
             {isPenMode && (
               <FreehandOverlay
                 onAddPenNode={(node) => {
-                  console.log("onAddPenNode called with:", node);
+                  console.log('onAddPenNode called with:', node);
                   // Добавляем pen node в localNodes
                   const externalNode = {
                     id: node.id,
-                    type: "pen" as const,
+                    type: 'pen' as const,
                     position: node.position,
                     payload: {
                       points: node.data.points,
                       initialSize: node.data.initialSize,
                     },
                   };
-                  console.log("Adding to localNodes:", externalNode);
+                  console.log('Adding to localNodes:', externalNode);
                   setLocalNodes((prev) => {
                     const next = [...prev, externalNode];
-                    console.log("localNodes updated, new length:", next.length, "pen nodes:", next.filter((n) => n.type === "pen").length);
+                    console.log(
+                      'localNodes updated, new length:',
+                      next.length,
+                      'pen nodes:',
+                      next.filter((n) => n.type === 'pen').length,
+                    );
                     // Вызываем emitNodesChange для сохранения изменений
                     queueMicrotask(() => {
                       emitNodesChange(next);
@@ -2399,7 +2660,7 @@ function InnerBoardCanvas({
                   // useEffect который зависит от mapNodes обновит его позже с правильными данными из localNodes
                   setFlowNodes((prev) => {
                     if (prev.some((n) => n.id === node.id)) {
-                      console.log("Node already exists in flowNodes:", node.id);
+                      console.log('Node already exists in flowNodes:', node.id);
                       return prev;
                     }
                     // Добавляем node с правильной структурой для React Flow
@@ -2412,7 +2673,7 @@ function InnerBoardCanvas({
                         zIndex: node.style?.zIndex ?? 10, // Pen nodes должны быть выше дата-клеток
                       },
                     };
-                    console.log("Adding to flowNodes:", flowNode);
+                    console.log('Adding to flowNodes:', flowNode);
                     return [...prev, flowNode];
                   });
                 }}
@@ -2443,7 +2704,3 @@ function InnerBoardCanvas({
     </div>
   );
 }
-
- 
-
-

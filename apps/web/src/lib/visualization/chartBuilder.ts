@@ -1,7 +1,12 @@
-import type { SqlResult } from "../../state/executionStore";
-import type { PlotConfig, AggregationType, ChartType } from "./chartTypes";
-import { createBins, calculateBoxplotStats, partitionByFacet, calculateFacetGrid } from "./chartTransforms";
-import { analyzeDataColumns } from "./dataAnalyzer";
+import type { SqlResult } from '../../state/executionStore';
+import type { PlotConfig, AggregationType, ChartType } from './chartTypes';
+import {
+  createBins,
+  calculateBoxplotStats,
+  partitionByFacet,
+  calculateFacetGrid,
+} from './chartTransforms';
+import { analyzeDataColumns } from './dataAnalyzer';
 
 // Transformed data structure for chart rendering
 type TransformedSeriesData = {
@@ -82,15 +87,12 @@ type EChartsOption = {
 /**
  * Apply filters to data rows
  */
-function applyFilters(
-  data: SqlResult,
-  filters: PlotConfig["filters"]
-): SqlResult {
+function applyFilters(data: SqlResult, filters: PlotConfig['filters']): SqlResult {
   if (!filters || filters.length === 0) {
     return data;
   }
 
-  const filteredRows: SqlResult["rows"] = [];
+  const filteredRows: SqlResult['rows'] = [];
 
   for (const row of data.rows) {
     let passes = true;
@@ -106,29 +108,29 @@ function applyFilters(
       const filterValue = filter.value;
 
       switch (filter.operator) {
-        case "eq":
+        case 'eq':
           passes = String(cellValue) === String(filterValue);
           break;
-        case "ne":
+        case 'ne':
           passes = String(cellValue) !== String(filterValue);
           break;
-        case "gt":
+        case 'gt':
           passes = Number(cellValue) > Number(filterValue);
           break;
-        case "gte":
+        case 'gte':
           passes = Number(cellValue) >= Number(filterValue);
           break;
-        case "lt":
+        case 'lt':
           passes = Number(cellValue) < Number(filterValue);
           break;
-        case "lte":
+        case 'lte':
           passes = Number(cellValue) <= Number(filterValue);
           break;
-        case "in":
+        case 'in':
           const inArray = Array.isArray(filterValue) ? filterValue : [filterValue];
           passes = inArray.some((v) => String(cellValue) === String(v));
           break;
-        case "contains":
+        case 'contains':
           passes = String(cellValue).toLowerCase().includes(String(filterValue).toLowerCase());
           break;
         default:
@@ -154,8 +156,8 @@ function applyFilters(
  */
 function applyAggregation(
   data: SqlResult,
-  aggregation: PlotConfig["aggregation"],
-  yField: string | string[]
+  aggregation: PlotConfig['aggregation'],
+  yField: string | string[],
 ): SqlResult {
   if (!aggregation || !aggregation.type) {
     return data;
@@ -163,10 +165,10 @@ function applyAggregation(
 
   const groupByFields = aggregation.groupBy || [];
   const yFields = Array.isArray(yField) ? yField : [yField].filter(Boolean);
-  
+
   if (groupByFields.length === 0) {
     // No grouping, aggregate entire dataset into a single row
-    const aggregatedRow: SqlResult["rows"][0] = [];
+    const aggregatedRow: SqlResult['rows'][0] = [];
 
     // Aggregate Y fields
     for (const y of yFields) {
@@ -179,26 +181,26 @@ function applyAggregation(
       const values = data.rows
         .map((row) => row[yIndex])
         .filter((v) => v !== null && v !== undefined)
-        .map((v) => (typeof v === "number" ? v : parseFloat(String(v)) || 0));
+        .map((v) => (typeof v === 'number' ? v : parseFloat(String(v)) || 0));
 
       let aggregated: number;
       switch (aggregation.type) {
-        case "sum":
+        case 'sum':
           aggregated = values.reduce((a, b) => a + b, 0);
           break;
-        case "avg":
+        case 'avg':
           aggregated = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
           break;
-        case "count":
+        case 'count':
           aggregated = values.length;
           break;
-        case "min":
+        case 'min':
           aggregated = values.length > 0 ? Math.min(...values) : 0;
           break;
-        case "max":
+        case 'max':
           aggregated = values.length > 0 ? Math.max(...values) : 0;
           break;
-        case "median":
+        case 'median':
           const sorted = [...values].sort((a, b) => a - b);
           aggregated =
             sorted.length > 0
@@ -223,15 +225,15 @@ function applyAggregation(
   }
 
   // Group by fields
-  const groupMap = new Map<string, SqlResult["rows"]>();
+  const groupMap = new Map<string, SqlResult['rows']>();
 
   for (const row of data.rows) {
     const groupKey = groupByFields
       .map((field) => {
         const idx = data.columns.indexOf(field);
-        return idx >= 0 ? String(row[idx] ?? "") : "";
+        return idx >= 0 ? String(row[idx] ?? '') : '';
       })
-      .join("|");
+      .join('|');
 
     if (!groupMap.has(groupKey)) {
       groupMap.set(groupKey, []);
@@ -239,11 +241,11 @@ function applyAggregation(
     groupMap.get(groupKey)!.push(row);
   }
 
-  const aggregatedRows: SqlResult["rows"] = [];
+  const aggregatedRows: SqlResult['rows'] = [];
 
   for (const [groupKey, groupRows] of groupMap.entries()) {
-    const groupValues = groupKey.split("|");
-    const aggregatedRow: SqlResult["rows"][0] = [];
+    const groupValues = groupKey.split('|');
+    const aggregatedRow: SqlResult['rows'][0] = [];
 
     // Add groupBy column values
     for (const val of groupValues) {
@@ -261,26 +263,26 @@ function applyAggregation(
       const values = groupRows
         .map((row) => row[yIndex])
         .filter((v) => v !== null && v !== undefined)
-        .map((v) => (typeof v === "number" ? v : parseFloat(String(v)) || 0));
+        .map((v) => (typeof v === 'number' ? v : parseFloat(String(v)) || 0));
 
       let aggregated: number;
       switch (aggregation.type) {
-        case "sum":
+        case 'sum':
           aggregated = values.reduce((a, b) => a + b, 0);
           break;
-        case "avg":
+        case 'avg':
           aggregated = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
           break;
-        case "count":
+        case 'count':
           aggregated = values.length;
           break;
-        case "min":
+        case 'min':
           aggregated = values.length > 0 ? Math.min(...values) : 0;
           break;
-        case "max":
+        case 'max':
           aggregated = values.length > 0 ? Math.max(...values) : 0;
           break;
-        case "median":
+        case 'median':
           const sorted = [...values].sort((a, b) => a - b);
           aggregated =
             sorted.length > 0
@@ -308,7 +310,7 @@ function applyAggregation(
 /**
  * Apply sorting to data
  */
-function applySort(data: SqlResult, sort: PlotConfig["sort"]): SqlResult {
+function applySort(data: SqlResult, sort: PlotConfig['sort']): SqlResult {
   if (!sort || sort.length === 0) {
     return data;
   }
@@ -326,14 +328,14 @@ function applySort(data: SqlResult, sort: PlotConfig["sort"]): SqlResult {
         comparison = 1;
       } else if (bVal === null || bVal === undefined) {
         comparison = -1;
-      } else if (typeof aVal === "number" && typeof bVal === "number") {
+      } else if (typeof aVal === 'number' && typeof bVal === 'number') {
         comparison = aVal - bVal;
       } else {
         comparison = String(aVal).localeCompare(String(bVal));
       }
 
       if (comparison !== 0) {
-        return sortRule.direction === "desc" ? -comparison : comparison;
+        return sortRule.direction === 'desc' ? -comparison : comparison;
       }
     }
     return 0;
@@ -357,7 +359,7 @@ function transformData(data: SqlResult, config: PlotConfig): SqlResult {
   }
 
   if (config.aggregation && config.aggregation.type) {
-    transformed = applyAggregation(transformed, config.aggregation, config.mapping.y || "");
+    transformed = applyAggregation(transformed, config.aggregation, config.mapping.y || '');
   }
 
   if (config.sort && config.sort.length > 0) {
@@ -373,20 +375,24 @@ function transformData(data: SqlResult, config: PlotConfig): SqlResult {
 function buildFacetedChart(
   data: SqlResult,
   config: PlotConfig,
-  facetColumn: string
+  facetColumn: string,
 ): EChartsOption {
   const partitions = partitionByFacet(data, facetColumn);
   const facetValues = Array.from(partitions.keys());
-  
+
   if (facetValues.length === 0) {
     return {
-      title: { text: "No facet values found", left: "center", top: "middle" },
+      title: { text: 'No facet values found', left: 'center', top: 'middle' },
     };
   }
 
   if (facetValues.length > 12) {
     return {
-      title: { text: `Too many facets (${facetValues.length}). Please filter to 12 or fewer.`, left: "center", top: "middle" },
+      title: {
+        text: `Too many facets (${facetValues.length}). Please filter to 12 or fewer.`,
+        left: 'center',
+        top: 'middle',
+      },
     };
   }
 
@@ -406,7 +412,10 @@ function buildFacetedChart(
 
       const facetValue = facetValues[gridIndex];
       const facetData = partitions.get(facetValue)!;
-      const transformedFacetData = transformData(facetData, { ...config, mapping: { ...config.mapping, facet: undefined } });
+      const transformedFacetData = transformData(facetData, {
+        ...config,
+        mapping: { ...config.mapping, facet: undefined },
+      });
 
       // Create grid for this facet
       grids.push({
@@ -418,16 +427,18 @@ function buildFacetedChart(
 
       // Create axes for this facet
       xAxes.push({
-        type: "category",
+        type: 'category',
         gridIndex,
         data: transformedFacetData.rows.map((r) => {
-          const xIdx = config.mapping.x ? transformedFacetData.columns.indexOf(config.mapping.x) : -1;
-          return xIdx >= 0 ? String(r[xIdx] ?? "") : "";
+          const xIdx = config.mapping.x
+            ? transformedFacetData.columns.indexOf(config.mapping.x)
+            : -1;
+          return xIdx >= 0 ? String(r[xIdx] ?? '') : '';
         }),
       });
 
       yAxes.push({
-        type: "value",
+        type: 'value',
         gridIndex,
       });
 
@@ -437,11 +448,11 @@ function buildFacetedChart(
         const yIdx = transformedFacetData.columns.indexOf(yField);
         series.push({
           name: facetValue,
-          type: config.chartType === "line" ? "line" : config.chartType === "area" ? "line" : "bar",
+          type: config.chartType === 'line' ? 'line' : config.chartType === 'area' ? 'line' : 'bar',
           xAxisIndex: gridIndex,
           yAxisIndex: gridIndex,
           data: transformedFacetData.rows.map((r) => r[yIdx]),
-          areaStyle: config.chartType === "area" ? {} : undefined,
+          areaStyle: config.chartType === 'area' ? {} : undefined,
         });
       }
 
@@ -451,11 +462,11 @@ function buildFacetedChart(
 
   return {
     title: {
-      text: config.styling.title || "Faceted Chart",
-      left: "center",
+      text: config.styling.title || 'Faceted Chart',
+      left: 'center',
       top: 5,
     },
-    tooltip: { trigger: "axis" },
+    tooltip: { trigger: 'axis' },
     grid: grids,
     xAxis: xAxes,
     yAxis: yAxes,
@@ -466,13 +477,18 @@ function buildFacetedChart(
 export function buildEChartsConfig(data: SqlResult, config: PlotConfig): EChartsOption {
   if (!data.columns || data.columns.length === 0 || !data.rows || data.rows.length === 0) {
     return {
-      title: { text: "No data available", left: "center", top: "middle", textStyle: { color: "#94a3b8" } },
+      title: {
+        text: 'No data available',
+        left: 'center',
+        top: 'middle',
+        textStyle: { color: '#94a3b8' },
+      },
     };
   }
 
   // Check for faceting (only for certain chart types)
   const facetField = config.mapping.facet;
-  const facetableTypes: ChartType[] = ["bar", "bar-horizontal", "line", "area", "scatter"];
+  const facetableTypes: ChartType[] = ['bar', 'bar-horizontal', 'line', 'area', 'scatter'];
   if (facetField && facetableTypes.includes(config.chartType)) {
     return buildFacetedChart(data, config, facetField);
   }
@@ -482,7 +498,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
   if (transformedData.rows.length === 0) {
     return {
-      title: { text: "No data after filtering", left: "center", top: "middle", textStyle: { color: "#94a3b8" } },
+      title: {
+        text: 'No data after filtering',
+        left: 'center',
+        top: 'middle',
+        textStyle: { color: '#94a3b8' },
+      },
     };
   }
 
@@ -517,121 +538,133 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
   // Determine legend height based on position and orientation
   const hasLegend = config.styling.showLegend !== false;
-  const legendTop = config.styling.legendPosition === "top";
-  const legendBottom = config.styling.legendPosition === "bottom";
-  const legendVertical = config.styling.legendPosition === "left" || config.styling.legendPosition === "right";
-  
+  const legendTop = config.styling.legendPosition === 'top';
+  const legendBottom = config.styling.legendPosition === 'bottom';
+  const legendVertical =
+    config.styling.legendPosition === 'left' || config.styling.legendPosition === 'right';
+
   // Calculate top offset for title and legend
   const titleTop = 10;
   const legendTopOffset = legendTop ? 35 : undefined;
-  const legendBottomOffset = legendBottom ? "bottom" : undefined;
-  
+  const legendBottomOffset = legendBottom ? 'bottom' : undefined;
+
   // Calculate grid top based on legend and title
-  let gridTop: string | number = "15%";
+  let gridTop: string | number = '15%';
   if (legendTop && hasLegend) {
-    gridTop = "22%";
+    gridTop = '22%';
   } else if (config.styling.title) {
-    gridTop = "18%";
+    gridTop = '18%';
   }
 
   const baseOption: EChartsOption = {
     title: {
-      text: config.styling.title || "Chart",
-      left: "center",
+      text: config.styling.title || 'Chart',
+      left: 'center',
       top: titleTop,
       textStyle: {
         fontSize: 14,
-        fontWeight: "normal",
+        fontWeight: 'normal',
       },
     },
-    tooltip: config.styling.enableTooltips !== false ? {
-      trigger: config.chartType === "pie" || config.chartType === "doughnut" ? "item" : "axis",
-      axisPointer: {
-        type: "shadow",
-      },
-      formatter: config.chartType === "pie" || config.chartType === "doughnut" 
-        ? "{a} <br/>{b}: {c} ({d}%)"
-        : undefined,
-    } : { show: false },
-    legend: hasLegend ? {
-      show: true,
-      orient: legendVertical ? "vertical" : "horizontal",
-      left: config.styling.legendPosition === "left" ? "left" : config.styling.legendPosition === "right" ? "right" : "center",
-      top: legendTopOffset || legendBottomOffset || "auto",
-      bottom: legendBottom ? 10 : undefined,
-    } : { show: false },
+    tooltip:
+      config.styling.enableTooltips !== false
+        ? {
+            trigger:
+              config.chartType === 'pie' || config.chartType === 'doughnut' ? 'item' : 'axis',
+            axisPointer: {
+              type: 'shadow',
+            },
+            formatter:
+              config.chartType === 'pie' || config.chartType === 'doughnut'
+                ? '{a} <br/>{b}: {c} ({d}%)'
+                : undefined,
+          }
+        : { show: false },
+    legend: hasLegend
+      ? {
+          show: true,
+          orient: legendVertical ? 'vertical' : 'horizontal',
+          left:
+            config.styling.legendPosition === 'left'
+              ? 'left'
+              : config.styling.legendPosition === 'right'
+                ? 'right'
+                : 'center',
+          top: legendTopOffset || legendBottomOffset || 'auto',
+          bottom: legendBottom ? 10 : undefined,
+        }
+      : { show: false },
     grid: {
       show: config.styling.showGrid !== false,
-      left: legendVertical && config.styling.legendPosition === "left" ? "20%" : "10%",
-      right: legendVertical && config.styling.legendPosition === "right" ? "20%" : "10%",
-      bottom: legendBottom && hasLegend ? "20%" : "15%",
+      left: legendVertical && config.styling.legendPosition === 'left' ? '20%' : '10%',
+      right: legendVertical && config.styling.legendPosition === 'right' ? '20%' : '10%',
+      bottom: legendBottom && hasLegend ? '20%' : '15%',
       top: gridTop,
     },
     color: config.styling.colors || [
-      "#3b82f6",
-      "#22c55e",
-      "#f59e0b",
-      "#ef4444",
-      "#8b5cf6",
-      "#06b6d4",
-      "#f97316",
-      "#ec4899",
+      '#3b82f6',
+      '#22c55e',
+      '#f59e0b',
+      '#ef4444',
+      '#8b5cf6',
+      '#06b6d4',
+      '#f97316',
+      '#ec4899',
     ],
   };
 
   // Build series based on chart type
   switch (config.chartType) {
-    case "bar": {
-      const xAxisData = dataPoints.map((p) => String(p.x ?? ""));
-      const seriesData = yIndices.length > 0
-        ? yIndices.map((yIdx, seriesIdx) => ({
-            name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-            type: "bar",
-            data: transformedData.rows.map((row) => row[yIdx]),
-          }))
-        : [];
+    case 'bar': {
+      const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
+      const seriesData =
+        yIndices.length > 0
+          ? yIndices.map((yIdx, seriesIdx) => ({
+              name: Array.isArray(yField) ? yField[seriesIdx] : yField,
+              type: 'bar',
+              data: transformedData.rows.map((row) => row[yIdx]),
+            }))
+          : [];
 
       const option: EChartsOption = {
         ...baseOption,
         xAxis: {
-          type: "category",
+          type: 'category',
           data: xAxisData,
           axisLabel: { rotate: xAxisData.length > 10 ? 45 : 0 },
         },
         yAxis: {
-          type: "value",
+          type: 'value',
         },
         series: seriesData,
       };
 
       // Add zoom/pan if enabled
       if (config.styling.enableZoomPan) {
-        (option as any).dataZoom = [
-          { type: "inside" },
-          { type: "slider", show: true },
-        ];
+        (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
       }
 
       return option;
     }
 
-    case "bar-horizontal": {
-      const yAxisData = dataPoints.map((p) => String(p.x ?? ""));
-      const seriesData = yIndices.length > 0
-        ? yIndices.map((yIdx, seriesIdx) => ({
-            name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-            type: "bar",
-            data: transformedData.rows.map((row) => row[yIdx]),
-          }))
-        : [];
+    case 'bar-horizontal': {
+      const yAxisData = dataPoints.map((p) => String(p.x ?? ''));
+      const seriesData =
+        yIndices.length > 0
+          ? yIndices.map((yIdx, seriesIdx) => ({
+              name: Array.isArray(yField) ? yField[seriesIdx] : yField,
+              type: 'bar',
+              data: transformedData.rows.map((row) => row[yIdx]),
+            }))
+          : [];
 
       const option: EChartsOption = {
         ...baseOption,
         xAxis: {
-          type: "value",
+          type: 'value',
         },
         yAxis: {
-          type: "category",
+          type: 'category',
           data: yAxisData,
         },
         series: seriesData,
@@ -640,103 +673,100 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       // Add zoom/pan if enabled
       if (config.styling.enableZoomPan) {
         (option as any).dataZoom = [
-          { type: "inside" },
-          { type: "slider", show: true, orient: "vertical" },
+          { type: 'inside' },
+          { type: 'slider', show: true, orient: 'vertical' },
         ];
       }
 
       return option;
     }
 
-    case "line": {
-      const xAxisData = dataPoints.map((p) => String(p.x ?? ""));
-      const seriesData = yIndices.length > 0
-        ? yIndices.map((yIdx, seriesIdx) => ({
-            name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-            type: "line",
-            data: transformedData.rows.map((row) => row[yIdx]),
-            smooth: true,
-          }))
-        : [];
-
-      const option: EChartsOption = {
-        ...baseOption,
-        xAxis: {
-          type: "category",
-          data: xAxisData,
-        },
-        yAxis: {
-          type: "value",
-        },
-        series: seriesData,
-      };
-
-      // Add zoom/pan if enabled
-      if (config.styling.enableZoomPan) {
-        (option as any).dataZoom = [
-          { type: "inside" },
-          { type: "slider", show: true },
-        ];
-      }
-
-      return option;
-    }
-
-    case "area": {
-      const xAxisData = dataPoints.map((p) => String(p.x ?? ""));
-      const seriesData = yIndices.length > 0
-        ? yIndices.map((yIdx, seriesIdx) => ({
-            name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-            type: "line",
-            areaStyle: {},
-            data: transformedData.rows.map((row) => row[yIdx]),
-            smooth: true,
-          }))
-        : [];
-
-      const option: EChartsOption = {
-        ...baseOption,
-        xAxis: {
-          type: "category",
-          data: xAxisData,
-        },
-        yAxis: {
-          type: "value",
-        },
-        series: seriesData,
-      };
-
-      // Add zoom/pan if enabled
-      if (config.styling.enableZoomPan) {
-        (option as any).dataZoom = [
-          { type: "inside" },
-          { type: "slider", show: true },
-        ];
-      }
-
-      return option;
-    }
-
-    case "scatter": {
-      const seriesData = yIndices.length > 0
-        ? yIndices.map((yIdx, seriesIdx) => {
-            const scatterData = transformedData.rows.map((row) => [row[xIndex], row[yIdx]]);
-            return {
+    case 'line': {
+      const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
+      const seriesData =
+        yIndices.length > 0
+          ? yIndices.map((yIdx, seriesIdx) => ({
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-              type: "scatter",
-              data: scatterData,
-            };
-          })
-        : [];
+              type: 'line',
+              data: transformedData.rows.map((row) => row[yIdx]),
+              smooth: true,
+            }))
+          : [];
 
       const option: EChartsOption = {
         ...baseOption,
         xAxis: {
-          type: "value",
+          type: 'category',
+          data: xAxisData,
+        },
+        yAxis: {
+          type: 'value',
+        },
+        series: seriesData,
+      };
+
+      // Add zoom/pan if enabled
+      if (config.styling.enableZoomPan) {
+        (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
+      }
+
+      return option;
+    }
+
+    case 'area': {
+      const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
+      const seriesData =
+        yIndices.length > 0
+          ? yIndices.map((yIdx, seriesIdx) => ({
+              name: Array.isArray(yField) ? yField[seriesIdx] : yField,
+              type: 'line',
+              areaStyle: {},
+              data: transformedData.rows.map((row) => row[yIdx]),
+              smooth: true,
+            }))
+          : [];
+
+      const option: EChartsOption = {
+        ...baseOption,
+        xAxis: {
+          type: 'category',
+          data: xAxisData,
+        },
+        yAxis: {
+          type: 'value',
+        },
+        series: seriesData,
+      };
+
+      // Add zoom/pan if enabled
+      if (config.styling.enableZoomPan) {
+        (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
+      }
+
+      return option;
+    }
+
+    case 'scatter': {
+      const seriesData =
+        yIndices.length > 0
+          ? yIndices.map((yIdx, seriesIdx) => {
+              const scatterData = transformedData.rows.map((row) => [row[xIndex], row[yIdx]]);
+              return {
+                name: Array.isArray(yField) ? yField[seriesIdx] : yField,
+                type: 'scatter',
+                data: scatterData,
+              };
+            })
+          : [];
+
+      const option: EChartsOption = {
+        ...baseOption,
+        xAxis: {
+          type: 'value',
           name: xField,
         },
         yAxis: {
-          type: "value",
+          type: 'value',
           name: Array.isArray(yField) ? yField[0] : yField,
         },
         series: seriesData,
@@ -744,74 +774,78 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
       // Add zoom/pan if enabled
       if (config.styling.enableZoomPan) {
-        (option as any).dataZoom = [
-          { type: "inside" },
-          { type: "slider", show: true },
-        ];
+        (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
       }
 
       return option;
     }
 
-    case "pie":
-    case "doughnut": {
+    case 'pie':
+    case 'doughnut': {
       // For pie charts, use first categorical as label, first numeric as value
       const labelField = xField || transformedData.columns[0];
-      const valueField = Array.isArray(yField) ? yField[0] : yField || transformedData.columns.find((c) => c !== labelField) || transformedData.columns[1];
-      
+      const valueField = Array.isArray(yField)
+        ? yField[0]
+        : yField ||
+          transformedData.columns.find((c) => c !== labelField) ||
+          transformedData.columns[1];
+
       const labelIndex = transformedData.columns.indexOf(labelField);
       const valueIndex = valueField ? transformedData.columns.indexOf(valueField) : -1;
 
       if (labelIndex < 0 || valueIndex < 0) {
         return {
           ...baseOption,
-          title: { text: "Invalid configuration for pie chart", left: "center", top: "middle" },
+          title: { text: 'Invalid configuration for pie chart', left: 'center', top: 'middle' },
         };
       }
 
       const pieData = transformedData.rows.map((row) => ({
-        name: String(row[labelIndex] ?? ""),
-        value: typeof row[valueIndex] === "number" ? row[valueIndex] : parseFloat(String(row[valueIndex] ?? 0)) || 0,
+        name: String(row[labelIndex] ?? ''),
+        value:
+          typeof row[valueIndex] === 'number'
+            ? row[valueIndex]
+            : parseFloat(String(row[valueIndex] ?? 0)) || 0,
       }));
 
       // Adjust center and radius for pie/doughnut based on legend position
-      let centerX = "50%";
-      let centerY = "55%";
-      let radius: string | string[] = config.chartType === "doughnut" ? ["40%", "70%"] : "70%";
-      
+      let centerX = '50%';
+      let centerY = '55%';
+      let radius: string | string[] = config.chartType === 'doughnut' ? ['40%', '70%'] : '70%';
+
       if (hasLegend) {
         if (legendTop) {
-          centerY = "60%";
-          radius = config.chartType === "doughnut" ? ["35%", "65%"] : "65%";
+          centerY = '60%';
+          radius = config.chartType === 'doughnut' ? ['35%', '65%'] : '65%';
         } else if (legendBottom) {
-          centerY = "50%";
-          radius = config.chartType === "doughnut" ? ["35%", "65%"] : "65%";
+          centerY = '50%';
+          radius = config.chartType === 'doughnut' ? ['35%', '65%'] : '65%';
         } else if (legendVertical) {
-          if (config.styling.legendPosition === "left") {
-            centerX = "60%";
-          } else if (config.styling.legendPosition === "right") {
-            centerX = "40%";
+          if (config.styling.legendPosition === 'left') {
+            centerX = '60%';
+          } else if (config.styling.legendPosition === 'right') {
+            centerX = '40%';
           }
-          radius = config.chartType === "doughnut" ? ["35%", "65%"] : "65%";
+          radius = config.chartType === 'doughnut' ? ['35%', '65%'] : '65%';
         }
       }
 
       return {
         ...baseOption,
         tooltip: {
-          trigger: "item",
-          formatter: "{a} <br/>{b}: {c} ({d}%)",
+          trigger: 'item',
+          formatter: '{a} <br/>{b}: {c} ({d}%)',
         },
         series: [
           {
             name: valueField,
-            type: "pie",
+            type: 'pie',
             radius: radius,
             center: [centerX, centerY],
             data: pieData,
             label: {
               show: true,
-              position: "outside",
+              position: 'outside',
             },
             labelLine: {
               show: true,
@@ -820,7 +854,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
               itemStyle: {
                 shadowBlur: 10,
                 shadowOffsetX: 0,
-                shadowColor: "rgba(0, 0, 0, 0.5)",
+                shadowColor: 'rgba(0, 0, 0, 0.5)',
               },
             },
           },
@@ -828,7 +862,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       };
     }
 
-    case "histogram": {
+    case 'histogram': {
       // Use X or Y field (prefer numeric or temporal field that can be converted to numbers)
       // Helper function to check if a field contains numeric values
       const isNumericField = (fieldName: string): boolean => {
@@ -839,8 +873,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         for (let i = 0; i < sampleSize; i++) {
           const val = transformedData.rows[i]?.[idx];
           if (val === null || val === undefined) continue;
-          if (typeof val === "number") return true;
-          if (typeof val === "string") {
+          if (typeof val === 'number') return true;
+          if (typeof val === 'string') {
             const parsed = parseFloat(val);
             if (!Number.isNaN(parsed) && isFinite(parsed)) return true;
           }
@@ -848,16 +882,17 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         return false;
       };
 
-      const numericField = xField && isNumericField(xField)
-        ? xField
-        : yField && isNumericField(yField)
-        ? yField
-        : transformedData.columns.find((c) => isNumericField(c));
+      const numericField =
+        xField && isNumericField(xField)
+          ? xField
+          : yField && isNumericField(yField)
+            ? yField
+            : transformedData.columns.find((c) => isNumericField(c));
 
       if (!numericField) {
         return {
           ...baseOption,
-          title: { text: "Histogram requires a numeric field", left: "center", top: "middle" },
+          title: { text: 'Histogram requires a numeric field', left: 'center', top: 'middle' },
         };
       }
 
@@ -865,13 +900,13 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const values = transformedData.rows
         .map((row) => row[fieldIndex])
         .filter((v) => v !== null && v !== undefined)
-        .map((v) => typeof v === "number" ? v : parseFloat(String(v)))
+        .map((v) => (typeof v === 'number' ? v : parseFloat(String(v))))
         .filter((v) => !Number.isNaN(v) && isFinite(v)) as number[];
 
       if (values.length === 0) {
         return {
           ...baseOption,
-          title: { text: "No valid numeric values for histogram", left: "center", top: "middle" },
+          title: { text: 'No valid numeric values for histogram', left: 'center', top: 'middle' },
         };
       }
 
@@ -882,29 +917,29 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       return {
         ...baseOption,
         xAxis: {
-          type: "category",
+          type: 'category',
           data: binLabels,
           axisLabel: { rotate: 45 },
         },
         yAxis: {
-          type: "value",
-          name: "Frequency",
+          type: 'value',
+          name: 'Frequency',
         },
         series: [
           {
             name: numericField,
-            type: "bar",
+            type: 'bar',
             data: binCounts,
           },
         ],
       };
     }
 
-    case "heatmap": {
+    case 'heatmap': {
       if (!xField || !yField) {
         return {
           ...baseOption,
-          title: { text: "Heatmap requires X and Y fields", left: "center", top: "middle" },
+          title: { text: 'Heatmap requires X and Y fields', left: 'center', top: 'middle' },
         };
       }
 
@@ -912,7 +947,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const yIndex = transformedData.columns.indexOf(Array.isArray(yField) ? yField[0] : yField);
       const valueField = transformedData.columns.find((c) => {
         const idx = transformedData.columns.indexOf(c);
-        return idx !== xIndex && idx !== yIndex && transformedData.rows[0] && typeof transformedData.rows[0][idx] === "number";
+        return (
+          idx !== xIndex &&
+          idx !== yIndex &&
+          transformedData.rows[0] &&
+          typeof transformedData.rows[0][idx] === 'number'
+        );
       });
 
       // Group by (x, y) and aggregate
@@ -921,8 +961,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const yValues = new Set<string>();
 
       for (const row of transformedData.rows) {
-        const xVal = String(row[xIndex] ?? "");
-        const yVal = String(row[yIndex] ?? "");
+        const xVal = String(row[xIndex] ?? '');
+        const yVal = String(row[yIndex] ?? '');
         const key = `${xVal}|${yVal}`;
         xValues.add(xVal);
         yValues.add(yVal);
@@ -935,7 +975,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           const valIdx = transformedData.columns.indexOf(valueField);
           const val = row[valIdx];
           if (val !== null && val !== undefined) {
-            const numVal = typeof val === "number" ? val : parseFloat(String(val));
+            const numVal = typeof val === 'number' ? val : parseFloat(String(val));
             if (!Number.isNaN(numVal) && isFinite(numVal)) {
               cellMap.get(key)!.push(numVal);
             }
@@ -948,15 +988,19 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       // Aggregate (sum by default)
       const heatmapData: number[][] = [];
       for (const [key, vals] of cellMap.entries()) {
-        const [xVal, yVal] = key.split("|");
+        const [xVal, yVal] = key.split('|');
         const sum = vals.reduce((a, b) => a + b, 0);
-        heatmapData.push([xValues.size - Array.from(xValues).indexOf(xVal) - 1, Array.from(yValues).indexOf(yVal), sum]);
+        heatmapData.push([
+          xValues.size - Array.from(xValues).indexOf(xVal) - 1,
+          Array.from(yValues).indexOf(yVal),
+          sum,
+        ]);
       }
 
       return {
         ...baseOption,
         tooltip: {
-          position: "top",
+          position: 'top',
           formatter: (params: any) => {
             const xIdx = Math.floor(params.value[0]);
             const yIdx = Math.floor(params.value[1]);
@@ -966,12 +1010,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           },
         },
         xAxis: {
-          type: "category",
+          type: 'category',
           data: Array.from(xValues),
           splitArea: { show: true },
         },
         yAxis: {
-          type: "category",
+          type: 'category',
           data: Array.from(yValues),
           splitArea: { show: true },
         },
@@ -979,17 +1023,29 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           min: Math.min(...heatmapData.map((d) => d[2])),
           max: Math.max(...heatmapData.map((d) => d[2])),
           calculable: true,
-          orient: "horizontal",
-          left: "center",
-          bottom: "5%",
+          orient: 'horizontal',
+          left: 'center',
+          bottom: '5%',
           inRange: {
-            color: ["#313695", "#4575b4", "#74add1", "#abd9e9", "#e0f3f8", "#ffffcc", "#fee090", "#fdae61", "#f46d43", "#d73027", "#a50026"],
+            color: [
+              '#313695',
+              '#4575b4',
+              '#74add1',
+              '#abd9e9',
+              '#e0f3f8',
+              '#ffffcc',
+              '#fee090',
+              '#fdae61',
+              '#f46d43',
+              '#d73027',
+              '#a50026',
+            ],
           },
         },
         series: [
           {
-            name: "Heatmap",
-            type: "heatmap",
+            name: 'Heatmap',
+            type: 'heatmap',
             data: heatmapData,
             label: {
               show: false,
@@ -997,7 +1053,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
             emphasis: {
               itemStyle: {
                 shadowBlur: 10,
-                shadowColor: "rgba(0, 0, 0, 0.5)",
+                shadowColor: 'rgba(0, 0, 0, 0.5)',
               },
             },
           },
@@ -1005,7 +1061,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       };
     }
 
-    case "treemap": {
+    case 'treemap': {
       // Use groupBy fields for hierarchy, numeric field for size
       const groupByFields = config.aggregation?.groupBy || (xField ? [xField] : []);
       const sizeField = Array.isArray(yField) ? yField[0] : yField;
@@ -1013,22 +1069,28 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       if (groupByFields.length === 0 || !sizeField) {
         return {
           ...baseOption,
-          title: { text: "Treemap requires groupBy fields and a numeric size field", left: "center", top: "middle" },
+          title: {
+            text: 'Treemap requires groupBy fields and a numeric size field',
+            left: 'center',
+            top: 'middle',
+          },
         };
       }
 
       // Build hierarchical data
       const treeData: any = {
-        name: "root",
+        name: 'root',
         children: [] as any[],
       };
 
-      const groupMap = new Map<string, { rows: SqlResult["rows"]; key: string }>();
+      const groupMap = new Map<string, { rows: SqlResult['rows']; key: string }>();
       for (const row of transformedData.rows) {
-        const key = groupByFields.map((f) => {
-          const idx = transformedData.columns.indexOf(f);
-          return String(row[idx] ?? "");
-        }).join("|");
+        const key = groupByFields
+          .map((f) => {
+            const idx = transformedData.columns.indexOf(f);
+            return String(row[idx] ?? '');
+          })
+          .join('|');
         if (!groupMap.has(key)) {
           groupMap.set(key, { rows: [], key });
         }
@@ -1040,12 +1102,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         const values = group.rows
           .map((row) => row[sizeIndex])
           .filter((v) => v !== null && v !== undefined)
-          .map((v) => typeof v === "number" ? v : parseFloat(String(v)))
+          .map((v) => (typeof v === 'number' ? v : parseFloat(String(v))))
           .filter((v) => !Number.isNaN(v) && isFinite(v)) as number[];
         const sum = values.reduce((a, b) => a + b, 0);
         if (sum > 0) {
           treeData.children.push({
-            name: key.replace(/\|/g, " / "),
+            name: key.replace(/\|/g, ' / '),
             value: sum,
           });
         }
@@ -1055,34 +1117,34 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         ...baseOption,
         series: [
           {
-            type: "treemap",
+            type: 'treemap',
             data: treeData.children,
             roam: false,
             nodeClick: false,
             breadcrumb: { show: false },
             label: {
               show: true,
-              formatter: "{b}\n{c}",
+              formatter: '{b}\n{c}',
             },
             upperLabel: {
               show: true,
             },
             itemStyle: {
-              borderColor: "#fff",
+              borderColor: '#fff',
             },
           },
         ],
       };
     }
 
-    case "boxplot": {
+    case 'boxplot': {
       const numericField = Array.isArray(yField) ? yField[0] : yField;
       const groupField = config.mapping.facet || xField;
 
       if (!numericField) {
         return {
           ...baseOption,
-          title: { text: "Boxplot requires a numeric field", left: "center", top: "middle" },
+          title: { text: 'Boxplot requires a numeric field', left: 'center', top: 'middle' },
         };
       }
 
@@ -1093,10 +1155,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         // Grouped boxplot
         const groupMap = new Map<string, number[]>();
         for (const row of transformedData.rows) {
-          const groupVal = String(row[groupIndex] ?? "");
+          const groupVal = String(row[groupIndex] ?? '');
           const numVal = row[numericIndex];
           if (numVal !== null && numVal !== undefined) {
-            const num = typeof numVal === "number" ? numVal : parseFloat(String(numVal));
+            const num = typeof numVal === 'number' ? numVal : parseFloat(String(numVal));
             if (!Number.isNaN(num) && isFinite(num)) {
               if (!groupMap.has(groupVal)) {
                 groupMap.set(groupVal, []);
@@ -1119,17 +1181,17 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         return {
           ...baseOption,
           xAxis: {
-            type: "category",
+            type: 'category',
             data: categories,
           },
           yAxis: {
-            type: "value",
+            type: 'value',
             name: numericField,
           },
           series: [
             {
               name: numericField,
-              type: "boxplot",
+              type: 'boxplot',
               data: boxplotData,
             },
           ],
@@ -1139,13 +1201,13 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         const values = transformedData.rows
           .map((row) => row[numericIndex])
           .filter((v) => v !== null && v !== undefined)
-          .map((v) => typeof v === "number" ? v : parseFloat(String(v)))
+          .map((v) => (typeof v === 'number' ? v : parseFloat(String(v))))
           .filter((v) => !Number.isNaN(v) && isFinite(v)) as number[];
 
         if (values.length === 0) {
           return {
             ...baseOption,
-            title: { text: "No valid numeric values for boxplot", left: "center", top: "middle" },
+            title: { text: 'No valid numeric values for boxplot', left: 'center', top: 'middle' },
           };
         }
 
@@ -1153,17 +1215,17 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         return {
           ...baseOption,
           xAxis: {
-            type: "category",
+            type: 'category',
             data: [numericField],
           },
           yAxis: {
-            type: "value",
+            type: 'value',
             name: numericField,
           },
           series: [
             {
               name: numericField,
-              type: "boxplot",
+              type: 'boxplot',
               data: [[stats.min, stats.q1, stats.median, stats.q3, stats.max]],
             },
           ],
@@ -1171,16 +1233,20 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       }
     }
 
-    case "radar": {
+    case 'radar': {
       // For radar: use categorical columns as metrics, rows as series
       const analyses = analyzeDataColumns(transformedData);
-      const numericCols = analyses.filter((a) => a.type === "numeric");
+      const numericCols = analyses.filter((a) => a.type === 'numeric');
       const groupField = config.mapping.facet || xField;
 
       if (numericCols.length === 0) {
         return {
           ...baseOption,
-          title: { text: "Radar chart requires numeric metric columns", left: "center", top: "middle" },
+          title: {
+            text: 'Radar chart requires numeric metric columns',
+            left: 'center',
+            top: 'middle',
+          },
         };
       }
 
@@ -1189,9 +1255,9 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
       if (groupIndex >= 0) {
         // Group by field
-        const groupMap = new Map<string, SqlResult["rows"]>();
+        const groupMap = new Map<string, SqlResult['rows']>();
         for (const row of transformedData.rows) {
-          const groupVal = String(row[groupIndex] ?? "");
+          const groupVal = String(row[groupIndex] ?? '');
           if (!groupMap.has(groupVal)) {
             groupMap.set(groupVal, []);
           }
@@ -1205,9 +1271,11 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
             const metricValues = rows
               .map((row) => row[idx])
               .filter((v) => v !== null && v !== undefined)
-              .map((v) => typeof v === "number" ? v : parseFloat(String(v)))
+              .map((v) => (typeof v === 'number' ? v : parseFloat(String(v))))
               .filter((v) => !Number.isNaN(v) && isFinite(v)) as number[];
-            return metricValues.length > 0 ? metricValues.reduce((a, b) => a + b, 0) / metricValues.length : 0;
+            return metricValues.length > 0
+              ? metricValues.reduce((a, b) => a + b, 0) / metricValues.length
+              : 0;
           });
           series.push({
             name: groupName,
@@ -1218,11 +1286,14 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         return {
           ...baseOption,
           radar: {
-            indicator: metrics.map((m) => ({ name: m, max: Math.max(...series.flatMap((s) => s.value)) })),
+            indicator: metrics.map((m) => ({
+              name: m,
+              max: Math.max(...series.flatMap((s) => s.value)),
+            })),
           },
           series: [
             {
-              type: "radar",
+              type: 'radar',
               data: series,
             },
           ],
@@ -1235,7 +1306,11 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           const values = metrics.map((metric) => {
             const idx = transformedData.columns.indexOf(metric);
             const val = row[idx];
-            return val !== null && val !== undefined ? (typeof val === "number" ? val : parseFloat(String(val)) || 0) : 0;
+            return val !== null && val !== undefined
+              ? typeof val === 'number'
+                ? val
+                : parseFloat(String(val)) || 0
+              : 0;
           });
           series.push({
             name: `Series ${i + 1}`,
@@ -1251,7 +1326,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           },
           series: [
             {
-              type: "radar",
+              type: 'radar',
               data: series,
             },
           ],
@@ -1259,7 +1334,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       }
     }
 
-    case "sankey": {
+    case 'sankey': {
       // For sankey: x → source, y → target, size/color → value
       const sourceField = xField;
       const targetField = Array.isArray(yField) ? yField[0] : yField;
@@ -1268,7 +1343,11 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       if (!sourceField || !targetField) {
         return {
           ...baseOption,
-          title: { text: "Sankey requires source (X) and target (Y) fields", left: "center", top: "middle" },
+          title: {
+            text: 'Sankey requires source (X) and target (Y) fields',
+            left: 'center',
+            top: 'middle',
+          },
         };
       }
 
@@ -1281,11 +1360,14 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const nodes = new Set<string>();
 
       for (const row of transformedData.rows) {
-        const source = String(row[sourceIndex] ?? "");
-        const target = String(row[targetIndex] ?? "");
-        const value = valueIndex >= 0
-          ? (typeof row[valueIndex] === "number" ? row[valueIndex] : parseFloat(String(row[valueIndex] ?? 0)) || 0)
-          : 1;
+        const source = String(row[sourceIndex] ?? '');
+        const target = String(row[targetIndex] ?? '');
+        const value =
+          valueIndex >= 0
+            ? typeof row[valueIndex] === 'number'
+              ? row[valueIndex]
+              : parseFloat(String(row[valueIndex] ?? 0)) || 0
+            : 1;
 
         nodes.add(source);
         nodes.add(target);
@@ -1295,7 +1377,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
       const nodeList = Array.from(nodes);
       const links = Array.from(flowMap.entries()).map(([key, value]) => {
-        const [source, target] = key.split("|");
+        const [source, target] = key.split('|');
         return {
           source: nodeList.indexOf(source),
           target: nodeList.indexOf(target),
@@ -1307,14 +1389,14 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         ...baseOption,
         series: [
           {
-            type: "sankey",
+            type: 'sankey',
             data: nodeList.map((name) => ({ name })),
             links,
             emphasis: {
-              focus: "adjacency",
+              focus: 'adjacency',
             },
             lineStyle: {
-              color: "gradient",
+              color: 'gradient',
               curveness: 0.5,
             },
           },
@@ -1322,16 +1404,20 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       };
     }
 
-    case "combo-bar-line": {
+    case 'combo-bar-line': {
       // Multiple Y fields: first is bar, second is line
       if (!xField || !yField || !Array.isArray(yField) || yField.length < 2) {
         return {
           ...baseOption,
-          title: { text: "Combo chart requires X field and at least 2 Y fields", left: "center", top: "middle" },
+          title: {
+            text: 'Combo chart requires X field and at least 2 Y fields',
+            left: 'center',
+            top: 'middle',
+          },
         };
       }
 
-      const xAxisData = dataPoints.map((p) => String(p.x ?? ""));
+      const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
       const barField = yField[0];
       const lineField = yField[1];
 
@@ -1341,39 +1427,39 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       if (barIndex < 0 || lineIndex < 0) {
         return {
           ...baseOption,
-          title: { text: "Invalid Y fields for combo chart", left: "center", top: "middle" },
+          title: { text: 'Invalid Y fields for combo chart', left: 'center', top: 'middle' },
         };
       }
 
       return {
         ...baseOption,
         xAxis: {
-          type: "category",
+          type: 'category',
           data: xAxisData,
           axisLabel: { rotate: xAxisData.length > 10 ? 45 : 0 },
         },
         yAxis: [
           {
-            type: "value",
+            type: 'value',
             name: barField,
-            position: "left",
+            position: 'left',
           },
           {
-            type: "value",
+            type: 'value',
             name: lineField,
-            position: "right",
+            position: 'right',
           },
         ],
         series: [
           {
             name: barField,
-            type: "bar",
+            type: 'bar',
             data: transformedData.rows.map((row) => row[barIndex]),
             yAxisIndex: 0,
           },
           {
             name: lineField,
-            type: "line",
+            type: 'line',
             data: transformedData.rows.map((row) => row[lineIndex]),
             yAxisIndex: 1,
             smooth: true,
@@ -1385,8 +1471,11 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
     default:
       return {
         ...baseOption,
-        title: { text: `Chart type "${config.chartType}" not yet implemented`, left: "center", top: "middle" },
+        title: {
+          text: `Chart type "${config.chartType}" not yet implemented`,
+          left: 'center',
+          top: 'middle',
+        },
       };
   }
 }
-

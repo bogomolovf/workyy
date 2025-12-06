@@ -1,9 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
@@ -17,9 +14,9 @@ export default {
         'wy-border': '#e0f2fe',
       },
       spacing: {
-        '18': '4.5rem',
-        '88': '22rem',
-        '128': '32rem',
+        18: '4.5rem',
+        88: '22rem',
+        128: '32rem',
       },
       maxWidth: {
         'container-sm': '640px',
@@ -31,15 +28,14 @@ export default {
         'theme-sm': 'var(--shadow-sm)',
         'theme-md': 'var(--shadow-md)',
         'theme-lg': 'var(--shadow-lg)',
-        'soft': 'var(--shadow-soft)',
+        soft: 'var(--shadow-soft)',
       },
       borderRadius: {
-        'card': 'var(--radius-card)',
-        'pill': 'var(--radius-pill)',
-        'button': 'var(--radius-button)',
+        card: 'var(--radius-card)',
+        pill: 'var(--radius-pill)',
+        button: 'var(--radius-button)',
       },
     },
   },
   plugins: [],
-}
-
+};

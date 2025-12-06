@@ -1,24 +1,24 @@
-import { useParams, Link } from 'react-router-dom'
-import { useLanguage } from '../contexts/LanguageContext'
-import { SEOHead } from '../components/SEOHead'
+import { useParams, Link } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
+import { SEOHead } from '../components/SEOHead';
 
 const ProductPage = () => {
-  const { section } = useParams<{ section?: string }>()
-  const { language, content } = useLanguage()
-  const productContent = content.product
+  const { section } = useParams<{ section?: string }>();
+  const { language, content } = useLanguage();
+  const productContent = content.product;
 
   const getPath = (path: string) => {
-    return `/${language}${path}`
-  }
+    return `/${language}${path}`;
+  };
 
   const sections = [
     { id: 'canvas', content: productContent.canvas },
     { id: 'collaboration', content: productContent.collaboration },
     { id: 'performance', content: productContent.performance },
-  ]
+  ];
 
-  const currentSection = section ? sections.find((s) => s.id === section) : null
-  const displaySection = currentSection || sections[0]
+  const currentSection = section ? sections.find((s) => s.id === section) : null;
+  const displaySection = currentSection || sections[0];
 
   return (
     <div className="bg-white text-wy-text min-h-screen">
@@ -37,7 +37,7 @@ const ProductPage = () => {
                 key={s.id}
                 to={getPath(`/product/${s.id}`)}
                 className={`px-4 py-2 rounded-lg transition-colors ${
-                  (section === s.id || (!section && s.id === 'canvas'))
+                  section === s.id || (!section && s.id === 'canvas')
                     ? 'bg-wy-primary text-white'
                     : 'bg-white hover:bg-wy-bg-subtle text-wy-muted'
                 }`}
@@ -50,8 +50,12 @@ const ProductPage = () => {
           {/* Content */}
           <div className="space-y-8">
             <div>
-              <h1 className="text-4xl font-bold mb-6 text-wy-text">{displaySection.content.title}</h1>
-              <p className="text-lg text-wy-muted leading-relaxed mb-8">{displaySection.content.description}</p>
+              <h1 className="text-4xl font-bold mb-6 text-wy-text">
+                {displaySection.content.title}
+              </h1>
+              <p className="text-lg text-wy-muted leading-relaxed mb-8">
+                {displaySection.content.description}
+              </p>
               <Link
                 to={getPath('/pricing')}
                 className="inline-block px-6 py-3 rounded-lg bg-wy-primary text-white font-semibold hover:bg-wy-primary/90 transition-colors"
@@ -63,8 +67,7 @@ const ProductPage = () => {
         </div>
       </main>
     </div>
-  )
-}
+  );
+};
 
-export default ProductPage
-
+export default ProductPage;

@@ -22,4 +22,3 @@ describe('DependencyResolver', () => {
     expect(downstream).toEqual(['node-2', 'node-5', 'node-3', 'node-4']);
   });
 });
-

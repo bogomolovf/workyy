@@ -94,4 +94,3 @@ export async function logoutUser(): Promise<void> {
     credentials: 'include',
   });
 }
-

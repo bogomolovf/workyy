@@ -5,4 +5,3 @@ export default {
   printWidth: 100,
   tabWidth: 2,
 };
-

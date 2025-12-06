@@ -1,14 +1,14 @@
-import type { SqlResult } from "../../state/executionStore";
-import type { PlotNodePayload } from "./chartTypes";
-import { analyzeDataColumns, recommendChartTypes } from "./dataAnalyzer";
-import { suggestXField, suggestYField, suggestColorField } from "./fieldMapper";
+import type { SqlResult } from '../../state/executionStore';
+import type { PlotNodePayload } from './chartTypes';
+import { analyzeDataColumns, recommendChartTypes } from './dataAnalyzer';
+import { suggestXField, suggestYField, suggestColorField } from './fieldMapper';
 
 /**
  * Auto-configure a Plot node based on data analysis
  */
 export function autoConfigurePlotConfig(
   data: SqlResult,
-  currentPayload?: PlotNodePayload
+  currentPayload?: PlotNodePayload,
 ): Partial<PlotNodePayload> {
   // Don't auto-configure if already configured by user
   if (currentPayload?.autoConfigured === true) {
@@ -26,7 +26,7 @@ export function autoConfigurePlotConfig(
   }
 
   const recommendations = recommendChartTypes(data);
-  const recommendedChartType = recommendations[0] || "bar";
+  const recommendedChartType = recommendations[0] || 'bar';
 
   const xField = suggestXField(recommendedChartType, analyses);
   const yField = suggestYField(recommendedChartType, analyses, xField);
@@ -41,15 +41,21 @@ export function autoConfigurePlotConfig(
     },
     styling: {
       ...(currentPayload?.styling || {}),
-      title: currentPayload?.styling?.title || "New Chart",
-      theme: currentPayload?.styling?.theme || "light",
-      showLegend: currentPayload?.styling?.showLegend !== undefined ? currentPayload.styling.showLegend : true,
-      legendPosition: currentPayload?.styling?.legendPosition || "top",
-      showGrid: currentPayload?.styling?.showGrid !== undefined ? currentPayload.styling.showGrid : true,
-      enableTooltips: currentPayload?.styling?.enableTooltips !== undefined ? currentPayload.styling.enableTooltips : true,
+      title: currentPayload?.styling?.title || 'New Chart',
+      theme: currentPayload?.styling?.theme || 'light',
+      showLegend:
+        currentPayload?.styling?.showLegend !== undefined
+          ? currentPayload.styling.showLegend
+          : true,
+      legendPosition: currentPayload?.styling?.legendPosition || 'top',
+      showGrid:
+        currentPayload?.styling?.showGrid !== undefined ? currentPayload.styling.showGrid : true,
+      enableTooltips:
+        currentPayload?.styling?.enableTooltips !== undefined
+          ? currentPayload.styling.enableTooltips
+          : true,
     },
     autoConfigured: true,
-    version: currentPayload?.version || "1",
+    version: currentPayload?.version || '1',
   };
 }
-

@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useAuthStore } from "../../state/authStore";
-import { LANDING_URL } from "../../lib/appConfig";
+import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuthStore } from '../../state/authStore';
+import { LANDING_URL } from '../../lib/appConfig';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,10 +12,10 @@ export default function LoginPage() {
   const loading = useAuthStore((s) => s.loading);
   const error = useAuthStore((s) => s.error);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-  const redirectTo = searchParams.get("redirectTo") || "/";
+  const redirectTo = searchParams.get('redirectTo') || '/';
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,12 +66,12 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            {loading ? "Signing in…" : "Log in"}
+            {loading ? 'Signing in…' : 'Log in'}
           </button>
         </form>
 
         <p className="text-xs text-slate-500">
-          Don't have an account?{" "}
+          Don't have an account?{' '}
           <a href="/signup" className="text-indigo-600 hover:text-indigo-700">
             Sign up
           </a>
@@ -85,4 +85,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

@@ -43,4 +43,3 @@ export const executeQueryBodySchema = z.object({
 });
 
 export type ExecuteQueryInput = z.infer<typeof executeQueryBodySchema>;
-

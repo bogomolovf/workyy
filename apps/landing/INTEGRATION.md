@@ -49,6 +49,7 @@ pnpm build
 ### Header Navigation
 
 The header (`src/components/Header.tsx`) includes:
+
 - Logo linking to landing home
 - Navigation menu (Product, Use Cases, Pricing, Resources)
 - Language toggle (EN/RU)
@@ -58,12 +59,14 @@ The header (`src/components/Header.tsx`) includes:
 ### HomePage CTAs
 
 The hero section (`src/pages/HomePage.tsx`) includes:
+
 - **Start for free** → Product signup
 - **Book a demo** → Product demo board
 
 ### API Client
 
 The `src/lib/apiClient.ts` file provides:
+
 - `postDemoSignup()` - Submit demo signup (future)
 - `checkBackendHealth()` - Verify backend connectivity
 
@@ -79,4 +82,3 @@ The `src/lib/apiClient.ts` file provides:
 - All product links use external URLs (not React Router) to ensure proper navigation
 - Language toggle does not affect product URLs (they are language-agnostic)
 - The landing page can make API calls to the backend if CORS is configured correctly
-

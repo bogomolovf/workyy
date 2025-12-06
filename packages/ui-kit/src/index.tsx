@@ -22,4 +22,3 @@ export function Button({ className, variant = 'primary', ...rest }: ButtonProps)
     />
   );
 }
-

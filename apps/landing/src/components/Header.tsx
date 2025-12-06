@@ -1,64 +1,72 @@
-import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
-import { useLanguage } from '../contexts/LanguageContext'
-import { LanguageToggle } from './LanguageToggle'
-import { useActiveRoute } from '../hooks/useActiveRoute'
-import { useAuth } from '../hooks/useAuth'
-import { PRODUCT_LOGIN_URL, PRODUCT_SIGNUP_URL, PRODUCT_HOME_URL } from '../config/appConfig'
+import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
+import { LanguageToggle } from './LanguageToggle';
+import { useActiveRoute } from '../hooks/useActiveRoute';
+import { useAuth } from '../hooks/useAuth';
+import { PRODUCT_LOGIN_URL, PRODUCT_SIGNUP_URL, PRODUCT_HOME_URL } from '../config/appConfig';
 
 const primaryNav = [
   { label: 'Product', path: '/product/canvas' },
   { label: 'Use Cases', path: '/use-cases' },
   { label: 'Pricing', path: '/pricing' },
   { label: 'Resources', path: '/resources/docs' },
-]
+];
 
 export const Header = () => {
-  const { language } = useLanguage()
-  const { isActive } = useActiveRoute()
-  const { user, loading: authLoading, logout } = useAuth()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const mobileMenuRef = useRef<HTMLDivElement>(null)
+  const { language } = useLanguage();
+  const { isActive } = useActiveRoute();
+  const { user, loading: authLoading, logout } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node) && mobileMenuOpen) {
-        setMobileMenuOpen(false)
+      if (
+        mobileMenuRef.current &&
+        !mobileMenuRef.current.contains(event.target as Node) &&
+        mobileMenuOpen
+      ) {
+        setMobileMenuOpen(false);
       }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [mobileMenuOpen])
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setMobileMenuOpen(false)
+        setMobileMenuOpen(false);
       }
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [])
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, []);
 
-  const handleMobileLinkClick = () => setMobileMenuOpen(false)
-  const getPath = (path: string) => `/${language}${path}`
-  const skipLabel = language === 'en' ? 'Skip to content' : 'Перейти к контенту'
+  const handleMobileLinkClick = () => setMobileMenuOpen(false);
+  const getPath = (path: string) => `/${language}${path}`;
+  const skipLabel = language === 'en' ? 'Skip to content' : 'Перейти к контенту';
 
   const desktopLinkClass = (path: string) =>
     `text-sm font-medium transition-colors ${
-      isActive(path)
-        ? 'text-wy-primary'
-        : 'text-wy-muted hover:text-wy-text'
-    }`
+      isActive(path) ? 'text-wy-primary' : 'text-wy-muted hover:text-wy-text'
+    }`;
 
   return (
     <>
       <a href="#main-content" className="skip-link">
         {skipLabel}
       </a>
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-wy-border" style={{ width: '100vw', margin: 0, padding: 0, left: 0, right: 0, position: 'sticky' }}>
+      <header
+        className="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-wy-border"
+        style={{ width: '100vw', margin: 0, padding: 0, left: 0, right: 0, position: 'sticky' }}
+      >
         <div style={{ width: '100%', margin: 0, padding: 0, maxWidth: '100%' }}>
-          <div className="flex items-center justify-between h-16 md:h-18" style={{ width: '100%', margin: 0, padding: 0 }}>
+          <div
+            className="flex items-center justify-between h-16 md:h-18"
+            style={{ width: '100%', margin: 0, padding: 0 }}
+          >
             {/* Logo - строго слева */}
             <div className="pl-4 sm:pl-6 lg:pl-8 flex-shrink-0">
               <Link to={getPath('/home')} className="text-2xl font-bold text-wy-primary">
@@ -90,9 +98,7 @@ export const Header = () => {
                         <p className="text-sm font-medium text-wy-text">
                           {user.name || user.email}
                         </p>
-                        {user.name && (
-                          <p className="text-xs text-wy-muted">{user.email}</p>
-                        )}
+                        {user.name && <p className="text-xs text-wy-muted">{user.email}</p>}
                       </div>
                       <a
                         href={PRODUCT_HOME_URL}
@@ -135,15 +141,24 @@ export const Header = () => {
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   {mobileMenuOpen ? (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
                   )}
                 </svg>
               </button>
             </div>
           </div>
-
 
           {/* Mobile Menu */}
           {mobileMenuOpen && (
@@ -229,5 +244,5 @@ export const Header = () => {
         </div>
       </header>
     </>
-  )
-}
+  );
+};

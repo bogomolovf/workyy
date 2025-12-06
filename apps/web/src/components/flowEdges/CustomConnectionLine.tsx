@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import React from "react";
-import { getStraightPath } from "reactflow";
+import React from 'react';
+import { getStraightPath } from 'reactflow';
 
 type CustomConnectionLineProps = {
   fromX: number;
@@ -26,20 +26,16 @@ export function CustomConnectionLine({
   });
 
   const defaultStyle: React.CSSProperties = {
-    stroke: "#94a3b8",
+    stroke: '#94a3b8',
     strokeWidth: 4,
-    fill: "none",
+    fill: 'none',
   };
 
   return (
     <g>
-      <path
-        d={edgePath}
-        style={{ ...defaultStyle, ...connectionLineStyle }}
-      />
+      <path d={edgePath} style={{ ...defaultStyle, ...connectionLineStyle }} />
     </g>
   );
 }
 
 export default CustomConnectionLine;
-

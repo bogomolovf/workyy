@@ -36,4 +36,3 @@ export type Position = z.infer<typeof PositionSchema>;
 export type NodeType = z.infer<typeof NodeTypeSchema>;
 export type NodePayload = z.infer<typeof NodePayloadSchema>;
 export type Node = z.infer<typeof NodeSchema>;
-

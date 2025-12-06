@@ -1,7 +1,7 @@
-import * as duckdb from "@duckdb/duckdb-wasm";
-import type { Table } from "apache-arrow";
-import { tableToIPC } from "apache-arrow/ipc/serialization";
-import type { SqlResult } from "../state/executionStore";
+import * as duckdb from '@duckdb/duckdb-wasm';
+import type { Table } from 'apache-arrow';
+import { tableToIPC } from 'apache-arrow/ipc/serialization';
+import type { SqlResult } from '../state/executionStore';
 
 type DuckDbContext = {
   db: duckdb.AsyncDuckDB;
@@ -12,24 +12,25 @@ let contextPromise: Promise<DuckDbContext> | null = null;
 let testContextOverride: DuckDbContext | null = null;
 let demoBoardIdOverride: string | null = null;
 
-const DEMO_TABLE_NAME = "demo_data";
+const DEMO_TABLE_NAME = 'demo_data';
 const SAMPLE_ROWS = [
-  { id: 1, region: "North", revenue: 120.5, year: 2023 },
-  { id: 2, region: "North", revenue: 132.8, year: 2024 },
-  { id: 3, region: "West", revenue: 98.1, year: 2023 },
-  { id: 4, region: "West", revenue: 110.3, year: 2024 },
-  { id: 5, region: "South", revenue: 87.9, year: 2023 },
-  { id: 6, region: "South", revenue: 99.6, year: 2024 },
+  { id: 1, region: 'North', revenue: 120.5, year: 2023 },
+  { id: 2, region: 'North', revenue: 132.8, year: 2024 },
+  { id: 3, region: 'West', revenue: 98.1, year: 2023 },
+  { id: 4, region: 'West', revenue: 110.3, year: 2024 },
+  { id: 5, region: 'South', revenue: 87.9, year: 2023 },
+  { id: 6, region: 'South', revenue: 99.6, year: 2024 },
 ];
 
-const envDemoBoardId = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DEMO_BOARD_ID ?? null : null;
+const envDemoBoardId =
+  typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_DEMO_BOARD_ID ?? null) : null;
 let cachedDemoBoardId = envDemoBoardId;
 
 async function bootstrapDuckDb(): Promise<DuckDbContext> {
   const bundles = duckdb.getJsDelivrBundles();
   const bundle = await duckdb.selectBundle(bundles);
   if (!bundle.mainWorker) {
-    throw new Error("DuckDB bundle does not provide a worker URL");
+    throw new Error('DuckDB bundle does not provide a worker URL');
   }
 
   const response = await fetch(bundle.mainWorker);
@@ -81,10 +82,10 @@ function getDemoBoardId(): string | null {
 
 function normalizeCell(value: unknown): string | number | null {
   if (value === null || value === undefined) return null;
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "string") return value;
-  if (typeof value === "boolean") return value ? 1 : 0;
-  if (typeof value === "bigint") {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'bigint') {
     const asNumber = Number(value);
     return Number.isNaN(asNumber) ? Number(value.toString()) : asNumber;
   }
@@ -96,7 +97,7 @@ function normalizeCell(value: unknown): string | number | null {
 
 function tableToSqlResult(table: Table): SqlResult {
   const columns = table.schema.fields.map((field) => field.name);
-  const rows: SqlResult["rows"] = [];
+  const rows: SqlResult['rows'] = [];
   const iterable = table.toArray() as Array<Record<string, unknown>>;
   for (const record of iterable) {
     rows.push(columns.map((column) => normalizeCell((record as Record<string, unknown>)[column])));
@@ -106,7 +107,7 @@ function tableToSqlResult(table: Table): SqlResult {
 }
 
 function sanitizeIdentifier(identifier: string) {
-  return identifier.replace(/[^a-zA-Z0-9_]/g, "_");
+  return identifier.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
 function quotedIdentifier(identifier: string) {
@@ -114,15 +115,15 @@ function quotedIdentifier(identifier: string) {
 }
 
 function inferTableName(file: File, fallback: string) {
-  const base = file.name.split(".")[0] || fallback;
+  const base = file.name.split('.')[0] || fallback;
   return sanitizeIdentifier(base.toLowerCase());
 }
 
 function inferFormat(file: File) {
-  if (file.name.endsWith(".parquet")) {
-    return "parquet" as const;
+  if (file.name.endsWith('.parquet')) {
+    return 'parquet' as const;
   }
-  return "csv" as const;
+  return 'csv' as const;
 }
 
 export async function executeSql(query: string): Promise<SqlResult> {
@@ -133,7 +134,7 @@ export async function executeSql(query: string): Promise<SqlResult> {
 
 export type DuckDbLoadOptions = {
   tableName?: string;
-  format?: "auto" | "csv" | "parquet";
+  format?: 'auto' | 'csv' | 'parquet';
   boardId?: string;
   persist?: boolean;
 };
@@ -144,17 +145,17 @@ type PersistedDataset = {
   rows: Array<Array<string | number | null>>;
 };
 
-const DATASET_KEY_PREFIX = "workyy_board_datasets_v2:";
+const DATASET_KEY_PREFIX = 'workyy_board_datasets_v2:';
 
 function getDatasetsKey(boardId: string) {
   return `${DATASET_KEY_PREFIX}${boardId}`;
 }
 
 function saveDatasetMeta(boardId: string | undefined, dataset: PersistedDataset) {
-  if (typeof window === "undefined" || !boardId) return;
+  if (typeof window === 'undefined' || !boardId) return;
   try {
     const key = getDatasetsKey(boardId);
-    const existing: PersistedDataset[] = JSON.parse(window.localStorage.getItem(key) ?? "[]");
+    const existing: PersistedDataset[] = JSON.parse(window.localStorage.getItem(key) ?? '[]');
     const filtered = existing.filter((item) => item.tableName !== dataset.tableName);
     filtered.push(dataset);
     window.localStorage.setItem(key, JSON.stringify(filtered));
@@ -168,15 +169,16 @@ export async function loadFileIntoDuckDb(
   options?: DuckDbLoadOptions,
 ): Promise<{ tableName: string; rows: number }> {
   const { db, connection } = await getDuckDbContext();
-  const inferredFormat = options?.format && options.format !== "auto" ? options.format : inferFormat(file);
-  const tableName = sanitizeIdentifier(options?.tableName ?? inferTableName(file, "dataset"));
-  const virtualPath = `uploads/${Date.now()}-${tableName}.${inferredFormat === "parquet" ? "parquet" : "csv"}`;
+  const inferredFormat =
+    options?.format && options.format !== 'auto' ? options.format : inferFormat(file);
+  const tableName = sanitizeIdentifier(options?.tableName ?? inferTableName(file, 'dataset'));
+  const virtualPath = `uploads/${Date.now()}-${tableName}.${inferredFormat === 'parquet' ? 'parquet' : 'csv'}`;
 
   const buffer = new Uint8Array(await file.arrayBuffer());
   await db.registerFileBuffer(virtualPath, buffer);
 
   const sourceExpression =
-    inferredFormat === "parquet"
+    inferredFormat === 'parquet'
       ? `read_parquet('${virtualPath}')`
       : `read_csv_auto('${virtualPath}', AUTO_DETECT=TRUE, SAMPLE_SIZE=20000)`;
 
@@ -184,7 +186,9 @@ export async function loadFileIntoDuckDb(
     CREATE OR REPLACE TABLE ${quotedIdentifier(tableName)} AS SELECT * FROM ${sourceExpression};
   `);
 
-  const stats = await connection.query(`SELECT count(*) as row_count FROM ${quotedIdentifier(tableName)}`);
+  const stats = await connection.query(
+    `SELECT count(*) as row_count FROM ${quotedIdentifier(tableName)}`,
+  );
   const result = tableToSqlResult(stats);
   const rowCount = Number(result.rows[0]?.[0] ?? 0);
 
@@ -204,7 +208,9 @@ export async function loadFileIntoDuckDb(
   return { tableName, rows: rowCount };
 }
 
-export async function listTables(connectionOverride?: duckdb.AsyncDuckDBConnection): Promise<string[]> {
+export async function listTables(
+  connectionOverride?: duckdb.AsyncDuckDBConnection,
+): Promise<string[]> {
   const connection = connectionOverride ?? (await getDuckDbContext()).connection;
   const result = await connection.query(`
     SELECT table_name
@@ -216,7 +222,9 @@ export async function listTables(connectionOverride?: duckdb.AsyncDuckDBConnecti
   return rows.map((row) => String(row.table_name));
 }
 
-export async function resetUserTables(connectionOverride?: duckdb.AsyncDuckDBConnection): Promise<void> {
+export async function resetUserTables(
+  connectionOverride?: duckdb.AsyncDuckDBConnection,
+): Promise<void> {
   const connection = connectionOverride ?? (await getDuckDbContext()).connection;
   const tableNames = await listTables(connection);
   for (const name of tableNames) {
@@ -224,7 +232,10 @@ export async function resetUserTables(connectionOverride?: duckdb.AsyncDuckDBCon
   }
 }
 
-async function ensureDemoDatasetForBoard(boardId: string, connection: duckdb.AsyncDuckDBConnection): Promise<void> {
+async function ensureDemoDatasetForBoard(
+  boardId: string,
+  connection: duckdb.AsyncDuckDBConnection,
+): Promise<void> {
   const demoBoardId = getDemoBoardId();
   if (!demoBoardId || boardId !== demoBoardId) return;
   const hasTableResult = await connection.query(`
@@ -237,7 +248,7 @@ async function ensureDemoDatasetForBoard(boardId: string, connection: duckdb.Asy
   }
   const insertValues = SAMPLE_ROWS.map(
     (row) => `(${row.id}, '${row.region}', ${row.revenue}, ${row.year})`,
-  ).join(",\n      ");
+  ).join(',\n      ');
   await connection.query(`
     CREATE TABLE ${quotedIdentifier(DEMO_TABLE_NAME)} (
       id INTEGER,
@@ -251,7 +262,7 @@ async function ensureDemoDatasetForBoard(boardId: string, connection: duckdb.Asy
 }
 
 export async function restoreDatasetsForBoard(boardId: string): Promise<void> {
-  if (typeof window === "undefined") return;
+  if (typeof window === 'undefined') return;
   try {
     const { connection } = await getDuckDbContext();
     await resetUserTables(connection);
@@ -264,28 +275,30 @@ export async function restoreDatasetsForBoard(boardId: string): Promise<void> {
     for (const dataset of datasets) {
       const columnsDef = dataset.columns
         .map((column) => `${quotedIdentifier(column)} TEXT`)
-        .join(", ");
+        .join(', ');
       await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(dataset.tableName)};`);
-      await connection.query(`CREATE TABLE ${quotedIdentifier(dataset.tableName)} (${columnsDef});`);
+      await connection.query(
+        `CREATE TABLE ${quotedIdentifier(dataset.tableName)} (${columnsDef});`,
+      );
       if (dataset.rows.length) {
         const rowsSql = dataset.rows
           .map((row) => {
             const values = row
               .map((value) => {
-                if (value === null || value === undefined) return "NULL";
+                if (value === null || value === undefined) return 'NULL';
                 const text = String(value).replace(/'/g, "''");
                 return `'${text}'`;
               })
-              .join(", ");
+              .join(', ');
             return `(${values})`;
           })
-          .join(", ");
-        await connection.query(`INSERT INTO ${quotedIdentifier(dataset.tableName)} VALUES ${rowsSql};`);
+          .join(', ');
+        await connection.query(
+          `INSERT INTO ${quotedIdentifier(dataset.tableName)} VALUES ${rowsSql};`,
+        );
       }
     }
   } catch {
     // if restore fails, we just start with an empty DuckDB context
   }
 }
-
-

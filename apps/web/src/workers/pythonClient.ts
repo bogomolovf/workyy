@@ -1,5 +1,5 @@
-import { wrap, Remote } from "comlink";
-import type { PythonWorkerApi } from "./python.worker";
+import { wrap, Remote } from 'comlink';
+import type { PythonWorkerApi } from './python.worker';
 
 type WorkerEntry = {
   client: Remote<PythonWorkerApi>;
@@ -8,14 +8,14 @@ type WorkerEntry = {
 };
 
 type PendingJob = {
-  payload: Parameters<PythonWorkerApi["runPython"]>[0];
-  resolve: (value: Awaited<ReturnType<PythonWorkerApi["runPython"]>>) => void;
+  payload: Parameters<PythonWorkerApi['runPython']>[0];
+  resolve: (value: Awaited<ReturnType<PythonWorkerApi['runPython']>>) => void;
   reject: (reason?: unknown) => void;
   timeoutMs: number;
 };
 
 const MAX_WORKERS =
-  typeof navigator !== "undefined"
+  typeof navigator !== 'undefined'
     ? Math.max(1, Math.min(4, Math.floor(navigator.hardwareConcurrency / 2) || 2))
     : 2;
 
@@ -23,7 +23,7 @@ const workerEntries: WorkerEntry[] = [];
 const jobQueue: PendingJob[] = [];
 
 function createWorkerEntry(): WorkerEntry {
-  const worker = new Worker(new URL("./python.worker.ts", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL('./python.worker.ts', import.meta.url), { type: 'module' });
   const client = wrap<PythonWorkerApi>(worker);
   return { worker, client, busy: false };
 }
@@ -46,11 +46,14 @@ function drainQueue() {
   if (!job) return;
   entry.busy = true;
 
-  const timeoutId = typeof window !== "undefined" ? window.setTimeout(() => {
-    entry.busy = false;
-    job.reject(new Error("Python execution timed out"));
-    drainQueue();
-  }, job.timeoutMs) : null;
+  const timeoutId =
+    typeof window !== 'undefined'
+      ? window.setTimeout(() => {
+          entry.busy = false;
+          job.reject(new Error('Python execution timed out'));
+          drainQueue();
+        }, job.timeoutMs)
+      : null;
 
   entry.client
     .runPython(job.payload)
@@ -73,10 +76,10 @@ function drainQueue() {
 }
 
 export function runPythonInPool(
-  payload: Parameters<PythonWorkerApi["runPython"]>[0],
+  payload: Parameters<PythonWorkerApi['runPython']>[0],
   options?: { timeoutMs?: number },
 ) {
-  return new Promise<Awaited<ReturnType<PythonWorkerApi["runPython"]>>>((resolve, reject) => {
+  return new Promise<Awaited<ReturnType<PythonWorkerApi['runPython']>>>((resolve, reject) => {
     jobQueue.push({
       payload,
       resolve,

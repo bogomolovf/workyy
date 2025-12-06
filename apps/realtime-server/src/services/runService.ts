@@ -1,11 +1,4 @@
-import {
-  Prisma,
-  PrismaClient,
-  Run,
-  RunRequestStatus,
-  RunStatus,
-  RunTrigger,
-} from '@prisma/client';
+import { Prisma, PrismaClient, Run, RunRequestStatus, RunStatus, RunTrigger } from '@prisma/client';
 import { DependencyResolver } from './dependencyResolver';
 import { AuditService } from './auditService';
 
@@ -247,4 +240,3 @@ export class RunService {
     return this.client(client).run.findUnique({ where: { id: runId } });
   }
 }
-
