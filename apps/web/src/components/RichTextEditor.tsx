@@ -134,7 +134,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
         attributes: {
           class: 'prose prose-sm max-w-none focus:outline-none nodrag',
           style: `font-size: ${fontSize}px; font-family: ${fontFamily}; color: ${color}; text-align: ${textAlign};`,
-          'data-placeholder': 'Enter text...',
+          'data-placeholder': 'текст',
         },
       },
     });

@@ -258,6 +258,10 @@
   pointer-events: none;
 }
 
+.ProseMirror-focused p.is-editor-empty:first-child::before {
+  display: none;
+}
+
 .ProseMirror-focused {
   outline: none;
 }

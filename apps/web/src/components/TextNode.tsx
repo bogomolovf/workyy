@@ -1,7 +1,16 @@
 import { useCallback, useRef } from 'react';
-import { NodeResizer, type NodeProps } from 'reactflow';
+import { NodeResizer, type NodeProps, useStore } from 'reactflow';
 import { RichTextEditor, type RichTextEditorRef } from './RichTextEditor';
 import { TextToolbar } from './TextToolbar';
+
+// Получаем актуальные размеры узла из внутреннего состояния React Flow (как в StickyNode)
+function useNodeDimensions(id: string) {
+  const node = useStore((state) => state.nodeInternals.get(id));
+  return {
+    width: node?.width || 0,
+    height: node?.height || 0,
+  };
+}
 
 type TextData = {
   nodeId: string;
@@ -33,6 +42,10 @@ const DEFAULT_COLOR = '#CF4C2C'; // orange-red (первый цвет в пал�
 const DEFAULT_TEXT_ALIGN: 'left' | 'center' | 'right' = 'left';
 
 export function TextNode({ id, data, selected, width, height }: NodeProps<TextData>) {
+  // Используем useNodeDimensions для получения актуальных размеров в реальном времени
+  // Это позволяет NodeResizer обновлять размеры плавно во время ресайза
+  useNodeDimensions(id); // Подписываемся на изменения размеров для плавного ресайза
+
   const nodeWidth = typeof width === 'number' ? width : Number(width ?? 240);
   const nodeHeight = typeof height === 'number' ? height : Number(height ?? 80);
 
@@ -98,7 +111,7 @@ export function TextNode({ id, data, selected, width, height }: NodeProps<TextDa
 
   return (
     <div
-      className="relative rounded-md bg-transparent"
+      className="relative rounded-md bg-gray-200 border border-black"
       style={{
         width: '100%',
         height: '100%',

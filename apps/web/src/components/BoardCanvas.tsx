@@ -1698,46 +1698,105 @@ function InnerBoardCanvas({
 
             const node = localNodes.find((n) => n.id === change.id);
 
-            // Для text nodes используем debounce, чтобы избежать дергания при ресайзе
-            if (node?.type === 'text' && width && height) {
+            // Для text nodes обновляем позицию синхронно во время resize (без debounce),
+            // чтобы узел плавно следовал за курсором при resize за углы (кроме правого нижнего).
+            // Размеры обновляем через debounce после завершения resize, чтобы избежать излишних обновлений.
+            if (node?.type === 'text' && width && height && !hasActiveDragging) {
+              // Обновляем позицию синхронно во время resize (даже если hasActiveResizing === true)
+              // Это позволяет узлу плавно следовать за курсором при resize за углы
+              setFlowNodes((currentFlowNodes) => {
+                const currentFlowNode = currentFlowNodes.find((n) => n.id === change.id);
+                if (!currentFlowNode) return currentFlowNodes;
+
+                // Получаем текущую позицию из localNodesRef для сравнения (используем ref для актуального значения)
+                const currentNode = localNodesRef.current.find(
+                  (n) => n.id === change.id && n.type === 'text',
+                );
+                if (!currentNode) return currentFlowNodes;
+
+                // Обновляем позицию синхронно, если она изменилась
+                const positionChanged =
+                  !currentNode.position ||
+                  currentNode.position.x !== currentFlowNode.position.x ||
+                  currentNode.position.y !== currentFlowNode.position.y;
+
+                if (positionChanged) {
+                  setLocalNodes((prev) => {
+                    const prevNode = prev.find((n) => n.id === change.id && n.type === 'text');
+                    if (!prevNode) return prev;
+
+                    const next = prev.map((n) =>
+                      n.id === change.id && n.type === 'text'
+                        ? {
+                            ...n,
+                            // Обновляем позицию из flowNodes для корректной синхронизации при resize за углы
+                            position: currentFlowNode.position,
+                          }
+                        : n,
+                    );
+                    emitNodesChange(next);
+                    return next;
+                  });
+                }
+
+                return currentFlowNodes;
+              });
+
+              // Размеры обновляем через debounce после завершения resize
               // Очищаем предыдущий таймер для этого узла
               const existingTimer = textNodeResizeTimerRef.current.get(change.id);
               if (existingTimer) {
                 clearTimeout(existingTimer);
               }
 
-              // Устанавливаем новый таймер для debounce (200ms после последнего изменения)
+              // Устанавливаем новый таймер для debounce размеров (300ms после последнего изменения)
               const timer = setTimeout(() => {
-                setLocalNodes((prev) => {
-                  const currentNode = prev.find((n) => n.id === change.id && n.type === 'text');
-                  if (!currentNode) return prev;
+                // Получаем актуальные размеры из flowNodes через setFlowNodes callback
+                setFlowNodes((currentFlowNodes) => {
+                  const currentFlowNode = currentFlowNodes.find((n) => n.id === change.id);
+                  const defaultWidth = 240;
+                  const defaultHeight = 80;
 
-                  const next = prev.map((n) =>
-                    n.id === change.id && n.type === 'text'
-                      ? {
-                          ...n,
-                          payload: {
-                            ...(n.payload ?? {}),
-                            ui: {
-                              ...((n.payload as any)?.ui ?? {}),
-                              width:
-                                typeof width === 'number'
-                                  ? width
-                                  : parseFloat(String(width)) || 240,
-                              height:
-                                typeof height === 'number'
-                                  ? height
-                                  : parseFloat(String(height)) || 80,
+                  const finalWidth =
+                    typeof currentFlowNode?.width === 'number' && currentFlowNode.width > 0
+                      ? currentFlowNode.width
+                      : typeof width === 'number'
+                        ? width
+                        : parseFloat(String(width)) || defaultWidth;
+                  const finalHeight =
+                    typeof currentFlowNode?.height === 'number' && currentFlowNode.height > 0
+                      ? currentFlowNode.height
+                      : typeof height === 'number'
+                        ? height
+                        : parseFloat(String(height)) || defaultHeight;
+
+                  setLocalNodes((prev) => {
+                    const currentNode = prev.find((n) => n.id === change.id && n.type === 'text');
+                    if (!currentNode) return prev;
+
+                    const next = prev.map((n) =>
+                      n.id === change.id && n.type === 'text'
+                        ? {
+                            ...n,
+                            payload: {
+                              ...(n.payload ?? {}),
+                              ui: {
+                                ...((n.payload as any)?.ui ?? {}),
+                                width: finalWidth,
+                                height: finalHeight,
+                              },
                             },
-                          },
-                        }
-                      : n,
-                  );
-                  emitNodesChange(next);
-                  return next;
+                          }
+                        : n,
+                    );
+                    emitNodesChange(next);
+                    return next;
+                  });
+
+                  return currentFlowNodes;
                 });
                 textNodeResizeTimerRef.current.delete(change.id);
-              }, 200);
+              }, 300); // Debounce для размеров - обновляем только после завершения resize
 
               textNodeResizeTimerRef.current.set(change.id, timer);
             } else if (
@@ -2533,6 +2592,8 @@ function InnerBoardCanvas({
                   emitNodesChange(next);
                   return next;
                 });
+                // Автоматически переключаемся на стрелку после создания узла
+                setTool('select');
                 return;
               }
 
@@ -2552,6 +2613,8 @@ function InnerBoardCanvas({
                   return next;
                 });
                 onSelectNode?.(shapeNode.id);
+                // Автоматически переключаемся на стрелку после создания узла
+                setTool('select');
                 return;
               }
 
@@ -2566,6 +2629,8 @@ function InnerBoardCanvas({
                 return next;
               });
               onSelectNode?.(noteNode.id);
+              // Автоматически переключаемся на стрелку после создания узла
+              setTool('select');
             }}
             onSelectionChange={handleSelectionChange}
             minZoom={0.2}
