@@ -16,35 +16,16 @@ pnpm --filter web dev
 pnpm --filter realtime-server dev
 ```
 
-> Подробнее о запуске конкретных пакетов см. в `CONTRIBUTING.md`.
-
-### Demo board (Stage 4)
-
-Для предпросмотра канвы укажите ID сидового борда в `apps/web/.env.local`:
-
-```
-NEXT_PUBLIC_DEMO_BOARD_ID=<uuid борда из seed, напр. bed1e621-749b-48a4-a104-8b7b49ff0291>
-NEXT_PUBLIC_WS_URL=http://localhost:4000
-```
-
-ID можно получить командой:
-
-```bash
-docker exec -it workyy-postgres-1 psql -U postgres -d workyy \
-  -c 'select id, title from "Board";'
-```
-
-После этого `pnpm --filter web dev` отобразит ReactFlow-превью и чтение DAG.
-Также можно передать UUID через query string: `http://localhost:3000/board/demo?boardId=<uuid>`.
+Подробные инструкции по запуску см. в [QUICK_START.md](./QUICK_START.md).
 
 ## Архитектура
 
-- `apps/web` — Next.js приложение с канвой tldraw, узлами SQL/Python и визуализациями.
-- `apps/realtime-server` — Fastify/y-websocket сервер для синхронизации и API.
-- `apps/landing` — Landing page (Vite + React) для маркетинга и онбординга (опционально).
-- `packages/*` — Общие доменные и инфраструктурные пакеты.
-- `infra/` — Terraform и Docker конфигурации окружений.
-- `docs/` — Решения, диаграммы, схемы данных и контрактов.
+- `apps/web` — Next.js приложение с канвой tldraw, узлами SQL/Python и визуализациями
+- `apps/realtime-server` — Fastify/y-websocket сервер для синхронизации и API
+- `apps/landing` — Landing page (Vite + React) для маркетинга и онбординга (опционально)
+- `packages/*` — Общие доменные и инфраструктурные пакеты
+- `infra/` — Terraform и Docker конфигурации окружений
+- `docs/` — Решения, диаграммы, схемы данных и контрактов
 
 ## Запуск отдельных приложений
 
@@ -60,25 +41,21 @@ pnpm --filter landing dev
 pnpm dev
 ```
 
-## 🤖 Работа с Cursor AI
+## 🤖 Cursor AI
 
-Проект полностью настроен для эффективной командной разработки с использованием Cursor AI.
-
-**Быстрый старт:**
-
-- 📖 [CURSOR_SETUP.md](./CURSOR_SETUP.md) - Детальная настройка (5 минут)
-- 🚀 [.cursor/QUICK_START.md](./.cursor/QUICK_START.md) - Быстрый старт
-- 📚 [CURSOR_AI_GUIDE.md](./CURSOR_AI_GUIDE.md) - Полное руководство
-- 🔄 [.cursor/TEAM_WORKFLOW.md](./.cursor/TEAM_WORKFLOW.md) - Процессы команды
-
-**Что настроено:**
+Проект настроен для работы с Cursor AI:
 
 - ✅ Правила проекта (`.cursorrules`)
 - ✅ База знаний (`.cursor/knowledge/`)
-- ✅ Хранилище промптов (`.cursor/prompts/` - команда добавляет туда хорошие промпты)
-- ✅ Агентские команды (`.cursor/commands/agents/`) - 4 команды
-- ✅ Команды задач (`.cursor/commands/tasks/`) - 14 команд
-- ✅ Все команды доступны через префикс `/` в чате Cursor
+- ✅ Структура для команд и промптов (`.cursor/commands/`, `.cursor/prompts/`)
+
+Добавляйте свои команды и промпты в соответствующие директории. Подробнее см. [.cursor/README.md](./.cursor/README.md).
+
+## Документация
+
+- [QUICK_START.md](./QUICK_START.md) - Подробная инструкция по запуску
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - Руководство для разработчиков
+- [docs/](./docs/) - Архитектурная документация
 
 ## Лицензия
 

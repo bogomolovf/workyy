@@ -75,7 +75,7 @@ The `src/lib/apiClient.ts` file provides:
 1. Set environment variables in `.env`
 2. Build: `pnpm build`
 3. Copy `dist/` to server at `/var/www/workyy-landing/dist`
-4. Configure Nginx to serve from this directory (see `workyy-4.0-stable/infra/nginx.conf`)
+4. Configure Nginx to serve from this directory (see `infra/nginx.conf` for reference)
 
 ## Notes
 
