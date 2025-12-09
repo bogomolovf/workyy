@@ -53,6 +53,9 @@ import { DatabaseNode } from './flowNodes/DatabaseNode';
 import { PlotNode } from './flowNodes/PlotNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
 import CustomConnectionLine from './flowEdges/CustomConnectionLine';
+import CollaborativeCursors from './CollaborativeCursors';
+import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
+import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
   ssr: false,
@@ -80,6 +83,7 @@ type BoardCanvasProps = {
     id: string;
     workspaceId: string;
     title: string;
+    userInfo?: { userId?: string; userName?: string };
   };
   nodes: Array<{
     id: string;
@@ -102,6 +106,11 @@ type BoardCanvasProps = {
   onSelectNode?: (nodeId: string | null) => void;
   onNodesChange?: (nodes: BoardCanvasProps['nodes']) => void;
   onEdgesChange?: (edges: BoardCanvasProps['edges']) => void;
+  yjsOnNodesChange?: (changes: NodeChange[]) => void; // Direct Yjs handler for ReactFlow format
+  yjsOnEdgesChange?: (changes: EdgeChange[]) => void; // Direct Yjs handler for ReactFlow format
+  cursorsMap?: any; // YMap for cursors (from Yjs)
+  clientId?: string; // Client ID for cursor tracking
+  userInfo?: { userId?: string; userName?: string }; // User information for cursor display
 };
 
 type NodeData = {
@@ -501,6 +510,8 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   );
 };
 
+// Define nodeTypes outside component to prevent React Flow warning
+// This is the recommended pattern from React Flow documentation
 const nodeTypes = {
   sqlNode: SqlNodeComponent,
   pythonNode: PythonNodeComponent,
@@ -585,6 +596,10 @@ export function BoardCanvas({
   onSelectNode,
   onNodesChange,
   onEdgesChange,
+  yjsOnNodesChange,
+  yjsOnEdgesChange,
+  cursorsMap,
+  clientId,
 }: BoardCanvasProps) {
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
   const inspectorEntry = selectedNode ? executionEntries[selectedNode.id] : undefined;
@@ -620,6 +635,11 @@ export function BoardCanvas({
           onSelectNode={onSelectNode}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          yjsOnNodesChange={yjsOnNodesChange}
+          yjsOnEdgesChange={yjsOnEdgesChange}
+          cursorsMap={cursorsMap}
+          clientId={clientId}
+          userInfo={board.userInfo}
         />
         {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
         <div
@@ -700,6 +720,11 @@ function InnerBoardCanvas({
   onSelectNode,
   onNodesChange,
   onEdgesChange,
+  yjsOnNodesChange,
+  yjsOnEdgesChange,
+  cursorsMap,
+  clientId,
+  userInfo,
 }: InnerProps) {
   const canvasRootRef = useRef<HTMLDivElement>(null);
   const viewport = useViewport();
@@ -717,6 +742,32 @@ function InnerBoardCanvas({
   const connectionCreatedRef = useRef<boolean>(false);
   const lastMousePositionRef = useRef<{ x: number; y: number } | null>(null);
   const mouseMoveCleanupRef = useRef<(() => void) | null>(null);
+
+  // Use cursor syncing hook (must be inside ReactFlowProvider)
+  // In development, show own cursor for testing and debugging
+  const showOwnCursor = process.env.NODE_ENV === 'development';
+  const [cursors, onMouseMove] = cursorsMap && clientId
+    ? useCursorStateSynced(cursorsMap, clientId, userInfo, { showOwnCursor })
+    : ([[], () => {}] as const);
+
+  // Debug logging for cursor synchronization
+  useEffect(() => {
+    if (cursorsMap && clientId && process.env.NODE_ENV === 'development') {
+      const allCursorsInMap = [...cursorsMap.values()];
+      console.log('[CursorSync] Initialized:', {
+        clientId,
+        cursorsCount: cursors.length,
+        cursorsMapSize: cursorsMap.size,
+        allCursorsInMap: allCursorsInMap.map((c) => ({
+          id: c.id,
+          hasUserName: !!c.userName,
+          timestamp: c.timestamp,
+        })),
+        showOwnCursor,
+        userInfo,
+      });
+    }
+  }, [cursorsMap, clientId, cursors.length, showOwnCursor, userInfo]);
 
   const [localNodes, setLocalNodes] = useState(nodes);
   const localNodesRef = useRef(localNodes);
@@ -1360,8 +1411,16 @@ function InnerBoardCanvas({
     });
   }, [selectedNodeId]);
 
+  // Use useMemo to prevent infinite loops - only recalculate when dependencies change
+  // Include all dependencies from mapNodes useCallback
+  const mappedNodes = useMemo(() => {
+    return mapNodes();
+  }, [
+    mapNodes, // Include the callback itself - it will only change when its dependencies change
+  ]);
+
   useEffect(() => {
-    const mapped = mapNodes();
+    const mapped = mappedNodes;
     const penNodesInMapped = mapped.filter((n) => n.type === 'pen');
     console.log(
       'useEffect mapNodes: mapped nodes:',
@@ -1466,7 +1525,7 @@ function InnerBoardCanvas({
 
       return sortedResult;
     });
-  }, [mapNodes]);
+  }, [mappedNodes, selectedNodeId]);
 
   const didInitialFitRef = useRef(false);
   useEffect(() => {
@@ -1615,6 +1674,13 @@ function InnerBoardCanvas({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      // If Yjs handlers are provided, use them directly for real-time sync
+      if (yjsOnNodesChange) {
+        yjsOnNodesChange(changes);
+        // Still update local state for compatibility with existing code
+        // but Yjs will be the source of truth
+      }
+
       // Все изменения обрабатываются как flowChanges (заметки теперь shape nodes)
       const flowChanges: NodeChange[] = changes;
       if (flowChanges.length) {
@@ -1887,13 +1953,25 @@ function InnerBoardCanvas({
       position: template.position,
       payload: template.payload,
     });
+
+    // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
+    // Following the same pattern as text/shape/pen nodes
+    const reactFlowNode = canvasNodeToReactFlowNode(template);
+    if (yjsOnNodesChange) {
+      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+    }
+
+    // Also update localNodes and trigger auto-save through onNodesChange
     setLocalNodes((prev) => {
       const next = [...prev, template];
-      emitNodesChange(next);
+      if (onNodesChange) {
+        const sanitized = sanitizeExternalNodes(next);
+        onNodesChange(sanitized);
+      }
       return next;
     });
     onSelectNode?.(template.id);
-  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
+  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
 
   const handleAddPythonNode = useCallback(() => {
     // Получаем центр viewport пользователя и преобразуем в координаты flow
@@ -1912,13 +1990,25 @@ function InnerBoardCanvas({
       position: template.position,
       payload: template.payload,
     });
+
+    // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
+    // Following the same pattern as text/shape/pen nodes
+    const reactFlowNode = canvasNodeToReactFlowNode(template);
+    if (yjsOnNodesChange) {
+      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+    }
+
+    // Also update localNodes and trigger auto-save through onNodesChange
     setLocalNodes((prev) => {
       const next = [...prev, template];
-      emitNodesChange(next);
+      if (onNodesChange) {
+        const sanitized = sanitizeExternalNodes(next);
+        onNodesChange(sanitized);
+      }
       return next;
     });
     onSelectNode?.(template.id);
-  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
+  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
 
   const handleAddDatabaseNode = useCallback(() => {
     // Получаем центр viewport пользователя и преобразуем в координаты flow
@@ -1936,13 +2026,25 @@ function InnerBoardCanvas({
       position: template.position,
       payload: template.payload,
     });
+
+    // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
+    // Following the same pattern as text/shape/pen nodes
+    const reactFlowNode = canvasNodeToReactFlowNode(template);
+    if (yjsOnNodesChange) {
+      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+    }
+
+    // Also update localNodes and trigger auto-save through onNodesChange
     setLocalNodes((prev) => {
       const next = [...prev, template];
-      emitNodesChange(next);
+      if (onNodesChange) {
+        const sanitized = sanitizeExternalNodes(next);
+        onNodesChange(sanitized);
+      }
       return next;
     });
     onSelectNode?.(template.id);
-  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
+  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
 
   const handleAddPlotNode = useCallback(() => {
     // Получаем центр viewport пользователя и преобразуем в координаты flow
@@ -1958,13 +2060,25 @@ function InnerBoardCanvas({
       position: template.position,
       payload: template.payload,
     });
+
+    // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
+    // Following the same pattern as text/shape/pen nodes
+    const reactFlowNode = canvasNodeToReactFlowNode(template);
+    if (yjsOnNodesChange) {
+      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+    }
+
+    // Also update localNodes and trigger auto-save through onNodesChange
     setLocalNodes((prev) => {
       const next = [...prev, template];
-      emitNodesChange(next);
+      if (onNodesChange) {
+        const sanitized = sanitizeExternalNodes(next);
+        onNodesChange(sanitized);
+      }
       return next;
     });
     onSelectNode?.(template.id);
-  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
+  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
 
   const handleConnectStart = useCallback(
     (_event: React.MouseEvent | React.TouchEvent, params: ConnectionStartParams) => {
@@ -2234,6 +2348,13 @@ function InnerBoardCanvas({
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
+      // If Yjs handlers are provided, use them directly for real-time sync
+      if (yjsOnEdgesChange) {
+        yjsOnEdgesChange(changes);
+        // Still update local state for compatibility with existing code
+        // but Yjs will be the source of truth
+      }
+
       const removedIds = changes
         .filter((change) => change.type === 'remove')
         .map((change) => change.id);
@@ -2248,7 +2369,7 @@ function InnerBoardCanvas({
         return next;
       });
     },
-    [emitEdgesChange],
+    [emitEdgesChange, yjsOnEdgesChange],
   );
 
   // Deletion handler for selected nodes/edges
@@ -2268,6 +2389,37 @@ function InnerBoardCanvas({
       'edges:',
       Array.from(selectedEdgeIds),
     );
+
+    // CRITICAL FIX: Sync deletion through Yjs first to ensure real-time collaboration
+    // This ensures deleted elements are removed from Yjs map and don't reappear
+    if (yjsOnNodesChange && selectedNodeIds.size > 0) {
+      const removeNodeChanges = Array.from(selectedNodeIds).map((id) => ({
+        type: 'remove' as const,
+        id,
+      }));
+      yjsOnNodesChange(removeNodeChanges);
+      console.log('handleDeleteSelection: Synced node deletions through Yjs:', removeNodeChanges.length);
+    }
+
+    // Also remove edges incident to removed nodes (they should be deleted automatically by Yjs,
+    // but we'll also sync them explicitly for safety)
+    const edgesToRemove = new Set(selectedEdgeIds);
+    // Find edges connected to deleted nodes
+    const currentEdges = rf.getEdges?.() ?? [];
+    for (const edge of currentEdges) {
+      if (selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target)) {
+        edgesToRemove.add(edge.id);
+      }
+    }
+
+    if (yjsOnEdgesChange && edgesToRemove.size > 0) {
+      const removeEdgeChanges = Array.from(edgesToRemove).map((id) => ({
+        type: 'remove' as const,
+        id,
+      }));
+      yjsOnEdgesChange(removeEdgeChanges);
+      console.log('handleDeleteSelection: Synced edge deletions through Yjs:', removeEdgeChanges.length);
+    }
 
     // remove from localNodes (regular + mirrored notes + pen nodes)
     setLocalNodes((prev) => {
@@ -2307,7 +2459,7 @@ function InnerBoardCanvas({
     });
 
     onSelectNode?.(null);
-  }, [rf, emitNodesChange, emitEdgesChange, onSelectNode]);
+  }, [rf, emitNodesChange, emitEdgesChange, onSelectNode, yjsOnNodesChange, yjsOnEdgesChange]);
 
   // Keyboard bindings for Delete / Backspace
   useEffect(() => {
@@ -2462,61 +2614,9 @@ function InnerBoardCanvas({
             connectionLineComponent={CustomConnectionLine}
             connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 4 }}
             onNodeClick={handleNodeClick}
-            onNodeDataChange={(id, data) => {
-              // Синхронизируем изменения данных узла (цвет, форматирование) с localNodes
-              // Заметки теперь shape nodes, изменения обрабатываются через callbacks в data
-              if (data && typeof data === 'object') {
-                const node = flowNodes.find((n) => n.id === id);
-                if (node && node.type === 'shapeNode') {
-                  const nodeData = node.data as any;
-                  // Если это заметка (есть text или onChangeText), обновляем localNodes
-                  if (nodeData?.text !== undefined || nodeData?.onChangeText) {
-                    const newColor = (data as any)?.shapeColor;
-                    const newText = (data as any)?.text;
-                    const newFontSize = (data as any)?.fontSize;
-                    const newFontFamily = (data as any)?.fontFamily;
-                    const newIsBold = (data as any)?.isBold;
-                    const newIsItalic = (data as any)?.isItalic;
-
-                    // Обновляем только если есть изменения
-                    if (
-                      newColor ||
-                      newText !== undefined ||
-                      newFontSize !== undefined ||
-                      newFontFamily ||
-                      newIsBold !== undefined ||
-                      newIsItalic !== undefined
-                    ) {
-                      setLocalNodes((prev) => {
-                        const next = prev.map((ext) =>
-                          ext.id === id && ext.type === 'note'
-                            ? {
-                                ...ext,
-                                payload: {
-                                  ...(ext.payload ?? {}),
-                                  ...(newColor && { color: newColor }),
-                                  ...(newText !== undefined && {
-                                    text: newText,
-                                    noteContent: newText,
-                                  }),
-                                  ...(newFontSize !== undefined && { fontSize: newFontSize }),
-                                  ...(newFontFamily && { fontFamily: newFontFamily }),
-                                  ...(newIsBold !== undefined && { isBold: newIsBold }),
-                                  ...(newIsItalic !== undefined && { isItalic: newIsItalic }),
-                                },
-                              }
-                            : ext,
-                        );
-                        queueMicrotask(() => {
-                          emitNodesChange(next);
-                        });
-                        return next;
-                      });
-                    }
-                  }
-                }
-              }
-            }}
+            onPointerMove={onMouseMove}
+            // NOTE: onNodeDataChange is not a valid ReactFlow prop - removed
+            // Node data changes are handled through callbacks in node.data (onChangeText, etc.)
             onPaneClick={(e) => {
               // Всегда снимаем выделение при клике на свободную область
               handlePaneClick();
@@ -2528,9 +2628,19 @@ function InnerBoardCanvas({
               // Создаем новый текст-ноду в режиме text
               if (isTextMode) {
                 const textNode = addNodeHelpers.createTextNode(p);
+                // Convert to ReactFlow node for direct Yjs sync
+                const reactFlowNode = canvasNodeToReactFlowNode(textNode);
+                // Use direct Yjs sync for immediate real-time synchronization
+                if (yjsOnNodesChange) {
+                  yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+                }
+                // Also update localNodes for auto-save
                 setLocalNodes((prev) => {
                   const next = [...prev, textNode];
-                  emitNodesChange(next);
+                  if (onNodesChange) {
+                    const sanitized = sanitizeExternalNodes(next);
+                    onNodesChange(sanitized);
+                  }
                   return next;
                 });
                 return;
@@ -2546,9 +2656,19 @@ function InnerBoardCanvas({
                   ...shapeNode.payload,
                   shapeType: selectedShape,
                 };
+                // Convert to ReactFlow node for direct Yjs sync
+                const reactFlowNode = canvasNodeToReactFlowNode(shapeNode);
+                // Use direct Yjs sync for immediate real-time synchronization
+                if (yjsOnNodesChange) {
+                  yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+                }
+                // Also update localNodes for auto-save
                 setLocalNodes((prev) => {
                   const next = [...prev, shapeNode];
-                  emitNodesChange(next);
+                  if (onNodesChange) {
+                    const sanitized = sanitizeExternalNodes(next);
+                    onNodesChange(sanitized);
+                  }
                   return next;
                 });
                 onSelectNode?.(shapeNode.id);
@@ -2560,9 +2680,21 @@ function InnerBoardCanvas({
               const noteNode = addNodeHelpers.createNoteNode(
                 p,
               ) as BoardCanvasProps['nodes'][number];
+              
+              // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
+              // Following the same pattern as text/shape/pen/SQL/Python/Database/Plot nodes
+              const reactFlowNode = canvasNodeToReactFlowNode(noteNode);
+              if (yjsOnNodesChange) {
+                yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+              }
+              
+              // Also update localNodes and trigger auto-save through onNodesChange
               setLocalNodes((prev) => {
                 const next = [...prev, noteNode];
-                emitNodesChange(next);
+                if (onNodesChange) {
+                  const sanitized = sanitizeExternalNodes(next);
+                  onNodesChange(sanitized);
+                }
                 return next;
               });
               onSelectNode?.(noteNode.id);
@@ -2631,7 +2763,28 @@ function InnerBoardCanvas({
               <FreehandOverlay
                 onAddPenNode={(node) => {
                   console.log('onAddPenNode called with:', node);
-                  // Добавляем pen node в localNodes
+                  
+                  // Создаем ReactFlow node с правильной структурой
+                  const reactFlowNode: Node = {
+                    ...node,
+                    selected: node.id === selectedNodeId,
+                    style: {
+                      ...node.style,
+                      zIndex: node.style?.zIndex ?? 10, // Pen nodes должны быть выше дата-клеток
+                    },
+                  };
+
+                  // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
+                  // Following collaborative-11-pro-example pattern: all changes go through Yjs directly
+                  // This ensures the node appears on other clients immediately
+                  if (yjsOnNodesChange) {
+                    yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+                    console.log('Pen node synced through Yjs:', reactFlowNode.id);
+                  }
+
+                  // Also update localNodes and trigger auto-save through onNodesChange
+                  // This ensures the node is saved to the database
+                  // CRITICAL FIX: Call onNodesChange synchronously to ensure auto-save is triggered
                   const externalNode = {
                     id: node.id,
                     type: 'pen' as const,
@@ -2641,8 +2794,14 @@ function InnerBoardCanvas({
                       initialSize: node.data.initialSize,
                     },
                   };
-                  console.log('Adding to localNodes:', externalNode);
+
+                  // Update localNodes first
                   setLocalNodes((prev) => {
+                    // Проверяем, что node еще не добавлен
+                    if (prev.some((n) => n.id === node.id)) {
+                      console.log('Node already exists in localNodes:', node.id);
+                      return prev;
+                    }
                     const next = [...prev, externalNode];
                     console.log(
                       'localNodes updated, new length:',
@@ -2650,34 +2809,44 @@ function InnerBoardCanvas({
                       'pen nodes:',
                       next.filter((n) => n.type === 'pen').length,
                     );
-                    // Вызываем emitNodesChange для сохранения изменений
-                    queueMicrotask(() => {
-                      emitNodesChange(next);
-                    });
                     return next;
                   });
-                  // Немедленно добавляем в flowNodes для отображения
-                  // useEffect который зависит от mapNodes обновит его позже с правильными данными из localNodes
-                  setFlowNodes((prev) => {
-                    if (prev.some((n) => n.id === node.id)) {
-                      console.log('Node already exists in flowNodes:', node.id);
-                      return prev;
-                    }
-                    // Добавляем node с правильной структурой для React Flow
-                    const flowNode: Node = {
-                      ...node,
-                      selected: node.id === selectedNodeId,
-                      // Убеждаемся, что pen node получает правильный zIndex
-                      style: {
-                        ...node.style,
-                        zIndex: node.style?.zIndex ?? 10, // Pen nodes должны быть выше дата-клеток
-                      },
-                    };
-                    console.log('Adding to flowNodes:', flowNode);
-                    return [...prev, flowNode];
-                  });
+
+                  // CRITICAL FIX: Call onNodesChange synchronously with updated nodes
+                  // This ensures auto-save is triggered immediately
+                  // Calculate next nodes synchronously (before state update)
+                  if (onNodesChange) {
+                    const currentNodes = localNodesRef.current;
+                    const next = currentNodes.some((n) => n.id === node.id)
+                      ? currentNodes
+                      : [...currentNodes, externalNode];
+                    const sanitized = sanitizeExternalNodes(next);
+                    onNodesChange(sanitized);
+                    console.log('Pen node change emitted for auto-save:', externalNode.id);
+                  }
                 }}
               />
+            )}
+            {cursors && cursors.length > 0 && <CollaborativeCursors cursors={cursors} />}
+            {/* Debug: Always render to check if component receives cursors */}
+            {process.env.NODE_ENV === 'development' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 10,
+                  right: 10,
+                  background: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  padding: '8px',
+                  fontSize: '12px',
+                  zIndex: 1000,
+                  borderRadius: '4px',
+                  fontFamily: 'monospace',
+                }}
+              >
+                Cursors: {cursors.length} | Map size: {cursorsMap?.size || 0} | ClientId:{' '}
+                {clientId || 'none'}
+              </div>
             )}
           </ReactFlow>
         </div>

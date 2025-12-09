@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { X } from '@phosphor-icons/react';
+import { X, Users } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { BoardSummary, createBoard, deleteBoard, fetchBoards } from '../lib/api';
 import { LANDING_URL } from '../lib/appConfig';
 import { RequireAuth } from '../components/RequireAuth';
 import { useAuthStore } from '../state/authStore';
+import { WorkspaceMembers } from '../components/WorkspaceMembers';
 
 const DEFAULT_WORKSPACE_ID = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_ID ?? '';
 
@@ -19,6 +20,7 @@ function HomePageContent() {
   const logout = useAuthStore((s) => s.logout);
   const [title, setTitle] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [showWorkspaceMembers, setShowWorkspaceMembers] = useState(false);
 
   const {
     data: boards,
@@ -234,8 +236,21 @@ function HomePageContent() {
 
         <div className="mt-12 rounded-3xl bg-white/90 p-8 shadow-sm ring-1 ring-slate-200 backdrop-blur">
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">Ваши доски</h2>
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-semibold text-slate-900">Ваши доски</h2>
+                {workspaceIdForCreation && (
+                  <button
+                    type="button"
+                    onClick={() => setShowWorkspaceMembers(true)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                    title="Управление участниками workspace"
+                  >
+                    <Users size={18} />
+                    Участники
+                  </button>
+                )}
+              </div>
               <p className="mt-1 text-sm text-slate-500">
                 Открывайте существующие или создайте новую доску прямо отсюда.
               </p>
@@ -274,6 +289,14 @@ function HomePageContent() {
           canvas-представление.
         </p>
       </section>
+
+      {/* Workspace Members Modal */}
+      {showWorkspaceMembers && workspaceIdForCreation && (
+        <WorkspaceMembers
+          workspaceId={workspaceIdForCreation}
+          onClose={() => setShowWorkspaceMembers(false)}
+        />
+      )}
     </main>
   );
 }

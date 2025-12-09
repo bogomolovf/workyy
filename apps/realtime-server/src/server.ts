@@ -1,17 +1,29 @@
 import { FastifyInstance } from 'fastify';
-import { WebSocketServer } from 'ws';
 import { createServiceRouter } from './routes';
+import { setupCollaborationWS } from './services/collaborationService';
 
 export async function createServer(app: FastifyInstance) {
   app.register(createServiceRouter, { prefix: '/api' });
 
   app.get('/health', async () => ({ status: 'ok' }));
 
-  app.get('/collab', { websocket: true }, (connection, request) => {
-    // TODO: attach Yjs awareness + persistence
-    connection.socket.on('message', (message) => {
-      app.log.info({ message: message.toString() }, 'received stub message');
-    });
+  // WebSocket route with boardId parameter in path
+  // WebsocketProvider adds roomName (boardId) to URL as path: /collab/${boardId}
+  app.get('/collab/:boardId', { websocket: true }, async (connection, request) => {
+    try {
+      await setupCollaborationWS(connection.socket, request, app);
+    } catch (error) {
+      app.log.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          url: request.url,
+          params: request.params,
+        },
+        'WebSocket route handler error'
+      );
+      // Don't close connection here - setupCollaborationWS handles it
+    }
   });
 
   app.addHook('onReady', async () => {

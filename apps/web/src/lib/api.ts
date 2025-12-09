@@ -328,3 +328,154 @@ export async function fetchCurrentUser() {
   }
   return res.json();
 }
+
+// Workspace members API functions
+
+export type WorkspaceMember = {
+  userId: string;
+  email: string;
+  name: string | null;
+  avatarUrl: string | null;
+  role: 'owner' | 'editor' | 'viewer';
+  addedAt: string;
+};
+
+export async function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+  if (!isValidUuid(workspaceId)) {
+    throw new Error('invalid-workspace-id');
+  }
+
+  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
+    headers: { Accept: 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    let detail = 'Failed to load workspace members';
+    try {
+      const problem = await res.json();
+      detail = problem?.detail ?? detail;
+    } catch {
+      detail = await res.text().catch(() => detail);
+    }
+    throw new Error(detail);
+  }
+
+  const data = await res.json();
+  return Array.isArray(data.members) ? (data.members as WorkspaceMember[]) : [];
+}
+
+export type AddWorkspaceMemberInput = {
+  email: string;
+  role?: 'owner' | 'editor' | 'viewer';
+};
+
+export type AddedWorkspaceMember = {
+  userId: string;
+  email: string;
+  name: string | null;
+  role: 'owner' | 'editor' | 'viewer';
+};
+
+export async function addWorkspaceMember(
+  workspaceId: string,
+  payload: AddWorkspaceMemberInput,
+): Promise<AddedWorkspaceMember> {
+  if (!isValidUuid(workspaceId)) {
+    throw new Error('invalid-workspace-id');
+  }
+
+  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    let detail = 'Failed to add member';
+    try {
+      const problem = await res.json();
+      detail = problem?.detail ?? detail;
+    } catch {
+      detail = await res.text().catch(() => detail);
+    }
+    throw new Error(detail);
+  }
+
+  return res.json();
+}
+
+export async function removeWorkspaceMember(
+  workspaceId: string,
+  memberUserId: string,
+): Promise<void> {
+  if (!isValidUuid(workspaceId) || !isValidUuid(memberUserId)) {
+    throw new Error('invalid-id');
+  }
+
+  const res = await fetch(
+    `${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json',
+      },
+      credentials: 'include',
+    },
+  );
+
+  if (!res.ok) {
+    let detail = 'Failed to remove member';
+    try {
+      const problem = await res.json();
+      detail = problem?.detail ?? detail;
+    } catch {
+      detail = await res.text().catch(() => detail);
+    }
+    throw new Error(detail);
+  }
+}
+
+export type UpdateWorkspaceMemberRoleInput = {
+  role: 'owner' | 'editor' | 'viewer';
+};
+
+export async function updateWorkspaceMemberRole(
+  workspaceId: string,
+  memberUserId: string,
+  payload: UpdateWorkspaceMemberRoleInput,
+): Promise<{ userId: string; role: 'owner' | 'editor' | 'viewer' }> {
+  if (!isValidUuid(workspaceId) || !isValidUuid(memberUserId)) {
+    throw new Error('invalid-id');
+  }
+
+  const res = await fetch(
+    `${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!res.ok) {
+    let detail = 'Failed to update member role';
+    try {
+      const problem = await res.json();
+      detail = problem?.detail ?? detail;
+    } catch {
+      detail = await res.text().catch(() => detail);
+    }
+    throw new Error(detail);
+  }
+
+  return res.json();
+}

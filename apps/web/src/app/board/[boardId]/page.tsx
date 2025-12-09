@@ -17,6 +17,7 @@ import { useAuthStore } from '../../../state/authStore';
 import { useRouter } from 'next/navigation';
 import { useExecutionStore, type ExecutionStoreState } from '../../../state/executionStore';
 import { useCanvasLayoutStore, type CanvasLayoutState } from '../../../state/canvasLayoutStore';
+import { useBoardCollaboration } from '../../../hooks/useBoardCollaboration';
 import {
   executeSql,
   listTables,
@@ -123,6 +124,82 @@ function BoardPageContent({ params }: BoardPageProps) {
     queryFn: () => fetchBoard(boardId),
     enabled: isValidUuid(boardId),
   });
+
+  // Initialize Yjs collaboration when board data is loaded
+  const collaboration = useBoardCollaboration(
+    boardId,
+    data ? mapNodesToCanvas(data.nodes) : undefined,
+    data ? mapEdgesToCanvas(data.edges) : undefined
+  );
+
+  // Use Yjs as the single source of truth for nodes and edges
+  const yjsNodes = collaboration.canvasNodes.length > 0 ? collaboration.canvasNodes : nodesState;
+  const yjsEdges = collaboration.canvasEdges.length > 0 ? collaboration.canvasEdges : edgesState;
+
+  // Sync Yjs changes back to local state (but prevent sync loops)
+  // Only sync if nodes actually changed (by comparing IDs, positions, and content)
+  useEffect(() => {
+    if (collaboration.canvasNodes.length === 0) return;
+    
+    // Compare by IDs to avoid unnecessary updates
+    const currentIds = new Set(nodesStateRef.current.map((n) => n.id));
+    const yjsIds = new Set(collaboration.canvasNodes.map((n) => n.id));
+    const idsChanged = 
+      currentIds.size !== yjsIds.size ||
+      Array.from(currentIds).some((id) => !yjsIds.has(id)) ||
+      Array.from(yjsIds).some((id) => !currentIds.has(id));
+    
+    // CRITICAL FIX: Also check if positions changed
+    // This ensures that position updates from Yjs are synced to local state
+    const positionsChanged = nodesStateRef.current.some((node) => {
+      const yjsNode = collaboration.canvasNodes.find((n) => n.id === node.id);
+      if (!yjsNode) return false;
+      // Check if position changed (with small threshold to avoid floating point issues)
+      const threshold = 0.01;
+      return (
+        Math.abs(yjsNode.position.x - node.position.x) > threshold ||
+        Math.abs(yjsNode.position.y - node.position.y) > threshold
+      );
+    });
+    
+    if (idsChanged || positionsChanged) {
+      // Mark as Yjs update to prevent sync loop
+      isYjsUpdateRef.current = true;
+      // Update local state from Yjs
+      const previousIds = new Set(nodesStateRef.current.map((node) => node.id));
+      const nextIds = new Set(collaboration.canvasNodes.map((node) => node.id));
+      previousIds.forEach((id) => {
+        if (!nextIds.has(id)) {
+          removeExecutionEntry(id);
+        }
+      });
+      setNodesState(collaboration.canvasNodes);
+      
+      // CRITICAL FIX: Trigger auto-save when nodes are added/updated through Yjs
+      // This ensures that new nodes added via yjsOnNodesChange are saved to DB
+      // Use setTimeout to ensure nodesStateRef is updated before auto-save
+      // Use ref to avoid dependency issues
+      setTimeout(() => {
+        triggerAutoSaveRef.current?.();
+      }, 0);
+    }
+  }, [collaboration.canvasNodes, removeExecutionEntry]);
+
+  useEffect(() => {
+    if (collaboration.canvasEdges.length === 0) return;
+    
+    // Compare by IDs to avoid unnecessary updates
+    const currentIds = new Set(edgesStateRef.current.map((e) => e.id));
+    const yjsIds = new Set(collaboration.canvasEdges.map((e) => e.id));
+    const idsChanged = 
+      currentIds.size !== yjsIds.size ||
+      Array.from(currentIds).some((id) => !yjsIds.has(id)) ||
+      Array.from(yjsIds).some((id) => !currentIds.has(id));
+    
+    if (idsChanged) {
+      setEdgesState(collaboration.canvasEdges);
+    }
+  }, [collaboration.canvasEdges]);
 
   const dataLoadedRef = useRef(false);
   const isLoadingRef = useRef(false);
@@ -292,6 +369,15 @@ function BoardPageContent({ params }: BoardPageProps) {
       await refreshTables();
     })();
   }, [boardId, refreshTables]);
+
+  // Cleanup auto-save timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
 
   const adjacency = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -721,6 +807,235 @@ function BoardPageContent({ params }: BoardPageProps) {
     mutationFn: (payload: SaveBoardStructureInput) => saveBoardStructure(boardId, payload),
   });
 
+  // Auto-save debounce timer ref
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isAutoSavingRef = useRef(false);
+  
+  // Ref to store triggerAutoSave function to avoid dependency issues
+  const triggerAutoSaveRef = useRef<(() => void) | null>(null);
+
+  // Auto-save function that uses Yjs data
+  // CRITICAL FIX: Moved before first useEffect to fix initialization order
+  const autoSaveBoard = useCallback(async () => {
+    if (isAutoSavingRef.current || !dataLoadedRef.current || isLoadingRef.current) {
+      console.log('[AutoSave] Skipping - isAutoSaving:', isAutoSavingRef.current, 'dataLoaded:', dataLoadedRef.current, 'isLoading:', isLoadingRef.current);
+      return;
+    }
+
+    // CRITICAL FIX: Use nodesState as source of truth for auto-save
+    // Yjs is for real-time sync, but auto-save should use local state
+    // This ensures that even if Yjs sync fails, auto-save still works
+    const currentNodes = nodesStateRef.current.length > 0 ? nodesStateRef.current : nodesState;
+    const currentEdges = edgesState.length > 0 ? edgesState : [];
+    
+    console.log('[AutoSave] Saving nodes:', currentNodes.length, 'edges:', currentEdges.length);
+
+    // Build payload from Yjs data
+    const nodes = currentNodes.map((node) => {
+      const payload: Record<string, unknown> = { ...(node.payload ?? {}) };
+      if (node.type === 'sql') {
+        payload.sql = (payload.sql as string | undefined) ?? '';
+        const entry = useExecutionStore.getState().entries[node.id];
+        if (entry?.status === 'success' && entry.output) {
+          payload.execution = {
+            status: entry.status,
+            output: entry.output,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        } else if (entry?.status === 'error') {
+          payload.execution = {
+            status: entry.status,
+            error: entry.error,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        }
+      } else if (node.type === 'python') {
+        payload.python = (payload.python as string | undefined) ?? '';
+        const entry = useExecutionStore.getState().entries[node.id];
+        if (entry?.status === 'success' && entry.output) {
+          payload.execution = {
+            status: entry.status,
+            output: entry.output,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        } else if (entry?.status === 'error') {
+          payload.execution = {
+            status: entry.status,
+            error: entry.error,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        }
+      } else if (node.type === 'note') {
+        const text =
+          typeof (payload as any).text === 'string'
+            ? (payload as any).text
+            : ((payload as any).noteContent ?? '');
+        payload.text = text ?? '';
+        if ((payload as any).noteContent === undefined) {
+          (payload as any).noteContent = text ?? '';
+        }
+      } else if (node.type === 'pen') {
+        payload.points = (payload as any).points ?? [];
+        payload.initialSize = (payload as any).initialSize ?? { width: 100, height: 100 };
+      } else if (node.type === 'text') {
+        const text =
+          typeof (payload as any).text === 'string'
+            ? (payload as any).text
+            : ((payload as any).textContent ?? '');
+        payload.text = text ?? '';
+        payload.textContent = text ?? '';
+        payload.fontSize = (payload as any).fontSize ?? 18;
+        payload.fontFamily = (payload as any).fontFamily ?? 'Inter, sans-serif';
+        payload.color = (payload as any).color ?? '#0f172a';
+        payload.textAlign = (payload as any).textAlign ?? 'left';
+        if ((payload as any).richContent) {
+          payload.richContent = (payload as any).richContent;
+        }
+      } else if (node.type === 'plot') {
+        payload.chartType = (payload as any).chartType ?? 'bar';
+        payload.mapping = (payload as any).mapping ?? {};
+        payload.styling = (payload as any).styling ?? {
+          title: 'New Chart',
+          theme: 'light',
+          showLegend: true,
+          legendPosition: 'top',
+          showGrid: true,
+        };
+        payload.version = (payload as any).version ?? '1';
+      }
+      const existingUi = (payload.ui as Record<string, unknown> | undefined) ?? {};
+      const ui: Record<string, unknown> = { ...existingUi };
+      const width = nodeSizes[node.id]?.width;
+      const height = nodeSizes[node.id]?.height;
+      if (
+        node.type !== 'note' &&
+        node.type !== 'pen' &&
+        node.type !== 'text' &&
+        width !== undefined
+      ) {
+        ui.width = width;
+      }
+      if (node.type === 'note') {
+        const existingH = (payload.ui as any)?.height as number | undefined;
+        if (existingH !== undefined) {
+          ui.height = existingH;
+        } else if (ui.height === undefined) {
+          ui.height = 96;
+        }
+        if (ui.width === undefined) {
+          ui.width = 160;
+        }
+      }
+      if (node.type === 'text') {
+        const existingH = (payload.ui as any)?.height as number | undefined;
+        if (existingH !== undefined) {
+          ui.height = existingH;
+        } else if (ui.height === undefined) {
+          ui.height = 80;
+        }
+        const existingW = (payload.ui as any)?.width as number | undefined;
+        if (existingW !== undefined) {
+          ui.width = existingW;
+        } else if (ui.width === undefined) {
+          ui.width = 240;
+        }
+      }
+      if (node.type === 'pen') {
+        if (width !== undefined) {
+          ui.width = width;
+        } else if (ui.width === undefined && (payload as any).initialSize?.width) {
+          ui.width = (payload as any).initialSize.width;
+        }
+        if (height !== undefined) {
+          ui.height = height;
+        } else if (ui.height === undefined && (payload as any).initialSize?.height) {
+          ui.height = (payload as any).initialSize.height;
+        }
+      }
+      if (Object.keys(ui).length > 0) {
+        payload.ui = ui;
+      } else if (payload.ui) {
+        delete payload.ui;
+      }
+      return {
+        id: node.id,
+        type: node.type,
+        position: node.position,
+        payload,
+      };
+    });
+
+    const nodeIds = new Set(nodes.map((n) => n.id).filter((id) => isValidUuid(id)));
+    const edges = currentEdges
+      .filter((e) => isValidUuid(e.id) && isValidUuid(e.sourceId) && isValidUuid(e.targetId))
+      .filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId))
+      .map((edge) => ({
+        id: edge.id,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+        metadata: edge.metadata ?? {},
+      }));
+
+    const payload: SaveBoardStructureInput = { nodes, edges };
+
+    try {
+      isAutoSavingRef.current = true;
+      await persistBoard(payload);
+      setIsDirty(false);
+      setSaveError(null);
+
+      // Update serverDataRef with saved data
+      queryClient.setQueryData<BoardResponse | undefined>(['board', boardId], (previous) => {
+        if (!previous) return previous;
+
+        const savedNodes: BoardResponse['nodes'] = payload.nodes.map((node) => ({
+          id: node.id,
+          boardId,
+          type: node.type,
+          position: node.position,
+          payload: node.payload,
+        }));
+        const savedEdges: BoardResponse['edges'] = payload.edges.map((edge) => ({
+          id: edge.id,
+          sourceId: edge.sourceId,
+          targetId: edge.targetId,
+          metadata: edge.metadata ?? {},
+        }));
+
+        serverDataRef.current = { nodes: savedNodes, edges: savedEdges };
+
+        return {
+          board: previous.board,
+          nodes: savedNodes,
+          edges: savedEdges,
+        };
+      });
+    } catch (err) {
+      console.error('Auto-save failed:', err);
+      setSaveError(err instanceof Error ? err.message : 'Failed to auto-save board');
+    } finally {
+      isAutoSavingRef.current = false;
+    }
+  }, [boardId, persistBoard, queryClient, nodeSizes, collaboration.canvasNodes, collaboration.canvasEdges, nodesState, edgesState]);
+
+  // Debounced auto-save trigger
+  // CRITICAL FIX: Moved before first useEffect to fix initialization order
+  const triggerAutoSave = useCallback(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    // Reduced debounce from 2000ms to 500ms for faster saves
+    // This prevents data loss on page refresh while still batching rapid changes
+    autoSaveTimerRef.current = setTimeout(() => {
+      void autoSaveBoard();
+    }, 500); // 500ms debounce for faster saves
+  }, [autoSaveBoard]);
+  
+  // CRITICAL FIX: Store triggerAutoSave in ref for use in useEffect
+  useEffect(() => {
+    triggerAutoSaveRef.current = triggerAutoSave;
+  }, [triggerAutoSave]);
+
   const buildPersistPayload = useCallback((): SaveBoardStructureInput => {
     const nodes = nodesState.map((node) => {
       const payload: Record<string, unknown> = { ...(node.payload ?? {}) };
@@ -901,12 +1216,42 @@ function BoardPageContent({ params }: BoardPageProps) {
     [setCodeStore, markDirty],
   );
 
+  // Track if changes are coming from Yjs to prevent sync loops
+  const isYjsUpdateRef = useRef(false);
+
   const handleNodesChange = useCallback(
     (updated: CanvasNode[]) => {
-      // Проверяем, изменилось ли состояние по сравнению с серверными данными
-      // Если нет - не помечаем доску как измененную
-      const serverData = serverDataRef.current;
-      const hasChanged = !serverData || !nodesEqual(updated, serverData.nodes);
+      // Skip sync if this update came from Yjs (to prevent loops)
+      if (isYjsUpdateRef.current) {
+        isYjsUpdateRef.current = false;
+        // Still update local state for compatibility
+        const previousIds = new Set(nodesStateRef.current.map((node) => node.id));
+        const nextIds = new Set(updated.map((node) => node.id));
+        previousIds.forEach((id) => {
+          if (!nextIds.has(id)) {
+            removeExecutionEntry(id);
+          }
+        });
+        setNodesState(updated);
+        // CRITICAL FIX: Trigger auto-save even for Yjs updates to ensure new nodes are saved
+        triggerAutoSave();
+        return;
+      }
+
+      // CRITICAL FIX: Don't call handleCanvasNodesChange if changes already went through Yjs
+      // When nodes are added via yjsOnNodesChange, they're already in Yjs, so we don't need to sync again
+      // Only sync if this is a local change that hasn't been synced through Yjs yet
+      // Check if this update contains nodes that are already in Yjs (synced via yjsOnNodesChange)
+      const yjsNodeIds = new Set(collaboration.canvasNodes.map((n) => n.id));
+      const hasNewNodes = updated.some((n) => !yjsNodeIds.has(n.id));
+      
+      // Only sync through handleCanvasNodesChange if there are truly new nodes
+      // that haven't been synced through Yjs yet
+      if (hasNewNodes) {
+        collaboration.handleCanvasNodesChange(updated);
+      }
+
+      // Update local state for compatibility (will be replaced by Yjs data)
       const previousIds = new Set(nodesStateRef.current.map((node) => node.id));
       const nextIds = new Set(updated.map((node) => node.id));
       previousIds.forEach((id) => {
@@ -917,31 +1262,25 @@ function BoardPageContent({ params }: BoardPageProps) {
 
       setNodesState(updated);
 
-      // Помечаем доску как измененную только если данные действительно изменились
-      // и загрузка завершена (markDirty также проверит isLoadingRef)
-      if (hasChanged) {
-        markDirty();
-      }
+      // CRITICAL FIX: Always trigger auto-save, even if sync went through Yjs
+      // Auto-save must work independently of Yjs sync to prevent data loss
+      triggerAutoSave();
     },
-    [markDirty, removeExecutionEntry],
+    [removeExecutionEntry, collaboration, triggerAutoSave],
   );
 
   const handleEdgesChange = useCallback(
     (updated: CanvasEdge[]) => {
-      // Проверяем, изменилось ли состояние по сравнению с серверными данными
-      // Если нет - не помечаем доску как измененную
-      const serverData = serverDataRef.current;
-      const hasChanged = !serverData || !edgesEqual(updated, serverData.edges);
+      // Sync through Yjs for real-time collaboration
+      collaboration.handleCanvasEdgesChange(updated);
 
+      // Update local state for compatibility (will be replaced by Yjs data)
       setEdgesState(updated);
 
-      // Помечаем доску как измененную только если данные действительно изменились
-      // и загрузка завершена (markDirty также проверит isLoadingRef)
-      if (hasChanged) {
-        markDirty();
-      }
+      // Trigger auto-save after changes (debounced)
+      triggerAutoSave();
     },
-    [markDirty],
+    [collaboration, triggerAutoSave],
   );
 
   const handleDatasetUpload = useCallback(
@@ -1049,7 +1388,7 @@ function BoardPageContent({ params }: BoardPageProps) {
               {data?.board.title ?? 'Board'}
             </h1>
             <p className="text-sm text-slate-500">
-              Внесите изменения и нажмите «Сохранить борд», чтобы зафиксировать их.
+              Изменения сохраняются автоматически каждые 0.5 секунды.
             </p>
             {tableNames.length > 0 && (
               <div className="mt-3">
@@ -1087,7 +1426,8 @@ function BoardPageContent({ params }: BoardPageProps) {
             >
               {isUploadingDataset ? 'Загружаем…' : 'Загрузить CSV/Parquet'}
             </button>
-            <button
+            {/* Кнопка "Сохранить борд" скрыта, так как работает автосохранение */}
+            {/* <button
               type="button"
               onClick={handleSaveBoard}
               disabled={(!isDirty && !saveError) || isSaving}
@@ -1098,7 +1438,7 @@ function BoardPageContent({ params }: BoardPageProps) {
               }`}
             >
               {isSaving ? 'Сохраняем…' : 'Сохранить борд'}
-            </button>
+            </button> */}
             <Link
               className="rounded-md border border-indigo-400 px-3 py-1.5 text-sm font-medium text-indigo-500 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-300"
               href="/"
@@ -1144,9 +1484,17 @@ function BoardPageContent({ params }: BoardPageProps) {
         {data && !isLoading && !error && (
           <div className="flex h-full flex-1 min-h-0">
             <BoardCanvasDynamic
-              board={data.board}
-              nodes={nodesState}
-              edges={edgesState}
+              board={{
+                ...data.board,
+                userInfo: user
+                  ? {
+                      userId: user.id,
+                      userName: user.name || user.email,
+                    }
+                  : undefined,
+              }}
+              nodes={yjsNodes}
+              edges={yjsEdges}
               executionEntries={entries}
               onCodeChange={handleCodeChange}
               onRunNode={handleRunNode}
@@ -1155,6 +1503,10 @@ function BoardPageContent({ params }: BoardPageProps) {
               onSelectNode={setSelectedNodeId}
               onNodesChange={handleNodesChange}
               onEdgesChange={handleEdgesChange}
+              yjsOnNodesChange={collaboration.onNodesChange}
+              yjsOnEdgesChange={collaboration.onEdgesChange}
+              cursorsMap={collaboration.cursorsMap}
+              clientId={collaboration.clientId}
             />
           </div>
         )}

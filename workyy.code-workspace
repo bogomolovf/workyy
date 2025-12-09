@@ -1,0 +1,26 @@
+{
+  "folders": [
+    {
+      "name": "workyy-fullproject-stable",
+      "path": "."
+    },
+    {
+      "name": "Collaborative 11 Pro Example",
+      "path": "/Users/fedorbogomolov/Desktop/collaborative-11-pro-example"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/.next": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/.next": true,
+      "**/pnpm-lock.yaml": true
+    }
+  }
+}
+

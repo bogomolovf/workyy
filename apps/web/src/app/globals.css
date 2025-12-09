@@ -12,7 +12,24 @@
   cursor: default !important;
 }
 
-.rf-hand-cursor .react-flow__node,
+/* Remove grab/grabbing cursors from ReactFlow pane to show only collaborative cursors */
+/* This ensures the hand icon doesn't appear when panning - only collaborative cursors are visible */
 .rf-hand-cursor .react-flow__pane {
-  cursor: grab !important;
+  cursor: none !important;
+}
+
+/* Hide cursor when panning is active (prevent grabbing cursor) */
+.react-flow__pane.dragging {
+  cursor: none !important;
+}
+
+/* Ensure ReactFlow pane always hides system cursor to show only collaborative cursors */
+/* This prevents the grab/grabbing hand icon from appearing */
+.react-flow__pane {
+  cursor: none !important;
+}
+
+/* Restore default cursor for nodes (but pane cursor stays hidden) */
+.react-flow__node {
+  cursor: default;
 }
