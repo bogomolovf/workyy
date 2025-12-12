@@ -1,7 +1,7 @@
 // file: apps/web/src/state/useAddNode.ts
 type Position = { x: number; y: number };
 
-type NodeKind = 'sql' | 'python' | 'note' | 'text' | 'shape' | 'image' | 'database' | 'plot';
+type NodeKind = 'sql' | 'python' | 'note' | 'text' | 'shape' | 'image' | 'database' | 'plot' | 'arrow';
 
 type NewNode = {
   id: string;
@@ -119,15 +119,19 @@ export function useAddNode() {
     };
   }
 
-  function createShapeNode(position: Position): NewNode {
+  function createShapeNode(position: Position, shapeType?: string): NewNode {
     return {
       id: createId(),
       type: 'shape',
       position,
       payload: {
-        shapeType: 'rectangle',
+        shapeType: shapeType ?? 'rectangle',
         shapeColor: '#BFDBFE',
-        shapeLabel: 'Фигура',
+        stroke: '#64748b',
+        strokeWidth: 2,
+        strokeStyle: 'solid',
+        rotation: 0,
+        opacity: 1,
       },
     };
   }
@@ -185,6 +189,21 @@ export function useAddNode() {
     };
   }
 
+  function createArrowNode(position: Position): NewNode {
+    return {
+      id: createId(),
+      type: 'arrow',
+      position,
+      payload: {
+        start: { x: 0, y: 20 },
+        end: { x: 200, y: 20 },
+        stroke: '#3b82f6',
+        strokeWidth: 2,
+        arrowHeadType: 'triangle',
+      },
+    };
+  }
+
   return {
     getNextPosition,
     createSqlNode,
@@ -195,5 +214,6 @@ export function useAddNode() {
     createImageNode,
     createDatabaseNode,
     createPlotNode,
+    createArrowNode,
   };
 }

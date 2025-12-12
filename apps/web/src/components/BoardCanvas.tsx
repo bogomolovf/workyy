@@ -46,6 +46,7 @@ import {
 } from './connectionUtils';
 import { BoardInspector } from './BoardInspector';
 import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
+import { ShapePropertiesPanel } from './ShapePropertiesPanel';
 import { FreehandOverlay } from './pen/FreehandOverlay';
 import { PenNode } from './pen/PenNode';
 import { TextNode } from './TextNode';
@@ -53,6 +54,9 @@ import { DatabaseNode } from './flowNodes/DatabaseNode';
 import { PlotNode } from './flowNodes/PlotNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
 import CustomConnectionLine from './flowEdges/CustomConnectionLine';
+import { ArrowEdge } from './flowEdges/ArrowEdge';
+import { StableEdge } from './flowEdges/StableEdge';
+import type { ArrowConfig } from '@workyy/core-domain';
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
   ssr: false,
@@ -593,7 +597,9 @@ export function BoardCanvas({
     (selectedNode.type === 'sql' || selectedNode.type === 'python' || selectedNode.type === 'plot')
       ? selectedNode.type
       : null;
+  const isShapeSelected = selectedNode && selectedNode.type === 'shape' && !selectedNode.payload?.text;
   const [inspectorCollapsed, setInspectorCollapsed] = useState(true);
+  const [shapePanelCollapsed, setShapePanelCollapsed] = useState(true);
 
   // Сбрасываем состояние свернутости, когда инспектор закрывается (меняется выбранный узел)
   useEffect(() => {
@@ -602,8 +608,18 @@ export function BoardCanvas({
     }
   }, [inspectorKind, selectedNode]);
 
+  // Автоматически открываем панель фигур при выборе фигуры
+  useEffect(() => {
+    if (isShapeSelected) {
+      setShapePanelCollapsed(false);
+    } else {
+      setShapePanelCollapsed(true);
+    }
+  }, [isShapeSelected]);
+
   // Вычисляем ширину инспектора: 480px когда открыт, 0px когда закрыт (кнопка выходит за пределы)
   const inspectorWidth = inspectorKind && selectedNode ? (inspectorCollapsed ? 0 : 480) : 0;
+  const shapePanelWidth = isShapeSelected ? (shapePanelCollapsed ? 0 : 320) : 0;
 
   return (
     <ReactFlowProvider>
@@ -679,6 +695,51 @@ export function BoardCanvas({
                   : undefined
               }
             />
+          ) : null}
+        </div>
+        {/* Панель свойств фигур */}
+        <div
+          className="flex-none transition-all duration-200 border-l border-slate-200 bg-white shadow-inner"
+          style={{
+            width: `${shapePanelWidth}px`,
+            minWidth: `${shapePanelWidth}px`,
+            maxWidth: `${shapePanelWidth}px`,
+            overflow: 'hidden',
+          }}
+        >
+          {isShapeSelected && selectedNode ? (
+            <div className="flex h-full flex-col overflow-y-auto px-4 py-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-slate-900">Shape Properties</h2>
+                <button
+                  onClick={() => setShapePanelCollapsed(true)}
+                  className="rounded p-1 hover:bg-slate-100 transition-colors"
+                  title="Close panel"
+                >
+                  <svg className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <ShapePropertiesPanel
+                nodeId={selectedNode.id}
+                data={selectedNode.payload as any}
+                onPropertyChange={(nodeId, property, value) => {
+                  const updatedNodes = nodes.map((n) =>
+                    n.id === nodeId
+                      ? {
+                          ...n,
+                          payload: {
+                            ...(n.payload ?? {}),
+                            [property]: value,
+                          },
+                        }
+                      : n,
+                  );
+                  onNodesChange?.(updatedNodes);
+                }}
+              />
+            </div>
           ) : null}
         </div>
       </div>
@@ -1222,12 +1283,30 @@ function InnerBoardCanvas({
                         };
                       } else {
                         // Обычные shape nodes
+                        const payload = node.payload as any;
                         return {
-                          shapeType: ((node.payload as any)?.shapeType ?? 'rectangle') as any,
-                          shapeColor: (node.payload as any)?.shapeColor ?? '#BFDBFE',
-                          shapeLabel: (node.payload as any)?.shapeLabel ?? 'Фигура',
-                          width: (node.payload as any)?.width ?? 160,
-                          height: (node.payload as any)?.height ?? 96,
+                          shapeType: (payload?.shapeType ?? 'rectangle') as any,
+                          shapeColor: payload?.shapeColor ?? '#BFDBFE',
+                          shapeLabel: payload?.shapeLabel,
+                          width: payload?.width ?? 160,
+                          height: payload?.height ?? 96,
+                          stroke: payload?.stroke ?? '#64748b',
+                          strokeWidth: payload?.strokeWidth ?? 2,
+                          strokeStyle: payload?.strokeStyle ?? 'solid',
+                          rotation: payload?.rotation ?? 0,
+                          opacity: payload?.opacity ?? 1,
+                          // Arrow properties
+                          startPoint: payload?.startPoint,
+                          endPoint: payload?.endPoint,
+                          arrowHead: payload?.arrowHead,
+                          arrowTail: payload?.arrowTail,
+                          arrowHeadSize: payload?.arrowHeadSize,
+                          curvature: payload?.curvature,
+                          polylinePoints: payload?.polylinePoints,
+                          // Polygon properties
+                          points: payload?.points,
+                          // Line properties
+                          lineDirection: payload?.lineDirection,
                         };
                       }
                     })()
@@ -1475,20 +1554,44 @@ function InnerBoardCanvas({
     didInitialFitRef.current = true;
   }, [flowInstance, flowNodes.length]);
 
+  const edgeTypes = useMemo(
+    () => ({
+      arrow: ArrowEdge,
+      step: StableEdge,
+      default: ArrowEdge,
+    }),
+    [],
+  );
+
   const flowEdges = useMemo<Edge[]>(
     () =>
       localEdges.map((edge) => {
-        const meta = (edge.metadata ?? {}) as { sourceHandleId?: string; targetHandleId?: string };
+        const meta = (edge.metadata ?? {}) as {
+          sourceHandleId?: string;
+          targetHandleId?: string;
+          arrowConfig?: ArrowConfig;
+        };
+
+        // If arrowConfig is present, use ArrowEdge, otherwise use default step edge
+        const hasArrowConfig = meta.arrowConfig !== undefined;
+        const edgeType = hasArrowConfig ? 'arrow' : 'step';
+
         return {
           id: edge.id,
           source: edge.sourceId,
           target: edge.targetId,
           sourceHandle: meta.sourceHandleId ?? undefined,
           targetHandle: meta.targetHandleId ?? undefined,
-          type: 'step',
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
-          animated: true,
-          style: { stroke: '#94a3b8', strokeWidth: 4, strokeDasharray: 'none' },
+          type: edgeType,
+          data: hasArrowConfig ? { arrowConfig: meta.arrowConfig } : undefined,
+          // For step edges, keep old style
+          ...(hasArrowConfig
+            ? {}
+            : {
+                markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
+                animated: true,
+                style: { stroke: '#94a3b8', strokeWidth: 4, strokeDasharray: 'none' },
+              }),
         };
       }),
     [localEdges],
@@ -2499,6 +2602,7 @@ function InnerBoardCanvas({
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
+            edgeTypes={edgeTypes}
             fitView
             fitViewOptions={{ padding: 0.2, duration: 0 }}
             panOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}

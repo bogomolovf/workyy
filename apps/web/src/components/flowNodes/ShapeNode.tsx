@@ -20,18 +20,34 @@ function useNodeDimensions(id: string) {
 }
 
 export type ShapeType =
+  // Basic shapes
   | 'rectangle'
   | 'round-rectangle'
+  | 'square'
   | 'circle'
-  | 'diamond'
-  | 'triangle'
   | 'ellipse'
+  | 'line'
+  // Polygons
+  | 'triangle'
+  | 'triangle-right'
+  | 'diamond'
+  | 'pentagon'
   | 'hexagon'
+  | 'polygon'
   | 'parallelogram'
+  // Special shapes
   | 'cylinder'
   | 'star'
   | 'arrow-rectangle'
-  | 'plus';
+  | 'plus'
+  // Arrow shapes
+  | 'arrow-straight'
+  | 'arrow-curved'
+  | 'arrow-polyline'
+  | 'arrow-bidirectional'
+  | 'arrow-outline'
+  | 'arrow-filled'
+  | 'arrow-dashed';
 
 export type ShapeNodeData = {
   shapeType?: ShapeType;
@@ -39,6 +55,24 @@ export type ShapeNodeData = {
   shapeLabel?: string;
   width?: number;
   height?: number;
+  // Shape properties
+  stroke?: string;
+  strokeWidth?: number;
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
+  rotation?: number;
+  opacity?: number;
+  // For polygons
+  points?: Array<{ x: number; y: number }>;
+  // For arrows
+  startPoint?: { x: number; y: number };
+  endPoint?: { x: number; y: number };
+  arrowHead?: 'triangle' | 'chevron' | 'circle' | 'square' | 'diamond' | 'none' | 'double';
+  arrowTail?: 'triangle' | 'chevron' | 'circle' | 'square' | 'diamond' | 'none' | 'double';
+  arrowHeadSize?: number;
+  curvature?: number;
+  polylinePoints?: Array<{ x: number; y: number }>;
+  // For lines
+  lineDirection?: 'horizontal' | 'vertical' | 'diagonal';
   // Поддержка текста для заметок
   text?: string;
   fontSize?: number;
@@ -58,7 +92,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   const {
     shapeType = 'rectangle',
     shapeColor = '#BFDBFE',
-    shapeLabel = 'Фигура',
+    shapeLabel,
     text,
     fontSize = 48,
     fontFamily = 'Inter, sans-serif',
@@ -121,9 +155,112 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   }, [data, id, isItalic]);
 
   // Учитываем strokeWidth при расчете внутренних размеров (как в React Flow Pro)
-  const strokeWidth = 2;
-  const innerWidth = useMemo(() => finalWidth - 2 * strokeWidth, [finalWidth]);
-  const innerHeight = useMemo(() => finalHeight - 2 * strokeWidth, [finalHeight]);
+  const strokeWidth = data?.strokeWidth ?? 2;
+  const strokeColor = data?.stroke ?? '#64748b';
+  const strokeStyle = data?.strokeStyle ?? 'solid';
+  const rotation = data?.rotation ?? 0;
+  const opacity = data?.opacity ?? 1;
+  const innerWidth = useMemo(() => finalWidth - 2 * strokeWidth, [finalWidth, strokeWidth]);
+  const innerHeight = useMemo(() => finalHeight - 2 * strokeWidth, [finalHeight, strokeWidth]);
+
+  // Helper для stroke-dasharray
+  const getStrokeDashArray = useCallback(() => {
+    if (strokeStyle === 'dashed') return '5 5';
+    if (strokeStyle === 'dotted') return '2 2';
+    return 'none';
+  }, [strokeStyle]);
+
+  // Helper для рендеринга arrow head
+  const renderArrowHead = useCallback(
+    (
+      x: number,
+      y: number,
+      angle: number,
+      size: number,
+      type: 'triangle' | 'chevron' | 'circle' | 'square' | 'diamond' | 'none' | 'double' = 'triangle',
+      fill?: string,
+    ): JSX.Element | null => {
+      if (type === 'none') return null;
+      const headSize = size;
+      const rad = (angle * Math.PI) / 180;
+
+      if (type === 'triangle') {
+        const points = [
+          [x, y],
+          [x - headSize * Math.cos(rad - Math.PI / 6), y - headSize * Math.sin(rad - Math.PI / 6)],
+          [x - headSize * Math.cos(rad + Math.PI / 6), y - headSize * Math.sin(rad + Math.PI / 6)],
+        ];
+        return (
+          <polygon
+            points={points.map(([px, py]) => `${px},${py}`).join(' ')}
+            fill={fill ?? strokeColor}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+          />
+        );
+      }
+      if (type === 'chevron') {
+        const p1 = [x - headSize * Math.cos(rad), y - headSize * Math.sin(rad)];
+        const p2 = [x - headSize * 0.5 * Math.cos(rad - Math.PI / 6), y - headSize * 0.5 * Math.sin(rad - Math.PI / 6)];
+        const p3 = [x - headSize * 0.5 * Math.cos(rad + Math.PI / 6), y - headSize * 0.5 * Math.sin(rad + Math.PI / 6)];
+        return (
+          <path
+            d={`M${p1[0]},${p1[1]} L${p2[0]},${p2[1]} M${p1[0]},${p1[1]} L${p3[0]},${p3[1]}`}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeLinecap="round"
+          />
+        );
+      }
+      if (type === 'circle') {
+        return <circle cx={x} cy={y} r={headSize / 2} fill={fill ?? strokeColor} stroke={strokeColor} strokeWidth={strokeWidth} />;
+      }
+      if (type === 'square') {
+        const size = headSize / 2;
+        return (
+          <rect
+            x={x - size}
+            y={y - size}
+            width={size * 2}
+            height={size * 2}
+            fill={fill ?? strokeColor}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+          />
+        );
+      }
+      if (type === 'diamond') {
+        const size = headSize / 2;
+        const points = [
+          [x, y - size],
+          [x + size, y],
+          [x, y + size],
+          [x - size, y],
+        ];
+        return (
+          <polygon
+            points={points.map(([px, py]) => `${px},${py}`).join(' ')}
+            fill={fill ?? strokeColor}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+          />
+        );
+      }
+      if (type === 'double') {
+        // Double arrow head
+        const innerSize = headSize * 0.6;
+        return (
+          <>
+            {renderArrowHead(x, y, angle, headSize, 'triangle', fill)}
+            {renderArrowHead(x - headSize * 0.5, y, angle, innerSize, 'triangle', fill)}
+          </>
+        );
+      }
+      return null;
+    },
+    [strokeColor, strokeWidth],
+  );
 
   // Обработчики для перетаскивания фигур
   const handleShapeMouseDown = useCallback(
@@ -214,9 +351,13 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
         width={finalWidth}
         height={finalHeight}
         className="rounded-md overflow-visible"
-        style={{ pointerEvents: 'none' }}
+        style={{ pointerEvents: 'none', opacity }}
       >
-        <g transform={`translate(${strokeWidth}, ${strokeWidth})`}>
+        <g
+          transform={`translate(${strokeWidth}, ${strokeWidth}) ${
+            rotation !== 0 ? `rotate(${rotation} ${innerWidth / 2} ${innerHeight / 2})` : ''
+          }`}
+        >
           {shapeType === 'rectangle' && (
             <rect
               x={0}
@@ -224,8 +365,33 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
               width={innerWidth}
               height={innerHeight}
               fill={shapeColor}
-              stroke={isNote ? 'none' : '#64748b'}
+              stroke={isNote ? 'none' : strokeColor}
               strokeWidth={isNote ? 0 : strokeWidth}
+              strokeDasharray={isNote ? 'none' : getStrokeDashArray()}
+            />
+          )}
+          {shapeType === 'square' && (
+            <rect
+              x={(innerWidth - Math.min(innerWidth, innerHeight)) / 2}
+              y={(innerHeight - Math.min(innerWidth, innerHeight)) / 2}
+              width={Math.min(innerWidth, innerHeight)}
+              height={Math.min(innerWidth, innerHeight)}
+              fill={shapeColor}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
+            />
+          )}
+          {shapeType === 'line' && (
+            <line
+              x1={data?.lineDirection === 'vertical' ? innerWidth / 2 : 0}
+              y1={data?.lineDirection === 'vertical' ? 0 : innerHeight / 2}
+              x2={data?.lineDirection === 'vertical' ? innerWidth / 2 : innerWidth}
+              y2={data?.lineDirection === 'vertical' ? innerHeight : innerHeight / 2}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
+              strokeLinecap="round"
             />
           )}
           {shapeType === 'round-rectangle' && (
@@ -237,19 +403,21 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
               width={innerWidth}
               height={innerHeight}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'circle' && (
             <ellipse
               cx={innerWidth / 2}
               cy={innerHeight / 2}
-              rx={innerWidth / 2}
-              ry={innerHeight / 2}
+              rx={Math.min(innerWidth, innerHeight) / 2}
+              ry={Math.min(innerWidth, innerHeight) / 2}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'diamond' && (
@@ -261,8 +429,9 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
                 [innerWidth / 2, innerHeight],
               ])}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'triangle' && (
@@ -273,8 +442,44 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
                 [innerWidth, innerHeight],
               ])}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
+            />
+          )}
+          {shapeType === 'triangle-right' && (
+            <path
+              d={generatePath([
+                [0, 0],
+                [innerWidth, innerHeight / 2],
+                [0, innerHeight],
+              ])}
+              fill={shapeColor}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
+            />
+          )}
+          {shapeType === 'pentagon' && (
+            <polygon
+              points={`${innerWidth / 2},0 ${innerWidth * 0.95},${innerHeight * 0.35} ${innerWidth * 0.8},${innerHeight} ${innerWidth * 0.2},${innerHeight} ${innerWidth * 0.05},${innerHeight * 0.35}`}
+              fill={shapeColor}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
+            />
+          )}
+          {shapeType === 'polygon' && (
+            <polygon
+              points={
+                data?.points
+                  ? data.points.map((p) => `${p.x},${p.y}`).join(' ')
+                  : `${innerWidth / 2},0 ${innerWidth},${innerHeight * 0.25} ${innerWidth},${innerHeight * 0.75} ${innerWidth / 2},${innerHeight} 0,${innerHeight * 0.75} 0,${innerHeight * 0.25}`
+              }
+              fill={shapeColor}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'ellipse' && (
@@ -284,8 +489,9 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
               rx={innerWidth / 2}
               ry={innerHeight / 2}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'hexagon' && (
@@ -299,8 +505,9 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
                 [innerWidth * 0.1, innerHeight],
               ])}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'parallelogram' && (
@@ -312,8 +519,9 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
                 [innerWidth - innerWidth * 0.25, innerHeight],
               ])}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'cylinder' && (
@@ -328,16 +536,18 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
                 innerWidth / 2
               } ${innerHeight * 0.125} 0 1 1 0 ${innerHeight * 0.125} z`}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'star' && (
             <polygon
               points={`${innerWidth / 2},${innerHeight * 0.1} ${innerWidth * 0.6},${innerHeight * 0.35} ${innerWidth},${innerHeight * 0.35} ${innerWidth * 0.7},${innerHeight * 0.55} ${innerWidth * 0.85},${innerHeight * 0.9} ${innerWidth / 2},${innerHeight * 0.7} ${innerWidth * 0.15},${innerHeight * 0.9} ${innerWidth * 0.3},${innerHeight * 0.55} 0,${innerHeight * 0.35} ${innerWidth * 0.4},${innerHeight * 0.35}`}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'arrow-rectangle' && (
@@ -350,8 +560,9 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
                 [0, innerHeight],
               ])}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
           )}
           {shapeType === 'plus' && (
@@ -371,9 +582,89 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
                 [innerWidth / 3, innerHeight / 3],
               ])}
               fill={shapeColor}
-              stroke="#64748b"
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
+              strokeDasharray={getStrokeDashArray()}
             />
+          )}
+          {/* Arrow shapes */}
+          {(shapeType === 'arrow-straight' ||
+            shapeType === 'arrow-bidirectional' ||
+            shapeType === 'arrow-outline' ||
+            shapeType === 'arrow-filled' ||
+            shapeType === 'arrow-dashed') && (
+            <>
+              <line
+                x1={data?.startPoint?.x ?? 0}
+                y1={data?.startPoint?.y ?? innerHeight / 2}
+                x2={data?.endPoint?.x ?? innerWidth}
+                y2={data?.endPoint?.y ?? innerHeight / 2}
+                stroke={shapeType === 'arrow-outline' ? 'none' : strokeColor}
+                strokeWidth={strokeWidth}
+                strokeDasharray={shapeType === 'arrow-dashed' ? '5 5' : getStrokeDashArray()}
+                fill={shapeType === 'arrow-filled' ? shapeColor : 'none'}
+              />
+              {renderArrowHead(
+                data?.endPoint?.x ?? innerWidth,
+                data?.endPoint?.y ?? innerHeight / 2,
+                0,
+                data?.arrowHeadSize ?? 8,
+                data?.arrowHead ?? 'triangle',
+                shapeType === 'arrow-filled' ? shapeColor : undefined,
+              )}
+              {(shapeType === 'arrow-bidirectional' || data?.arrowTail) &&
+                renderArrowHead(
+                  data?.startPoint?.x ?? 0,
+                  data?.startPoint?.y ?? innerHeight / 2,
+                  180,
+                  data?.arrowHeadSize ?? 8,
+                  data?.arrowTail ?? data?.arrowHead ?? 'triangle',
+                  shapeType === 'arrow-filled' ? shapeColor : undefined,
+                )}
+            </>
+          )}
+          {shapeType === 'arrow-curved' && (
+            <>
+              <path
+                d={`M ${data?.startPoint?.x ?? 0},${data?.startPoint?.y ?? innerHeight / 2} Q ${
+                  innerWidth / 2
+                },${innerHeight * (data?.curvature ?? 0.5)} ${data?.endPoint?.x ?? innerWidth},${data?.endPoint?.y ?? innerHeight / 2}`}
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                fill="none"
+                strokeDasharray={getStrokeDashArray()}
+              />
+              {renderArrowHead(
+                data?.endPoint?.x ?? innerWidth,
+                data?.endPoint?.y ?? innerHeight / 2,
+                0,
+                data?.arrowHeadSize ?? 8,
+                data?.arrowHead ?? 'triangle',
+              )}
+            </>
+          )}
+          {shapeType === 'arrow-polyline' && (
+            <>
+              <polyline
+                points={
+                  data?.polylinePoints
+                    ? data.polylinePoints.map((p) => `${p.x},${p.y}`).join(' ')
+                    : `${data?.startPoint?.x ?? 0},${data?.startPoint?.y ?? innerHeight / 2} ${innerWidth / 2},${innerHeight / 4} ${data?.endPoint?.x ?? innerWidth},${data?.endPoint?.y ?? innerHeight / 2}`
+                }
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                fill="none"
+                strokeDasharray={getStrokeDashArray()}
+                strokeLinejoin="round"
+              />
+              {renderArrowHead(
+                data?.endPoint?.x ?? innerWidth,
+                data?.endPoint?.y ?? innerHeight / 2,
+                0,
+                data?.arrowHeadSize ?? 8,
+                data?.arrowHead ?? 'triangle',
+              )}
+            </>
           )}
           {!isNote && shapeLabel && (
             <text

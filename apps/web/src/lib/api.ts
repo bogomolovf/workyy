@@ -152,9 +152,12 @@ export type PersistedNode = {
   boardId?: string;
 };
 
+import type { ArrowConfig } from '@workyy/core-domain';
+
 export type EdgeHandleMetadata = {
   sourceHandleId?: string; // "left" | "top" | "right" | "bottom" | undefined
   targetHandleId?: string;
+  arrowConfig?: ArrowConfig; // Arrow configuration
 };
 
 export type PersistedEdge = {
