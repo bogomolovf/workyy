@@ -1,8 +1,22 @@
 import { EdgeLabelRenderer, useViewport } from 'reactflow';
+import { useEffect, useRef } from 'react';
 import type { Cursor } from '../hooks/useCursorStateSynced';
 
 function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
   const viewport = useViewport();
+  const animatedLabelsRef = useRef<Set<string>>(new Set());
+  
+  // Track which cursors have completed their animation
+  useEffect(() => {
+    // After animation duration (300ms), mark all visible cursors as animated
+    const timer = setTimeout(() => {
+      cursors.forEach(({ id }) => {
+        animatedLabelsRef.current.add(id);
+      });
+    }, 350); // Slightly longer than animation duration (300ms)
+    
+    return () => clearTimeout(timer);
+  }, [cursors]);
 
   return (
     <>
@@ -32,11 +46,9 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
           @keyframes collaborativeLabelFadeIn {
             from {
               opacity: 0;
-              transform: translateY(-4px);
             }
             to {
               opacity: 1;
-              transform: translateY(0);
             }
           }
           
@@ -52,26 +64,46 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
           
           .collaborative-cursor-label-group {
             animation: collaborativeLabelFadeIn 0.3s ease-out;
+            animation-fill-mode: both;
+          }
+          
+          /* Prevent animation from restarting when cursor visibility changes */
+          .collaborative-cursor-label-group.animation-complete {
+            animation: none;
+            opacity: 1;
           }
         `
       }} />
       
       <EdgeLabelRenderer>
-        {cursors.map(({ id, color, x, y, userName }) => {
-          const translate = `translate(${x}px, ${y}px)`;
-          const scale = `scale(${1 / viewport.zoom})`;
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 1200, // Ensure cursors are above nodes (nodes have z-index up to 20) and Controls (1100)
+          }}
+        >
+          {cursors.map(({ id, color, x, y, userName }) => {
+            const translate = `translate(${x}px, ${y}px)`;
+            const scale = `scale(${1 / viewport.zoom})`;
 
-          return (
-            <svg
-              key={id}
-              className="collaborative-cursor-group"
-              style={{
-                transform: translate,
-                pointerEvents: 'none',
-                overflow: 'visible',
-                willChange: 'transform', // Optimize rendering for frequent transform updates
-              }}
-            >
+            return (
+              <svg
+                key={id}
+                className="collaborative-cursor-group"
+                style={{
+                  position: 'absolute',
+                  transform: translate,
+                  pointerEvents: 'none',
+                  overflow: 'visible',
+                  willChange: 'transform', // Optimize rendering for frequent transform updates
+                  zIndex: 1000, // Ensure cursor is above all elements
+                }}
+              >
               <g style={{ transform: scale, transformOrigin: '0 0' }}>
                 {/* Cursor icon */}
                 <g
@@ -92,7 +124,9 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
                 {/* User name label */}
                 {userName && (
                   <g
-                    className="collaborative-cursor-label-group"
+                    className={`collaborative-cursor-label-group ${
+                      animatedLabelsRef.current.has(id) ? 'animation-complete' : ''
+                    }`}
                     style={{
                       transform: `translate(18px, 18px)`,
                     }}
@@ -128,6 +162,7 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
             </svg>
           );
         })}
+        </div>
       </EdgeLabelRenderer>
     </>
   );

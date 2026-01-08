@@ -171,7 +171,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   const dangerButtonClass = 'text-black hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600';
 
   const card = (
-    <div className={`pointer-events-none ${positioningClass}`}>
+    <div className={`pointer-events-none ${positioningClass}`} data-board-command-bar="true">
       <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-[0_12px_30px_rgba(15,23,42,0.15)]">
         <div className="flex items-center gap-1.5">
           {canvasTools.map((tool) => {

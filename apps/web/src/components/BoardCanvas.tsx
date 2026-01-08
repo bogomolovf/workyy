@@ -743,9 +743,14 @@ function InnerBoardCanvas({
   const lastMousePositionRef = useRef<{ x: number; y: number } | null>(null);
   const mouseMoveCleanupRef = useRef<(() => void) | null>(null);
 
+  // Track if cursor is hovering over toolbars (Controls, MiniMap, BoardCommandBar)
+  // When hovering toolbars, hide own cursor but keep updating position for other users
+  const [isHoveringToolbar, setIsHoveringToolbar] = useState(false);
+
   // Use cursor syncing hook (must be inside ReactFlowProvider)
-  // In development, show own cursor for testing and debugging
-  const showOwnCursor = process.env.NODE_ENV === 'development';
+  // Hide own cursor when hovering toolbars (like Miro behavior)
+  // Show own cursor normally, but hide it when hovering over toolbars
+  const showOwnCursor = !isHoveringToolbar;
   const [cursors, onMouseMove] = cursorsMap && clientId
     ? useCursorStateSynced(cursorsMap, clientId, userInfo, { showOwnCursor })
     : ([[], () => {}] as const);
@@ -849,6 +854,7 @@ function InnerBoardCanvas({
         metadata: e.metadata ?? {},
       }));
   }, []);
+
   const emitNodesChange = useCallback(
     (next: BoardCanvasProps['nodes']) => {
       if (!onNodesChange) return;
@@ -861,6 +867,49 @@ function InnerBoardCanvas({
       });
     },
     [onNodesChange, sanitizeExternalNodes],
+  );
+
+  // Helper function to sync node payload changes through Yjs for real-time collaboration
+  // This ensures that changes to node content (text, formatting, etc.) are synchronized
+  // between all clients immediately, not just on auto-save
+  const syncNodePayloadChange = useCallback(
+    (nodeId: string, payloadUpdate: (prevPayload: Record<string, unknown>) => Record<string, unknown>) => {
+      // Update local state and sync through Yjs
+      setLocalNodes((prev) => {
+        const currentNode = prev.find((n) => n.id === nodeId);
+        if (!currentNode) return prev;
+
+        const updatedPayload = payloadUpdate(currentNode.payload ?? {});
+        const next = prev.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                payload: updatedPayload,
+              }
+            : n,
+        );
+
+        const updatedNode = next.find((n) => n.id === nodeId);
+        if (!updatedNode) return next;
+
+        // Sync through Yjs for real-time collaboration
+        // Convert to ReactFlow format and sync immediately
+        if (yjsOnNodesChange) {
+          const reactFlowNode = canvasNodeToReactFlowNode(updatedNode);
+          // Use 'add' type to update existing node (Yjs will merge changes automatically)
+          yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+        }
+
+        // Also emit through onNodesChange for compatibility and auto-save
+        // Use queueMicrotask to avoid potential issues with state updates
+        queueMicrotask(() => {
+          emitNodesChange(next);
+        });
+
+        return next;
+      });
+    },
+    [yjsOnNodesChange, emitNodesChange],
   );
   const lastEdgesEmittedRef = useRef<string>('');
   const emitEdgesChange = useCallback(
@@ -892,6 +941,167 @@ function InnerBoardCanvas({
       setSelectedShape('rectangle');
     }
   }, [tool, selectedShape]);
+
+  // CRITICAL FIX for Bug 2: Force hide system cursor on all ReactFlow elements
+  // This prevents the hand icon from appearing simultaneously with collaborative cursors
+  // Works in ALL modes, not just pen mode, because the bug can occur in any mode
+  // CRITICAL: Do NOT hide cursor on body - only hide it inside ReactFlow container
+  // This allows standard browser cursor to show outside the canvas area (header, buttons, etc.)
+  useEffect(() => {
+    const forceHideCursor = () => {
+      const reactFlowContainer = document.querySelector('.react-flow');
+      const reactFlowPane = document.querySelector('.react-flow__pane');
+      const reactFlowNodes = document.querySelectorAll('.react-flow__node');
+      const reactFlowViewport = document.querySelector('.react-flow__viewport');
+      const reactFlowRenderer = document.querySelector('.react-flow__renderer');
+      
+      // Force hide cursor ONLY on ReactFlow elements, NOT on body
+      // This allows standard cursor to show outside the canvas area
+      if (reactFlowContainer) {
+        (reactFlowContainer as HTMLElement).style.setProperty('cursor', 'none', 'important');
+      }
+      if (reactFlowPane) {
+        (reactFlowPane as HTMLElement).style.setProperty('cursor', 'none', 'important');
+      }
+      if (reactFlowViewport) {
+        (reactFlowViewport as HTMLElement).style.setProperty('cursor', 'none', 'important');
+      }
+      if (reactFlowRenderer) {
+        (reactFlowRenderer as HTMLElement).style.setProperty('cursor', 'none', 'important');
+      }
+      reactFlowNodes.forEach((node) => {
+        (node as HTMLElement).style.setProperty('cursor', 'none', 'important');
+        // Also hide cursor on all children of nodes
+        const children = node.querySelectorAll('*');
+        children.forEach((child) => {
+          (child as HTMLElement).style.setProperty('cursor', 'none', 'important');
+        });
+      });
+      
+      // Restore standard cursor for Controls and MiniMap (like toolbar)
+      const controls = document.querySelector('.react-flow__controls');
+      const minimap = document.querySelector('.react-flow__minimap');
+      if (controls) {
+        (controls as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
+        const controlButtons = controls.querySelectorAll('button');
+        controlButtons.forEach((button) => {
+          button.style.setProperty('cursor', 'pointer', 'important');
+        });
+      }
+      if (minimap) {
+        (minimap as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
+        const minimapElements = minimap.querySelectorAll('*');
+        minimapElements.forEach((el) => {
+          (el as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
+        });
+      }
+    };
+
+    // Initial hide
+    forceHideCursor();
+
+    // Use MutationObserver to watch for ReactFlow class changes on body
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+          // ReactFlow adds rf-hand-cursor or rf-select-cursor classes to body
+          // Force hide cursor whenever these classes change
+          forceHideCursor();
+        }
+      });
+    });
+
+    // Observe body for class changes
+    const body = document.body;
+    if (body) {
+      observer.observe(body, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
+
+    // Also periodically force hide cursor to catch any dynamic changes
+    // Reduced interval to 50ms for more aggressive hiding
+    const interval = setInterval(() => {
+      forceHideCursor();
+    }, 50);
+
+    return () => {
+      observer.disconnect();
+      clearInterval(interval);
+      // No need to restore cursor on body since we don't set it anymore
+    };
+  }, []); // Remove isPenMode dependency - work in all modes
+
+  // CRITICAL FIX: Hide own cursor when hovering over toolbars (Controls, MiniMap, BoardCommandBar)
+  // This matches Miro behavior - cursor disappears for the user but stays visible for others
+  // The cursor position continues to update in Yjs, so other users see it at the last canvas position
+  useEffect(() => {
+    const handleToolbarMouseEnter = () => {
+      setIsHoveringToolbar(true);
+    };
+
+    const handleToolbarMouseLeave = () => {
+      setIsHoveringToolbar(false);
+    };
+
+    const attachListeners = () => {
+      // Find toolbar elements
+      const controls = document.querySelector('.react-flow__controls');
+      const minimap = document.querySelector('.react-flow__minimap');
+      const commandBar = document.querySelector('[data-board-command-bar]');
+
+      // Add event listeners to Controls
+      if (controls && !controls.hasAttribute('data-cursor-listener')) {
+        controls.setAttribute('data-cursor-listener', 'true');
+        controls.addEventListener('mouseenter', handleToolbarMouseEnter);
+        controls.addEventListener('mouseleave', handleToolbarMouseLeave);
+      }
+
+      // Add event listeners to MiniMap
+      if (minimap && !minimap.hasAttribute('data-cursor-listener')) {
+        minimap.setAttribute('data-cursor-listener', 'true');
+        minimap.addEventListener('mouseenter', handleToolbarMouseEnter);
+        minimap.addEventListener('mouseleave', handleToolbarMouseLeave);
+      }
+
+      // Add event listeners to BoardCommandBar
+      if (commandBar && !commandBar.hasAttribute('data-cursor-listener')) {
+        commandBar.setAttribute('data-cursor-listener', 'true');
+        commandBar.addEventListener('mouseenter', handleToolbarMouseEnter);
+        commandBar.addEventListener('mouseleave', handleToolbarMouseLeave);
+      }
+    };
+
+    // Initial attachment
+    attachListeners();
+
+    // Use MutationObserver to catch dynamically rendered toolbars (especially BoardCommandBar via portal)
+    const observer = new MutationObserver(() => {
+      attachListeners();
+    });
+
+    // Observe document body for dynamically added toolbars
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Also periodically check (fallback for edge cases)
+    const intervalId = setInterval(attachListeners, 500);
+
+    return () => {
+      observer.disconnect();
+      clearInterval(intervalId);
+      
+      // Remove all listeners
+      document.querySelectorAll('[data-cursor-listener]').forEach((el) => {
+        el.removeEventListener('mouseenter', handleToolbarMouseEnter);
+        el.removeEventListener('mouseleave', handleToolbarMouseLeave);
+      });
+    };
+  }, []);
+
 
   const selectedDataNode = useMemo(() => {
     if (!selectedNodeId) return null;
@@ -1120,22 +1330,11 @@ function InnerBoardCanvas({
                       textAlign,
                       richContentHtml: richContent,
                       onChangeText: (id: string, newText: string) => {
-                        setLocalNodes((prev) => {
-                          const next = prev.map((n) =>
-                            n.id === id && n.type === 'text'
-                              ? {
-                                  ...n,
-                                  payload: {
-                                    ...(n.payload ?? {}),
-                                    text: newText,
-                                    textContent: newText,
-                                  },
-                                }
-                              : n,
-                          );
-                          emitNodesChange(next);
-                          return next;
-                        });
+                        syncNodePayloadChange(id, (prevPayload) => ({
+                          ...prevPayload,
+                          text: newText,
+                          textContent: newText,
+                        }));
                       },
                       onChangeFormat: (
                         id: string,
@@ -1148,21 +1347,10 @@ function InnerBoardCanvas({
                           richContent: string;
                         }>,
                       ) => {
-                        setLocalNodes((prev) => {
-                          const next = prev.map((n) =>
-                            n.id === id && n.type === 'text'
-                              ? {
-                                  ...n,
-                                  payload: {
-                                    ...(n.payload ?? {}),
-                                    ...patch,
-                                  },
-                                }
-                              : n,
-                          );
-                          emitNodesChange(next);
-                          return next;
-                        });
+                        syncNodePayloadChange(id, (prevPayload) => ({
+                          ...prevPayload,
+                          ...patch,
+                        }));
                       },
                     };
                   })()
@@ -1189,86 +1377,41 @@ function InnerBoardCanvas({
                           width: (node.payload as any)?.ui?.width ?? 280,
                           height: (node.payload as any)?.ui?.height ?? 280,
                           onChangeText: (nid: string, newText: string) => {
-                            setLocalNodes((prev) => {
-                              const next = prev.map((n) =>
-                                n.id === nid && n.type === 'note'
-                                  ? {
-                                      ...n,
-                                      payload: {
-                                        ...(n.payload ?? {}),
-                                        text: newText,
-                                        noteContent: newText,
-                                      },
-                                    }
-                                  : n,
-                              );
-                              emitNodesChange(next);
-                              return next;
-                            });
+                            syncNodePayloadChange(nid, (prevPayload) => ({
+                              ...prevPayload,
+                              text: newText,
+                              noteContent: newText,
+                            }));
                           },
                           onChangeColor: (nid: string, newColor: string) => {
-                            setLocalNodes((prev) => {
-                              const next = prev.map((n) =>
-                                n.id === nid && n.type === 'note'
-                                  ? { ...n, payload: { ...(n.payload ?? {}), color: newColor } }
-                                  : n,
-                              );
-                              emitNodesChange(next);
-                              return next;
-                            });
+                            syncNodePayloadChange(nid, (prevPayload) => ({
+                              ...prevPayload,
+                              color: newColor,
+                            }));
                           },
                           onChangeFontSize: (nid: string, newFontSize: number) => {
-                            setLocalNodes((prev) => {
-                              const next = prev.map((n) =>
-                                n.id === nid && n.type === 'note'
-                                  ? {
-                                      ...n,
-                                      payload: { ...(n.payload ?? {}), fontSize: newFontSize },
-                                    }
-                                  : n,
-                              );
-                              emitNodesChange(next);
-                              return next;
-                            });
+                            syncNodePayloadChange(nid, (prevPayload) => ({
+                              ...prevPayload,
+                              fontSize: newFontSize,
+                            }));
                           },
                           onChangeFontFamily: (nid: string, newFontFamily: string) => {
-                            setLocalNodes((prev) => {
-                              const next = prev.map((n) =>
-                                n.id === nid && n.type === 'note'
-                                  ? {
-                                      ...n,
-                                      payload: { ...(n.payload ?? {}), fontFamily: newFontFamily },
-                                    }
-                                  : n,
-                              );
-                              emitNodesChange(next);
-                              return next;
-                            });
+                            syncNodePayloadChange(nid, (prevPayload) => ({
+                              ...prevPayload,
+                              fontFamily: newFontFamily,
+                            }));
                           },
                           onChangeBold: (nid: string, newIsBold: boolean) => {
-                            setLocalNodes((prev) => {
-                              const next = prev.map((n) =>
-                                n.id === nid && n.type === 'note'
-                                  ? { ...n, payload: { ...(n.payload ?? {}), isBold: newIsBold } }
-                                  : n,
-                              );
-                              emitNodesChange(next);
-                              return next;
-                            });
+                            syncNodePayloadChange(nid, (prevPayload) => ({
+                              ...prevPayload,
+                              isBold: newIsBold,
+                            }));
                           },
                           onChangeItalic: (nid: string, newIsItalic: boolean) => {
-                            setLocalNodes((prev) => {
-                              const next = prev.map((n) =>
-                                n.id === nid && n.type === 'note'
-                                  ? {
-                                      ...n,
-                                      payload: { ...(n.payload ?? {}), isItalic: newIsItalic },
-                                    }
-                                  : n,
-                              );
-                              emitNodesChange(next);
-                              return next;
-                            });
+                            syncNodePayloadChange(nid, (prevPayload) => ({
+                              ...prevPayload,
+                              isItalic: newIsItalic,
+                            }));
                           },
                         };
                       } else {
@@ -1287,21 +1430,10 @@ function InnerBoardCanvas({
                         nodeId: node.id,
                         workspaceId: board.workspaceId,
                         onUpdatePayload: (nodeId: string, payload: Record<string, unknown>) => {
-                          setLocalNodes((prev) => {
-                            const next = prev.map((n) =>
-                              n.id === nodeId
-                                ? {
-                                    ...n,
-                                    payload: {
-                                      ...(n.payload ?? {}),
-                                      ...payload,
-                                    },
-                                  }
-                                : n,
-                            );
-                            emitNodesChange(next);
-                            return next;
-                          });
+                          syncNodePayloadChange(nodeId, (prevPayload) => ({
+                            ...prevPayload,
+                            ...payload,
+                          }));
                         },
                         payload: node.payload,
                       }
@@ -1412,11 +1544,13 @@ function InnerBoardCanvas({
   }, [selectedNodeId]);
 
   // Use useMemo to prevent infinite loops - only recalculate when dependencies change
-  // Include all dependencies from mapNodes useCallback
+  // CRITICAL FIX: Include localNodes in dependencies because mapNodes uses localNodes internally
+  // When localNodes updates (e.g., from Yjs deletion), mappedNodes must recalculate
   const mappedNodes = useMemo(() => {
     return mapNodes();
   }, [
-    mapNodes, // Include the callback itself - it will only change when its dependencies change
+    mapNodes, // Include the callback itself
+    localNodes, // CRITICAL: mapNodes uses localNodes, so we must recalculate when localNodes changes
   ]);
 
   useEffect(() => {
@@ -1476,29 +1610,10 @@ function InnerBoardCanvas({
         };
       });
 
-      // Добавляем существующие nodes, которых нет в mapped
-      // Это важно для pen nodes, которые могут быть добавлены напрямую в flowNodes
-      // до того, как они попадут в localNodes и будут обработаны mapNodes
-      for (const [id, existing] of existingById) {
-        if (!mappedById.has(id)) {
-          // Сохраняем pen nodes даже если их еще нет в mapped
-          // Они появятся в следующем обновлении когда localNodes обновится
-          const isPenNode = existing.type === 'pen';
-          if (isPenNode && existing.data && (existing.data as any).points) {
-            console.log('useEffect mapNodes: Preserving pen node from existing:', id);
-            result.push({
-              ...existing,
-              // Обновляем selected для синхронизации с selectedNodeId
-              selected: id === selectedNodeId,
-              // Убеждаемся, что pen node сохраняет правильный zIndex
-              style: {
-                ...existing.style,
-                zIndex: existing.style?.zIndex ?? 10, // Pen nodes должны быть выше дата-клеток
-              },
-            });
-          }
-        }
-      }
+      // CRITICAL FIX: Don't preserve nodes that are not in mappedNodes
+      // If a node is deleted through Yjs, it should be removed from flowNodes immediately
+      // The previous logic preserved pen nodes even when deleted, which caused deletion sync issues
+      // Now we only use nodes from mappedNodes, which is the source of truth from Yjs
 
       // Убеждаемся, что результат отсортирован по слоям: сначала data nodes, потом canvas nodes
       const sortedResult = result.sort((a, b) => {
@@ -1648,10 +1763,23 @@ function InnerBoardCanvas({
           payload,
         };
       });
-      // preserve sticky notes and pen nodes that are not part of nextFlowNodes
+      // CRITICAL FIX: Only preserve nodes that are still in the nodes prop (from Yjs)
+      // If a node was deleted through Yjs, it won't be in the nodes prop, so we shouldn't preserve it
+      // This fixes the issue where deleted pen nodes reappear after deletion
       const nextIds = new Set(nextFlowNodes.map((n) => n.id));
-      const preservedNotes = prev.filter((n) => n.type === 'note' && !nextIds.has(n.id));
-      const preservedPen = prev.filter((n) => n.type === 'pen' && !nextIds.has(n.id));
+      const nodesPropIds = new Set(nodes.map((n) => n.id));
+      
+      // Only preserve notes that are still in nodes prop (not deleted through Yjs)
+      const preservedNotes = prev.filter(
+        (n) => n.type === 'note' && !nextIds.has(n.id) && nodesPropIds.has(n.id),
+      );
+      
+      // CRITICAL FIX: Don't preserve pen nodes that were deleted through Yjs
+      // If a pen node is not in nodes prop, it was deleted through Yjs and should not be preserved
+      const preservedPen = prev.filter(
+        (n) => n.type === 'pen' && !nextIds.has(n.id) && nodesPropIds.has(n.id),
+      );
+      
       const nextLocal = [...nextLocalCore, ...preservedNotes, ...preservedPen];
 
       if (mutated) {
@@ -1661,7 +1789,7 @@ function InnerBoardCanvas({
         }
       }
     },
-    [emitNodesChange],
+    [emitNodesChange, nodes], // CRITICAL: Include nodes to check if pen nodes were deleted through Yjs
   );
 
   // Заметки теперь обрабатываются как shape nodes, отдельная логика не нужна
@@ -1774,34 +1902,22 @@ function InnerBoardCanvas({
 
               // Устанавливаем новый таймер для debounce (200ms после последнего изменения)
               const timer = setTimeout(() => {
-                setLocalNodes((prev) => {
-                  const currentNode = prev.find((n) => n.id === change.id && n.type === 'text');
-                  if (!currentNode) return prev;
+                // Sync size changes through Yjs for real-time collaboration
+                const nodeId = change.id;
+                const finalWidth =
+                  typeof width === 'number' ? width : parseFloat(String(width)) || 240;
+                const finalHeight =
+                  typeof height === 'number' ? height : parseFloat(String(height)) || 80;
 
-                  const next = prev.map((n) =>
-                    n.id === change.id && n.type === 'text'
-                      ? {
-                          ...n,
-                          payload: {
-                            ...(n.payload ?? {}),
-                            ui: {
-                              ...((n.payload as any)?.ui ?? {}),
-                              width:
-                                typeof width === 'number'
-                                  ? width
-                                  : parseFloat(String(width)) || 240,
-                              height:
-                                typeof height === 'number'
-                                  ? height
-                                  : parseFloat(String(height)) || 80,
-                            },
-                          },
-                        }
-                      : n,
-                  );
-                  emitNodesChange(next);
-                  return next;
-                });
+                syncNodePayloadChange(nodeId, (prevPayload) => ({
+                  ...prevPayload,
+                  ui: {
+                    ...((prevPayload as any)?.ui ?? {}),
+                    width: finalWidth,
+                    height: finalHeight,
+                  },
+                }));
+
                 textNodeResizeTimerRef.current.delete(change.id);
               }, 200);
 
@@ -1841,42 +1957,24 @@ function InnerBoardCanvas({
                         ? height
                         : parseFloat(String(height)) || defaultHeight;
 
-                  setLocalNodes((prev) => {
-                    const currentNode = prev.find(
-                      (n) => n.id === change.id && (n.type === 'shape' || n.type === 'note'),
-                    );
-                    if (!currentNode) return prev;
-
-                    const next = prev.map((n) => {
-                      if (n.id === change.id && n.type === 'shape') {
-                        return {
-                          ...n,
-                          position: currentFlowNode?.position ?? n.position,
-                          payload: {
-                            ...(n.payload ?? {}),
-                            width: finalWidth,
-                            height: finalHeight,
-                          },
-                        };
-                      } else if (n.id === change.id && n.type === 'note') {
-                        return {
-                          ...n,
-                          position: currentFlowNode?.position ?? n.position,
-                          payload: {
-                            ...(n.payload ?? {}),
-                            ui: {
-                              ...((n.payload as any)?.ui ?? {}),
-                              width: finalWidth,
-                              height: finalHeight,
-                            },
-                          },
-                        };
-                      }
-                      return n;
-                    });
-                    emitNodesChange(next);
-                    return next;
-                  });
+                  // Sync size changes through Yjs for real-time collaboration
+                  const nodeId = change.id;
+                  if (node?.type === 'shape') {
+                    syncNodePayloadChange(nodeId, (prevPayload) => ({
+                      ...prevPayload,
+                      width: finalWidth,
+                      height: finalHeight,
+                    }));
+                  } else if (node?.type === 'note') {
+                    syncNodePayloadChange(nodeId, (prevPayload) => ({
+                      ...prevPayload,
+                      ui: {
+                        ...((prevPayload as any)?.ui ?? {}),
+                        width: finalWidth,
+                        height: finalHeight,
+                      },
+                    }));
+                  }
 
                   return currentFlowNodes;
                 });
@@ -2614,7 +2712,9 @@ function InnerBoardCanvas({
             connectionLineComponent={CustomConnectionLine}
             connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 4 }}
             onNodeClick={handleNodeClick}
-            onPointerMove={onMouseMove}
+            onPointerMove={(e) => {
+              onMouseMove(e);
+            }}
             // NOTE: onNodeDataChange is not a valid ReactFlow prop - removed
             // Node data changes are handled through callbacks in node.data (onChangeText, etc.)
             onPaneClick={(e) => {
@@ -2756,35 +2856,14 @@ function InnerBoardCanvas({
             <Controls
               position="bottom-left"
               showInteractive={false}
-              style={{ left: 0, bottom: 0 }}
+              style={{ left: 0, bottom: 0, zIndex: 1100 }}
             />
             <ConnectionArrowsOverlay edges={flowEdges} />
             {isPenMode && (
               <FreehandOverlay
-                onAddPenNode={(node) => {
-                  console.log('onAddPenNode called with:', node);
-                  
-                  // Создаем ReactFlow node с правильной структурой
-                  const reactFlowNode: Node = {
-                    ...node,
-                    selected: node.id === selectedNodeId,
-                    style: {
-                      ...node.style,
-                      zIndex: node.style?.zIndex ?? 10, // Pen nodes должны быть выше дата-клеток
-                    },
-                  };
-
-                  // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
-                  // Following collaborative-11-pro-example pattern: all changes go through Yjs directly
-                  // This ensures the node appears on other clients immediately
-                  if (yjsOnNodesChange) {
-                    yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-                    console.log('Pen node synced through Yjs:', reactFlowNode.id);
-                  }
-
-                  // Also update localNodes and trigger auto-save through onNodesChange
-                  // This ensures the node is saved to the database
-                  // CRITICAL FIX: Call onNodesChange synchronously to ensure auto-save is triggered
+                yjsOnNodesChange={yjsOnNodesChange}
+                onUpdatePenNode={(nodeId, node) => {
+                  // Update localNodes when pen node is updated during drawing
                   const externalNode = {
                     id: node.id,
                     type: 'pen' as const,
@@ -2795,34 +2874,79 @@ function InnerBoardCanvas({
                     },
                   };
 
-                  // Update localNodes first
                   setLocalNodes((prev) => {
-                    // Проверяем, что node еще не добавлен
-                    if (prev.some((n) => n.id === node.id)) {
-                      console.log('Node already exists in localNodes:', node.id);
-                      return prev;
+                    const existingIndex = prev.findIndex((n) => n.id === node.id);
+                    if (existingIndex >= 0) {
+                      // Update existing node
+                      const next = [...prev];
+                      next[existingIndex] = externalNode;
+                      return next;
+                    } else {
+                      // Add new node
+                      return [...prev, externalNode];
                     }
-                    const next = [...prev, externalNode];
-                    console.log(
-                      'localNodes updated, new length:',
-                      next.length,
-                      'pen nodes:',
-                      next.filter((n) => n.type === 'pen').length,
-                    );
-                    return next;
                   });
 
-                  // CRITICAL FIX: Call onNodesChange synchronously with updated nodes
-                  // This ensures auto-save is triggered immediately
-                  // Calculate next nodes synchronously (before state update)
+                  // Trigger auto-save through onNodesChange
                   if (onNodesChange) {
                     const currentNodes = localNodesRef.current;
-                    const next = currentNodes.some((n) => n.id === node.id)
-                      ? currentNodes
-                      : [...currentNodes, externalNode];
+                    const existingIndex = currentNodes.findIndex((n) => n.id === node.id);
+                    const next =
+                      existingIndex >= 0
+                        ? currentNodes.map((n, i) => (i === existingIndex ? externalNode : n))
+                        : [...currentNodes, externalNode];
                     const sanitized = sanitizeExternalNodes(next);
                     onNodesChange(sanitized);
-                    console.log('Pen node change emitted for auto-save:', externalNode.id);
+                  }
+                }}
+                onAddPenNode={(node) => {
+                  console.log('onAddPenNode called with (finalized):', node);
+                  
+                  // Node is already synced through Yjs in FreehandOverlay
+                  // Just update localNodes and trigger auto-save
+                  const externalNode = {
+                    id: node.id,
+                    type: 'pen' as const,
+                    position: node.position,
+                    payload: {
+                      points: node.data.points,
+                      initialSize: node.data.initialSize,
+                    },
+                  };
+
+                  // Update localNodes
+                  setLocalNodes((prev) => {
+                    const existingIndex = prev.findIndex((n) => n.id === node.id);
+                    if (existingIndex >= 0) {
+                      // Update existing node (it was already added during drawing)
+                      const next = [...prev];
+                      next[existingIndex] = externalNode;
+                      console.log('Updated existing pen node in localNodes:', node.id);
+                      return next;
+                    } else {
+                      // Add new node (shouldn't happen, but handle it)
+                      const next = [...prev, externalNode];
+                      console.log(
+                        'Added new pen node to localNodes, new length:',
+                        next.length,
+                        'pen nodes:',
+                        next.filter((n) => n.type === 'pen').length,
+                      );
+                      return next;
+                    }
+                  });
+
+                  // Trigger auto-save through onNodesChange
+                  if (onNodesChange) {
+                    const currentNodes = localNodesRef.current;
+                    const existingIndex = currentNodes.findIndex((n) => n.id === node.id);
+                    const next =
+                      existingIndex >= 0
+                        ? currentNodes.map((n, i) => (i === existingIndex ? externalNode : n))
+                        : [...currentNodes, externalNode];
+                    const sanitized = sanitizeExternalNodes(next);
+                    onNodesChange(sanitized);
+                    console.log('Pen node finalized and change emitted for auto-save:', externalNode.id);
                   }
                 }}
               />

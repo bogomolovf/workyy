@@ -147,7 +147,7 @@ type PersistedDataset = {
 
 const DATASET_KEY_PREFIX = 'workyy_board_datasets_v2:';
 
-function getDatasetsKey(boardId: string) {
+export function getDatasetsKey(boardId: string) {
   return `${DATASET_KEY_PREFIX}${boardId}`;
 }
 
@@ -229,6 +229,29 @@ export async function resetUserTables(
   const tableNames = await listTables(connection);
   for (const name of tableNames) {
     await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(name)};`);
+  }
+}
+
+export async function deleteTable(
+  tableName: string,
+  boardId: string,
+  connectionOverride?: duckdb.AsyncDuckDBConnection,
+): Promise<void> {
+  const connection = connectionOverride ?? (await getDuckDbContext()).connection;
+  
+  // Delete table from DuckDB
+  await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(tableName)};`);
+  
+  // Delete metadata from localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const key = getDatasetsKey(boardId);
+      const existing: PersistedDataset[] = JSON.parse(window.localStorage.getItem(key) ?? '[]');
+      const filtered = existing.filter((item) => item.tableName !== tableName);
+      window.localStorage.setItem(key, JSON.stringify(filtered));
+    } catch {
+      // ignore persistence errors
+    }
   }
 }
 

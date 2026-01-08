@@ -8,7 +8,6 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "isolatedModules": true,
-    "types": ["vite/client"],
     "incremental": true,
     "jsx": "preserve",
     "plugins": [

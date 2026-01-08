@@ -162,7 +162,45 @@ function BoardPageContent({ params }: BoardPageProps) {
       );
     });
     
-    if (idsChanged || positionsChanged) {
+    // CRITICAL FIX: Check if code changed in SQL/Python nodes
+    // This ensures code changes from Yjs are synced to codeStore
+    const codeChanged = nodesStateRef.current.some((node) => {
+      if (node.type !== 'sql' && node.type !== 'python') return false;
+      const yjsNode = collaboration.canvasNodes.find((n) => n.id === node.id);
+      if (!yjsNode) return false;
+      const currentCode = node.type === 'sql' 
+        ? ((node.payload as any)?.sql ?? '')
+        : ((node.payload as any)?.python ?? '');
+      const yjsCode = node.type === 'sql'
+        ? ((yjsNode.payload as any)?.sql ?? '')
+        : ((yjsNode.payload as any)?.python ?? '');
+      return currentCode !== yjsCode;
+    });
+    
+    // CRITICAL FIX: Check if execution status/results changed
+    // This ensures execution results from Yjs are synced to executionStore
+    const executionChanged = nodesStateRef.current.some((node) => {
+      if (node.type !== 'sql' && node.type !== 'python') return false;
+      const yjsNode = collaboration.canvasNodes.find((n) => n.id === node.id);
+      if (!yjsNode) return false;
+      const currentExecution = (node.payload as any)?.execution;
+      const yjsExecution = (yjsNode.payload as any)?.execution;
+      if (!currentExecution && !yjsExecution) return false;
+      if (!currentExecution || !yjsExecution) return true;
+      // Compare execution status
+      if (currentExecution.status !== yjsExecution.status) return true;
+      // Compare execution results if status is success
+      if (yjsExecution.status === 'success' && currentExecution.status === 'success') {
+        return JSON.stringify(currentExecution.output) !== JSON.stringify(yjsExecution.output);
+      }
+      // Compare error messages if status is error
+      if (yjsExecution.status === 'error' && currentExecution.status === 'error') {
+        return currentExecution.error !== yjsExecution.error;
+      }
+      return false;
+    });
+    
+    if (idsChanged || positionsChanged || codeChanged || executionChanged) {
       // Mark as Yjs update to prevent sync loop
       isYjsUpdateRef.current = true;
       // Update local state from Yjs
@@ -173,7 +211,65 @@ function BoardPageContent({ params }: BoardPageProps) {
           removeExecutionEntry(id);
         }
       });
-      setNodesState(collaboration.canvasNodes);
+      
+      // Update codeStore for SQL/Python nodes when code changes through Yjs
+      if (codeChanged) {
+        collaboration.canvasNodes.forEach((yjsNode) => {
+          if (yjsNode.type === 'sql' || yjsNode.type === 'python') {
+            const code = yjsNode.type === 'sql'
+              ? ((yjsNode.payload as any)?.sql ?? '')
+              : ((yjsNode.payload as any)?.python ?? '');
+            if (code) {
+              setCodeStore(yjsNode.id, code);
+            }
+          }
+        });
+      }
+      
+      // Update executionStore when execution status/results change through Yjs
+      // CRITICAL FIX: Don't overwrite final states (success/error) with "running" from Yjs
+      // This prevents errors from being overwritten by stale "running" status
+      // CRITICAL FIX: Both errors and success should overwrite each other - whichever comes from Yjs is the latest state
+      if (executionChanged) {
+        collaboration.canvasNodes.forEach((yjsNode) => {
+          if (yjsNode.type === 'sql' || yjsNode.type === 'python') {
+            const execution = (yjsNode.payload as any)?.execution;
+            if (execution) {
+              const currentEntry = useExecutionStore.getState().entries[yjsNode.id];
+              const currentStatus = currentEntry?.status;
+              
+              // Always update "running" status when it comes from Yjs
+              // This ensures other users see when someone starts executing a node
+              // CRITICAL FIX: Don't overwrite success/error with "running" if we just set success/error locally
+              // Check if the current status in nodesStateRef is already success/error - if so, don't overwrite with running
+              const currentNodeInRef = nodesStateRef.current.find((n) => n.id === yjsNode.id);
+              const currentNodeExecution = currentNodeInRef ? (currentNodeInRef.payload as any)?.execution : null;
+              
+              if (execution.status === 'running') {
+                // Only set "running" if current status in ref is not already a final state
+                // This prevents overwriting success/error that was just set locally
+                if (currentNodeExecution?.status !== 'success' && currentNodeExecution?.status !== 'error') {
+                  // Always set "running" - it indicates a new execution has started
+                  // This allows other users to see the execution progress in real-time
+                  setStatus(yjsNode.id, 'running');
+                }
+              } else if (execution.status === 'error' && execution.error) {
+                // Always update error - new errors replace old results (including success)
+                setError(yjsNode.id, execution.error);
+              } else if (execution.status === 'success' && execution.output) {
+                // Always update success - new success replaces old errors (after fixing the query)
+                // This ensures that when a user fixes an error and runs successfully, all users see the success
+                setSuccess(yjsNode.id, execution.output);
+              }
+            }
+          }
+        });
+      }
+      
+      // Type assertion: collaboration.canvasNodes uses CanvasNode from yjs/adapters (type: string)
+      // but we need the local CanvasNode type (with specific union type)
+      // This is safe because all valid node types are included in the union
+      setNodesState(collaboration.canvasNodes as CanvasNode[]);
       
       // CRITICAL FIX: Trigger auto-save when nodes are added/updated through Yjs
       // This ensures that new nodes added via yjsOnNodesChange are saved to DB
@@ -183,7 +279,7 @@ function BoardPageContent({ params }: BoardPageProps) {
         triggerAutoSaveRef.current?.();
       }, 0);
     }
-  }, [collaboration.canvasNodes, removeExecutionEntry]);
+  }, [collaboration.canvasNodes, removeExecutionEntry, setCodeStore, setStatus, setSuccess, setError]);
 
   useEffect(() => {
     if (collaboration.canvasEdges.length === 0) return;
@@ -265,6 +361,47 @@ function BoardPageContent({ params }: BoardPageProps) {
       console.error('Failed to fetch DuckDB tables', error);
     }
   }, []);
+
+  // Sync datasets from Yjs and restore them in local DuckDB
+  useEffect(() => {
+    const datasetsMap = collaboration.datasetsMap;
+    if (!datasetsMap) return;
+
+    const observer = async () => {
+      try {
+        const { restoreDatasetsForBoard, getDatasetsKey } = await import('../../../lib/duckdbClient');
+        const datasets: Array<{ tableName: string; columns: string[]; rows: Array<Array<string | number | null>> }> = [];
+        
+        // Collect all datasets from Yjs map
+        datasetsMap.forEach((dataset: any) => {
+          datasets.push(dataset);
+        });
+
+        // Save datasets to localStorage (for compatibility with restoreDatasetsForBoard)
+        // Always update localStorage, even if empty (to handle deletions)
+        const key = getDatasetsKey(boardId);
+        window.localStorage.setItem(key, JSON.stringify(datasets));
+        
+        // Restore datasets in local DuckDB (this will clear tables if datasets is empty)
+        await restoreDatasetsForBoard(boardId);
+        
+        // Refresh table list
+        await refreshTables();
+      } catch (error) {
+        console.error('Failed to sync datasets from Yjs', error);
+      }
+    };
+
+    // Observe changes in datasetsMap
+    datasetsMap.observe(observer);
+    
+    // Initial sync (even if map is empty, we need to restore from localStorage on first load)
+    observer();
+
+    return () => {
+      datasetsMap.unobserve(observer);
+    };
+  }, [collaboration.datasetsMap, boardId, refreshTables]);
 
   useEffect(() => {
     if (!data) return;
@@ -442,6 +579,27 @@ function BoardPageContent({ params }: BoardPageProps) {
       const code = entry?.code ?? '';
 
       setStatus(nodeId, 'running');
+      
+      // Sync "running" status through Yjs for real-time collaboration
+      // This allows other clients to see that the node is executing
+      setNodesState((prev) => {
+        const next = prev.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                payload: {
+                  ...(n.payload ?? {}),
+                  execution: {
+                    status: 'running' as const,
+                    startedAt: Date.now(),
+                  },
+                },
+              }
+            : n,
+        );
+        collaboration.handleCanvasNodesChange(next);
+        return next;
+      });
       try {
         if (node.type === 'sql') {
           // Check if there's a database connection node connected to this SQL node
@@ -510,9 +668,9 @@ function BoardPageContent({ params }: BoardPageProps) {
           setSuccess(nodeId, output);
           const latestEntry = useExecutionStore.getState().entries[nodeId];
 
-          // Сохраняем результаты выполнения в payload узла
-          setNodesState((prev) =>
-            prev.map((n) =>
+          // Сохраняем результаты выполнения в payload узла и синхронизируем через Yjs
+          setNodesState((prev) => {
+            const next = prev.map((n) =>
               n.id === nodeId
                 ? {
                     ...n,
@@ -526,8 +684,13 @@ function BoardPageContent({ params }: BoardPageProps) {
                     },
                   }
                 : n,
-            ),
-          );
+            );
+            // Sync execution results through Yjs for real-time collaboration
+            // CRITICAL: Update nodesStateRef before syncing to Yjs to prevent stale data issues
+            nodesStateRef.current = next;
+            collaboration.handleCanvasNodesChange(next);
+            return next;
+          });
           markDirty();
           return;
         }
@@ -578,9 +741,9 @@ function BoardPageContent({ params }: BoardPageProps) {
             setError(nodeId, errorMessage);
             const latestEntry = useExecutionStore.getState().entries[nodeId];
 
-            // Сохраняем статус ошибки в payload узла
-            setNodesState((prev) =>
-              prev.map((n) =>
+            // Сохраняем статус ошибки в payload узла и синхронизируем через Yjs
+            setNodesState((prev) => {
+              const next = prev.map((n) =>
                 n.id === nodeId
                   ? {
                       ...n,
@@ -594,8 +757,11 @@ function BoardPageContent({ params }: BoardPageProps) {
                       },
                     }
                   : n,
-              ),
-            );
+              );
+              // Sync execution error through Yjs for real-time collaboration
+              collaboration.handleCanvasNodesChange(next);
+              return next;
+            });
             markDirty();
             return;
           }
@@ -613,9 +779,9 @@ function BoardPageContent({ params }: BoardPageProps) {
           setSuccess(nodeId, output);
           const latestEntry = useExecutionStore.getState().entries[nodeId];
 
-          // Сохраняем результаты выполнения в payload узла
-          setNodesState((prev) =>
-            prev.map((n) =>
+          // Сохраняем результаты выполнения в payload узла и синхронизируем через Yjs
+          setNodesState((prev) => {
+            const next = prev.map((n) =>
               n.id === nodeId
                 ? {
                     ...n,
@@ -629,8 +795,11 @@ function BoardPageContent({ params }: BoardPageProps) {
                     },
                   }
                 : n,
-            ),
-          );
+            );
+            // Sync execution results through Yjs for real-time collaboration
+            collaboration.handleCanvasNodesChange(next);
+            return next;
+          });
           markDirty();
           return;
         }
@@ -695,9 +864,9 @@ function BoardPageContent({ params }: BoardPageProps) {
             setSuccess(nodeId, output);
             const latestEntry = useExecutionStore.getState().entries[nodeId];
 
-            // Сохраняем результаты выполнения в payload узла
-            setNodesState((prev) =>
-              prev.map((n) =>
+            // Сохраняем результаты выполнения в payload узла и синхронизируем через Yjs
+            setNodesState((prev) => {
+              const next = prev.map((n) =>
                 n.id === nodeId
                   ? {
                       ...n,
@@ -711,8 +880,11 @@ function BoardPageContent({ params }: BoardPageProps) {
                       },
                     }
                   : n,
-              ),
-            );
+              );
+              // Sync execution results through Yjs for real-time collaboration
+              collaboration.handleCanvasNodesChange(next);
+              return next;
+            });
             markDirty();
             return;
           } else {
@@ -748,9 +920,9 @@ function BoardPageContent({ params }: BoardPageProps) {
         setError(nodeId, errorMessage);
         const latestEntry = useExecutionStore.getState().entries[nodeId];
 
-        // Сохраняем статус ошибки в payload узла
-        setNodesState((prev) =>
-          prev.map((n) =>
+        // Сохраняем статус ошибки в payload узла и синхронизируем через Yjs
+        setNodesState((prev) => {
+          const next = prev.map((n) =>
             n.id === nodeId
               ? {
                   ...n,
@@ -764,8 +936,11 @@ function BoardPageContent({ params }: BoardPageProps) {
                   },
                 }
               : n,
-          ),
-        );
+          );
+          // Sync execution error through Yjs for real-time collaboration
+          collaboration.handleCanvasNodesChange(next);
+          return next;
+        });
         markDirty();
       }
     },
@@ -779,6 +954,7 @@ function BoardPageContent({ params }: BoardPageProps) {
       reverseAdjacency,
       markDirty,
       resetExecutionOutput,
+      collaboration,
     ],
   );
 
@@ -1198,8 +1374,10 @@ function BoardPageContent({ params }: BoardPageProps) {
   const handleCodeChange = useCallback(
     (nodeId: string, code: string) => {
       setCodeStore(nodeId, code);
-      setNodesState((prev) =>
-        prev.map((node) => {
+      
+      // Update local state
+      setNodesState((prev) => {
+        const next = prev.map((node) => {
           if (node.id !== nodeId) return node;
           return {
             ...node,
@@ -1209,11 +1387,18 @@ function BoardPageContent({ params }: BoardPageProps) {
               ...(node.type === 'python' ? { python: code } : {}),
             },
           };
-        }),
-      );
+        });
+
+        // Sync through Yjs for real-time collaboration
+        // This ensures code changes are synchronized between all clients immediately
+        collaboration.handleCanvasNodesChange(next);
+
+        return next;
+      });
+      
       markDirty();
     },
-    [setCodeStore, markDirty],
+    [setCodeStore, markDirty, collaboration],
   );
 
   // Track if changes are coming from Yjs to prevent sync loops
@@ -1290,11 +1475,25 @@ function BoardPageContent({ params }: BoardPageProps) {
       setIsUploadingDataset(true);
       setUploadMessage(null);
       try {
+        const { loadFileIntoDuckDb, getDatasetsKey } = await import('../../../lib/duckdbClient');
         const { tableName, rows } = await loadFileIntoDuckDb(file, {
           format: 'auto',
           boardId,
           persist: true,
         });
+        
+        // Get dataset metadata from localStorage (saved by loadFileIntoDuckDb)
+        const key = getDatasetsKey(boardId);
+        const raw = window.localStorage.getItem(key);
+        if (raw) {
+          const datasets: Array<{ tableName: string; columns: string[]; rows: Array<Array<string | number | null>> }> = JSON.parse(raw);
+          const dataset = datasets.find((d) => d.tableName === tableName);
+          if (dataset) {
+            // Sync dataset metadata through Yjs for real-time collaboration
+            collaboration.datasetsMap.set(tableName, dataset);
+          }
+        }
+        
         setUploadMessage(`Загружено ${file.name} → таблица ${tableName} (${rows} строк).`);
         await refreshTables();
       } catch (uploadError) {
@@ -1307,7 +1506,36 @@ function BoardPageContent({ params }: BoardPageProps) {
         event.target.value = '';
       }
     },
-    [refreshTables],
+    [refreshTables, collaboration, boardId],
+  );
+
+  const handleDatasetDelete = useCallback(
+    async (tableName: string) => {
+      if (!confirm(`Удалить таблицу "${tableName}"? Это действие нельзя отменить.`)) {
+        return;
+      }
+      
+      try {
+        const { deleteTable } = await import('../../../lib/duckdbClient');
+        
+        // Delete table from DuckDB and localStorage
+        await deleteTable(tableName, boardId);
+        
+        // Remove from Yjs map to sync deletion with other users
+        collaboration.datasetsMap.delete(tableName);
+        
+        // Refresh table list
+        await refreshTables();
+        
+        setUploadMessage(`Таблица "${tableName}" удалена.`);
+      } catch (deleteError) {
+        console.error('Failed to delete table', deleteError);
+        setUploadMessage(
+          deleteError instanceof Error ? deleteError.message : 'Не удалось удалить таблицу',
+        );
+      }
+    },
+    [refreshTables, collaboration, boardId],
   );
 
   const handleDatasetButtonClick = useCallback(() => {
@@ -1395,8 +1623,27 @@ function BoardPageContent({ params }: BoardPageProps) {
                 <p className="text-[11px] uppercase tracking-wide text-slate-400">Таблицы DuckDB</p>
                 <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600">
                   {tableNames.map((name) => (
-                    <span key={name} className="rounded-full border border-slate-200 px-3 py-0.5">
+                    <span
+                      key={name}
+                      className="group relative inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-0.5 pr-1.5 hover:border-slate-300"
+                    >
                       {name}
+                      <button
+                        type="button"
+                        onClick={() => handleDatasetDelete(name)}
+                        className="ml-1 flex h-4 w-4 items-center justify-center rounded-full text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
+                        title={`Удалить таблицу "${name}"`}
+                        aria-label={`Удалить таблицу "${name}"`}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          className="h-3 w-3"
+                        >
+                          <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                        </svg>
+                      </button>
                     </span>
                   ))}
                 </div>
@@ -1493,7 +1740,13 @@ function BoardPageContent({ params }: BoardPageProps) {
                     }
                   : undefined,
               }}
-              nodes={yjsNodes}
+              nodes={yjsNodes as Array<{
+                id: string;
+                boardId?: string;
+                type: 'sql' | 'python' | 'table' | 'plot' | 'note' | 'text' | 'shape' | 'image' | 'pen' | 'database';
+                position: { x: number; y: number };
+                payload?: Record<string, unknown>;
+              }>}
               edges={yjsEdges}
               executionEntries={entries}
               onCodeChange={handleCodeChange}

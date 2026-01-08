@@ -291,6 +291,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
             ...entry,
             status: 'error',
             error: message,
+            output: undefined, // Clear previous output when error occurs
             finishedAt: Date.now(),
             hiddenOutputs,
           },

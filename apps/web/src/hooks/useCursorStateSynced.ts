@@ -33,19 +33,56 @@ export function useCursorStateSynced(
   const throttleTimerRef = useRef<number | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
   const observerRafRef = useRef<number | null>(null);
+  const previousClientIdRef = useRef<string | null>(null);
 
   const cursorColor = useMemo(() => stringToColor(clientId), [clientId]);
+
+  // CRITICAL FIX: Remove old cursor entries that belong to this user but have different clientId
+  // This prevents duplicate cursors after page refresh when Yjs creates a new clientId
+  useEffect(() => {
+    const now = Date.now();
+    const staleThreshold = 5000; // 5 seconds
+    
+    for (const [id, cursor] of cursorsMap) {
+      // Remove cursor if:
+      // 1. It has a different clientId AND
+      // 2. It belongs to the same user (same userId or userName) OR it's stale (older than 5 seconds)
+      if (id !== clientId) {
+        const isSameUser = 
+          (userInfo?.userId && cursor.userId === userInfo.userId) ||
+          (userInfo?.userName && cursor.userName === userInfo.userName);
+        const isStale = now - cursor.timestamp > staleThreshold;
+        
+        if (isSameUser || isStale) {
+          cursorsMap.delete(id);
+        }
+      }
+    }
+    
+    // CRITICAL FIX: Remove old cursor entry when clientId changes (e.g., after page refresh)
+    // This prevents duplicate cursors from appearing after page refresh
+    if (previousClientIdRef.current !== null && previousClientIdRef.current !== clientId) {
+      // Delete the old cursor entry from cursorsMap to prevent duplication
+      if (cursorsMap.has(previousClientIdRef.current)) {
+        cursorsMap.delete(previousClientIdRef.current);
+      }
+    }
+    previousClientIdRef.current = clientId;
+  }, [clientId, cursorsMap, userInfo]);
 
   // Flush any cursors that have gone stale.
   const flush = useCallback(() => {
     const now = Date.now();
+    const beforeSize = cursorsMap.size;
+    const deletedIds: string[] = [];
 
     for (const [id, cursor] of cursorsMap) {
       if (now - cursor.timestamp > MAX_IDLE_TIME) {
         cursorsMap.delete(id);
+        deletedIds.push(id);
       }
     }
-  }, [cursorsMap]);
+  }, [cursorsMap, clientId]);
 
   const onMouseMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -138,8 +175,13 @@ export function useCursorStateSynced(
       if (throttleTimerRef.current !== null) {
         window.cancelAnimationFrame(throttleTimerRef.current);
       }
+      // CRITICAL FIX: Remove this client's cursor from cursorsMap when component unmounts
+      // This prevents duplicate cursors after page refresh
+      if (cursorsMap.has(clientId)) {
+        cursorsMap.delete(clientId);
+      }
     };
-  }, []);
+  }, [cursorsMap, clientId]);
 
   useEffect(() => {
     const timer = window.setInterval(flush, MAX_IDLE_TIME);

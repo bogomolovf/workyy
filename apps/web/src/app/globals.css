@@ -12,9 +12,15 @@
   cursor: default !important;
 }
 
-/* Remove grab/grabbing cursors from ReactFlow pane to show only collaborative cursors */
-/* This ensures the hand icon doesn't appear when panning - only collaborative cursors are visible */
-.rf-hand-cursor .react-flow__pane {
+/* CRITICAL FIX for Bug 2: Force hide cursor on all ReactFlow elements to prevent hand icon */
+/* This ensures only collaborative cursors are visible, not the system cursor */
+/* We never want the hand cursor - only collaborative cursors should be visible */
+.rf-hand-cursor .react-flow__node,
+.rf-hand-cursor .react-flow__pane,
+.rf-hand-cursor,
+.rf-select-cursor,
+.rf-hand-cursor *,
+.rf-select-cursor * {
   cursor: none !important;
 }
 
@@ -29,7 +35,31 @@
   cursor: none !important;
 }
 
-/* Restore default cursor for nodes (but pane cursor stays hidden) */
-.react-flow__node {
-  cursor: default;
+/* Hide cursor on all ReactFlow elements when collaborative cursors are active */
+.react-flow__node,
+.react-flow {
+  cursor: none !important;
+}
+
+/* Hide cursor on ReactFlow children, but exclude Controls and MiniMap */
+.react-flow *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(.react-flow__minimap *) {
+  cursor: none !important;
+}
+
+/* Ensure collaborative cursors are above nodes and Controls */
+.react-flow__edge-label-renderer {
+  z-index: 1200 !important;
+}
+
+/* Ensure ReactFlow Controls (zoom buttons) are below collaborative cursors */
+.react-flow__controls {
+  z-index: 1100 !important;
+}
+
+/* Restore standard browser cursor for Controls and MiniMap (like toolbar) */
+.react-flow__controls,
+.react-flow__controls *,
+.react-flow__minimap,
+.react-flow__minimap * {
+  cursor: pointer !important;
 }

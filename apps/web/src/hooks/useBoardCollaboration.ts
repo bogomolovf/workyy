@@ -28,13 +28,14 @@ export function useBoardCollaboration(
   const ydoc = useMemo(() => getBoardYdoc(boardId), [boardId]);
   const provider = useMemo(() => getBoardProvider(boardId), [boardId]);
 
-  // Get Yjs maps for nodes, edges, and cursors
+  // Get Yjs maps for nodes, edges, cursors, and datasets
   // CRITICAL: All clients must use the same map names to share data
   // These maps are automatically synced through Yjs when all clients
   // connect to the same Y.Doc (which is ensured by using the same boardId as docName)
   const nodesMap = useMemo(() => ydoc.getMap('nodes'), [ydoc]);
   const edgesMap = useMemo(() => ydoc.getMap('edges'), [ydoc]);
   const cursorsMap = useMemo(() => ydoc.getMap('cursors'), [ydoc]);
+  const datasetsMap = useMemo(() => ydoc.getMap('datasets'), [ydoc]);
 
   // Debug logging for cursorsMap synchronization
   // CRITICAL: This observer helps verify that cursorsMap changes from other clients are received
@@ -271,6 +272,7 @@ export function useBoardCollaboration(
     handleCanvasEdgesChange,
     // Yjs maps and client ID for cursor tracking (to be used inside ReactFlowProvider)
     cursorsMap,
+    datasetsMap,
     clientId,
     provider,
     ydoc,

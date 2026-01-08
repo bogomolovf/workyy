@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useMemo, type PointerEvent } from 'react';
-import { useReactFlow, type ReactFlowInstance } from 'reactflow';
+import { useReactFlow, type ReactFlowInstance, type NodeChange } from 'reactflow';
 
 import { pointsToPath, pathOptions } from './path';
 import type { PenPoint } from './types';
@@ -9,6 +9,8 @@ import type { PenNodeType } from './PenNode';
 
 type FreehandOverlayProps = {
   onAddPenNode?: (node: PenNodeType) => void;
+  onUpdatePenNode?: (nodeId: string, node: PenNodeType) => void;
+  yjsOnNodesChange?: (changes: NodeChange[]) => void;
 };
 
 function processPoints(
@@ -75,12 +77,13 @@ function processPoints(
   };
 }
 
-export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
+export function FreehandOverlay({ onAddPenNode, onUpdatePenNode, yjsOnNodesChange }: FreehandOverlayProps = {}) {
   const { screenToFlowPosition, getViewport, setNodes } = useReactFlow<PenNodeType>();
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const pointRef = useRef<PenPoint[]>([]);
   const [points, setPoints] = useState<PenPoint[]>([]);
+  const currentPenNodeIdRef = useRef<string | null>(null);
 
   function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
     (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
@@ -88,6 +91,12 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
     const nextPoints = [[e.pageX, e.pageY, e.pressure || 0.5]] satisfies PenPoint[];
     pointRef.current = nextPoints;
     setPoints(nextPoints);
+
+    // Generate node ID for later use (will be synced only on pointerUp)
+    const nodeId = crypto.randomUUID();
+    currentPenNodeIdRef.current = nodeId;
+
+    // No synchronization here - line is visible only to the drawing user until pointerUp
   }
 
   function handlePointerMove(e: PointerEvent) {
@@ -96,7 +105,7 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
     // Используем pageX/pageY как в оригинале
     const nextPoints = [...points, [e.pageX, e.pageY, e.pressure || 0.5]] satisfies PenPoint[];
     pointRef.current = nextPoints;
-    setPoints(nextPoints);
+    setPoints(nextPoints); // Update local preview only - no synchronization until pointerUp
   }
 
   function handlePointerUp(e: PointerEvent) {
@@ -104,40 +113,58 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
 
     // Используем актуальные точки из ref для надежности
     const finalPoints = pointRef.current;
+    const nodeId = currentPenNodeIdRef.current;
 
     // Ignore lines with too few points (accidental clicks)
     if (finalPoints.length < 3) {
       setPoints([]);
       pointRef.current = [];
+      currentPenNodeIdRef.current = null;
       return;
     }
 
+    // Process final points and create the pen node
     const processed = processPoints(finalPoints, screenToFlowPosition);
-    const newNode: PenNodeType = {
-      id: crypto.randomUUID(),
+    const finalNode: PenNodeType = {
+      id: nodeId || crypto.randomUUID(),
       type: 'pen',
       ...processed,
     };
 
-    console.log('Creating pen node:', {
-      id: newNode.id,
-      position: newNode.position,
-      width: newNode.width,
-      height: newNode.height,
-      pointsCount: newNode.data.points.length,
-      initialSize: newNode.data.initialSize,
-      firstPoint: newNode.data.points[0],
-      lastPoint: newNode.data.points[newNode.data.points.length - 1],
+    console.log('Finalizing pen node:', {
+      id: finalNode.id,
+      position: finalNode.position,
+      width: finalNode.width,
+      height: finalNode.height,
+      pointsCount: finalNode.data.points.length,
+      initialSize: finalNode.data.initialSize,
+      firstPoint: finalNode.data.points[0],
+      lastPoint: finalNode.data.points[finalNode.data.points.length - 1],
     });
 
-    // Используем callback если он передан, иначе setNodes
-    if (onAddPenNode) {
-      onAddPenNode(newNode);
-    } else {
-      setNodes((nodes) => [...nodes, newNode]);
+    // NOW sync through Yjs - this is when other users will see the line
+    if (yjsOnNodesChange) {
+      const reactFlowNode = {
+        ...finalNode,
+        style: {
+          zIndex: 10,
+        },
+      };
+      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+      console.log('Pen node finalized and synced through Yjs (now visible to other users):', finalNode.id);
     }
+
+    // Also call onAddPenNode callback if provided
+    if (onAddPenNode) {
+      onAddPenNode(finalNode);
+    } else {
+      setNodes((nodes) => [...nodes, finalNode]);
+    }
+
+    // Clear local state
     setPoints([]);
     pointRef.current = [];
+    currentPenNodeIdRef.current = null;
   }
 
   const viewport = getViewport();
