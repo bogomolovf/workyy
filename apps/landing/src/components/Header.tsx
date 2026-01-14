@@ -4,14 +4,10 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { LanguageToggle } from './LanguageToggle';
 import { useActiveRoute } from '../hooks/useActiveRoute';
 import { useAuth } from '../hooks/useAuth';
-import { PRODUCT_LOGIN_URL, PRODUCT_SIGNUP_URL, PRODUCT_HOME_URL } from '../config/appConfig';
+import { PRODUCT_HOME_URL } from '../config/appConfig';
 
-const primaryNav = [
-  { label: 'Product', path: '/product/canvas' },
-  { label: 'Use Cases', path: '/use-cases' },
-  { label: 'Pricing', path: '/pricing' },
-  { label: 'Resources', path: '/resources/docs' },
-];
+// Навигация удалена - весь контент на главной странице
+const primaryNav: never[] = [];
 
 export const Header = () => {
   const { language } = useLanguage();
@@ -59,7 +55,7 @@ export const Header = () => {
         {skipLabel}
       </a>
       <header
-        className="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-wy-border"
+        className="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-wy-primary/20"
         style={{ width: '100vw', margin: 0, padding: 0, left: 0, right: 0, position: 'sticky' }}
       >
         <div style={{ width: '100%', margin: 0, padding: 0, maxWidth: '100%' }}>
@@ -69,23 +65,11 @@ export const Header = () => {
           >
             {/* Logo - строго слева */}
             <div className="pl-4 sm:pl-6 lg:pl-8 flex-shrink-0">
-              <Link to={getPath('/home')} className="text-2xl font-bold text-wy-primary">
-                Workyy
+              <Link to={getPath('/home')} className="text-2xl font-bold text-wy-primary" style={{ letterSpacing: '-0.05em', textTransform: 'lowercase' }}>
+                workyy
               </Link>
             </div>
 
-            {/* Desktop Navigation - по центру (опционально, можно скрыть если не нужна) */}
-            <nav className="hidden lg:flex items-center absolute left-1/2 -translate-x-1/2 space-x-6">
-              {primaryNav.map((item) => (
-                <Link
-                  key={item.label}
-                  to={getPath(item.path)}
-                  className={desktopLinkClass(item.path)}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
 
             {/* Desktop Actions - строго справа у края */}
             <div className="flex items-center flex-shrink-0 pr-4 sm:pr-6 lg:pr-8">
@@ -114,22 +98,7 @@ export const Header = () => {
                       </button>
                     </div>
                   </>
-                ) : (
-                  <>
-                    <a
-                      href={PRODUCT_LOGIN_URL}
-                      className="text-sm font-medium text-wy-muted hover:text-wy-text transition-colors whitespace-nowrap w-[70px] text-center inline-block"
-                    >
-                      {language === 'en' ? 'Log in' : 'Войти'}
-                    </a>
-                    <a
-                      href={PRODUCT_SIGNUP_URL}
-                      className="px-4 py-2 rounded-lg bg-wy-primary text-white text-sm font-semibold hover:bg-wy-primary/90 transition-colors whitespace-nowrap w-[120px] text-center inline-block"
-                    >
-                      {language === 'en' ? 'Sign up' : 'Регистрация'}
-                    </a>
-                  </>
-                )}
+                ) : null}
               </div>
 
               {/* Mobile Menu Button */}
@@ -173,20 +142,6 @@ export const Header = () => {
                 className="md:hidden fixed top-16 left-0 right-0 bg-white border-t border-wy-border z-50 overflow-y-auto shadow-lg"
               >
                 <div className="px-4 py-6 space-y-1">
-                  {primaryNav.map((item) => (
-                    <Link
-                      key={item.label}
-                      to={getPath(item.path)}
-                      onClick={handleMobileLinkClick}
-                      className={`block px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                        isActive(item.path)
-                          ? 'bg-wy-primary-soft text-wy-primary'
-                          : 'text-wy-muted hover:bg-wy-bg-subtle hover:text-wy-text'
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
                   <div className="pt-4 border-t border-wy-border mt-4">
                     {!authLoading && user ? (
                       <>
@@ -215,24 +170,7 @@ export const Header = () => {
                           {language === 'en' ? 'Log out' : 'Выйти'}
                         </button>
                       </>
-                    ) : (
-                      <>
-                        <a
-                          href={PRODUCT_LOGIN_URL}
-                          onClick={handleMobileLinkClick}
-                          className="block px-4 py-3 rounded-lg text-sm font-medium text-wy-muted hover:bg-wy-bg-subtle hover:text-wy-text transition-colors"
-                        >
-                          {language === 'en' ? 'Log in' : 'Войти'}
-                        </a>
-                        <a
-                          href={PRODUCT_SIGNUP_URL}
-                          onClick={handleMobileLinkClick}
-                          className="block px-4 py-3 rounded-lg text-sm font-semibold bg-wy-primary text-white hover:bg-wy-primary/90 transition-colors mt-2 text-center"
-                        >
-                          {language === 'en' ? 'Sign up' : 'Регистрация'}
-                        </a>
-                      </>
-                    )}
+                    ) : null}
                     <div className="mt-4 px-4">
                       <LanguageToggle />
                     </div>

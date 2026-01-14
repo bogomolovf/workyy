@@ -984,5 +984,6 @@ export const content: Record<Language, Content> = {
 };
 
 export const getContent = (lang: Language): Content => {
-  return content[lang];
+  // Всегда возвращаем русский язык по умолчанию, если язык не найден
+  return content[lang] || content.ru;
 };

@@ -2,7 +2,9 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { SEOHead } from '../components/SEOHead';
 import { AnimatedSection } from '../components/ui/AnimatedSection';
 import { AnimatedCard } from '../components/ui/AnimatedCard';
-import { PRODUCT_SIGNUP_URL, PRODUCT_HOME_URL } from '../config/appConfig';
+import { PRODUCT_HOME_URL } from '../config/appConfig';
+import { BackgroundCursors } from '../components/BackgroundCursors';
+import { CanvasDecorations } from '../components/CanvasDecorations';
 
 const heroContent = {
   en: {
@@ -17,10 +19,10 @@ const heroContent = {
     trust: 'No credit card required',
   },
   ru: {
-    eyebrow: 'Канва для аналитики',
-    headline: 'SQL, Python и визуализации на одном бесконечном полотне',
+    eyebrow: 'Интерактивные доски для работы с данными',
+    headline: 'SQL, python и визуализации на одной доске',
     subheadline:
-      'Создавайте пайплайны данных, визуализации и работайте вместе с командой — всё в одном месте.',
+    'Делайте SQL-выгрузки из баз данных, используйте python для обработки и стройте сложные визуализации с помощью встроенной BI-системы.',
     ctas: {
       primary: 'Попробовать бесплатно',
       secondary: 'Посмотреть демо-доски',
@@ -59,20 +61,20 @@ const valueProps = {
   ],
   ru: [
     {
-      title: 'Визуальная канва',
-      description: 'SQL, Python, графики и заметки на одном бесконечном полотне.',
+      title: 'Доски',
+      description: 'В основе продукта бесконечная доска для рисования со всем необходимым функицоналом .',
     },
     {
-      title: 'SQL + Python',
-      description: 'Запускайте код, импортируйте библиотеки, сохраняйте результаты.',
+      title: 'SQL + Python клетки',
+      description: 'Загружайте данные, пишите код, визуализируйте и делайте выводы на основе данных.',
     },
     {
-      title: 'Переиспользуемые визуализации',
-      description: 'Создавайте графики и дашборды, которые обновляются автоматически.',
+      title: 'Работа вместе',
+      description: 'Используйте доску как единое пространство для работы вместе с командой, ставьте задачи и выполняйте их прямо на доске',
     },
     {
-      title: 'Коллаборация',
-      description: 'Делитесь досками, комментируйте и работайте вместе в реальном времени.',
+      title: 'Визуализации',
+      description: 'Попробуйте нашу встроенную BI-систему, вам очень понравится...',
     },
   ],
 };
@@ -324,7 +326,7 @@ const faqs = {
 };
 
 const HomePage = () => {
-  const { language } = useLanguage();
+  const { language, content } = useLanguage();
   const lang = language as 'en' | 'ru';
 
   const getPath = (path: string) => `/${language}${path}`;
@@ -336,6 +338,11 @@ const HomePage = () => {
   const personasList = personas[lang];
   const pricingPlansList = pricingPlans[lang];
   const faqsList = faqs[lang];
+  
+  // Контент из других страниц
+  const productContent = content.product;
+  const pricingContent = content.pricing;
+  const useCasesContent = content.useCases;
 
   return (
     <>
@@ -344,58 +351,93 @@ const HomePage = () => {
         description="SQL, Python, and visualizations on one infinite canvas. Build data pipelines and collaborate with your team."
         path={getPath('/home')}
       />
-      <div className="marketing-theme bg-white">
-        <main className="landing">
+      <div className="marketing-theme canvas-background" style={{ position: 'relative' }}>
+        <BackgroundCursors />
+        <CanvasDecorations />
+        <main className="landing" style={{ position: 'relative', zIndex: 1 }}>
           {/* Hero Section */}
-          <AnimatedSection className="section hero-section py-20 md:py-28" id="hero">
-            <div className="w-full flex justify-center px-4 sm:px-6 lg:px-8">
-              <div className="text-center max-w-4xl w-full space-y-6">
-                <p className="eyebrow text-wy-muted">{hero.eyebrow}</p>
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-wy-text leading-tight">
+          <AnimatedSection className="section hero-section py-12 md:py-16" id="hero">
+            <div className="w-full flex justify-center px-4 sm:px-4 lg:px-6">
+              <div className="text-center max-w-6xl w-full space-y-4 md:space-y-5">
+                <p className="eyebrow text-wy-primary font-semibold">{hero.eyebrow}</p>
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-wy-primary leading-tight">
                   {hero.headline}
                 </h1>
                 <p className="text-lg md:text-xl text-wy-muted max-w-2xl mx-auto">
                   {hero.subheadline}
                 </p>
-                <div className="flex flex-wrap gap-3 justify-center hero-ctas">
-                  <a className="btn primary" href={PRODUCT_SIGNUP_URL}>
-                    {hero.ctas.primary}
-                  </a>
-                  <a className="btn secondary" href={PRODUCT_HOME_URL}>
-                    {hero.ctas.secondary}
-                  </a>
-                </div>
-                <p className="text-sm text-wy-muted">{hero.trust}</p>
               </div>
             </div>
           </AnimatedSection>
 
           {/* Trusted by */}
           <AnimatedSection
-            className="section social-proof-section py-12 bg-wy-bg-subtle"
+            className="section social-proof-section py-12 md:py-16"
             id="trusted"
           >
-            <div className="section-inner text-center space-y-4">
-              <p className="text-sm text-wy-muted uppercase tracking-wide">
-                Trusted by data-driven teams
-              </p>
-              <div className="logo-row">
-                {socialProofLogos.map((logo) => (
-                  <span key={logo} className="text-wy-muted font-medium">
-                    {logo}
-                  </span>
-                ))}
+            <div className="section-inner">
+              <div className="text-center mb-8 md:mb-10">
+                <p className="text-xs md:text-sm text-wy-muted font-medium uppercase tracking-wider mb-3">
+                  Кто уже внедрил workyy в свой рабочий процесс
+                </p>
+                <h3 className="text-base md:text-lg font-semibold text-wy-text">
+                  Наши клиенты:
+                </h3>
+              </div>
+              <div className="logo-marquee-wrapper">
+                <div className="logo-marquee-container">
+                  <div className="logo-marquee">
+                    {/* Первый набор логотипов */}
+                    {socialProofLogos.map((logo, index) => (
+                      <div key={`first-${index}`} className="logo-item">
+                        <span className="logo-text">{logo}</span>
+                      </div>
+                    ))}
+                    {/* Дублируем для бесшовной анимации */}
+                    {socialProofLogos.map((logo, index) => (
+                      <div key={`second-${index}`} className="logo-item">
+                        <span className="logo-text">{logo}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </AnimatedSection>
+
+          {/* Product Section */}
+          <AnimatedSection className="section product-section py-12 md:py-16" id="product">
+            <div className="section-inner">
+              <div className="section-heading text-center mb-8 md:mb-10">
+                <p className="eyebrow text-wy-primary font-semibold">Продукт</p>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-primary">
+                  Всё необходимое для работы с данными
+                </h2>
+              </div>
+              <div className="cards-grid cards-grid-3">
+                <AnimatedCard delay={0} className="card">
+                  <h3 className="text-xl font-semibold text-wy-text mb-3">{productContent.canvas.title}</h3>
+                  <p className="text-wy-muted mb-4">{productContent.canvas.description}</p>
+                </AnimatedCard>
+                <AnimatedCard delay={60} className="card">
+                  <h3 className="text-xl font-semibold text-wy-text mb-3">{productContent.collaboration.title}</h3>
+                  <p className="text-wy-muted mb-4">{productContent.collaboration.description}</p>
+                </AnimatedCard>
+                <AnimatedCard delay={120} className="card">
+                  <h3 className="text-xl font-semibold text-wy-text mb-3">{productContent.performance.title}</h3>
+                  <p className="text-wy-muted mb-4">{productContent.performance.description}</p>
+                </AnimatedCard>
               </div>
             </div>
           </AnimatedSection>
 
           {/* Benefits */}
-          <AnimatedSection className="section value-grid py-20 md:py-28" id="benefits">
+          <AnimatedSection className="section value-grid py-12 md:py-16" id="benefits">
             <div className="section-inner">
-              <div className="section-heading text-center mb-12">
-                <p className="eyebrow text-wy-muted">Why Workyy</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">
-                  Everything you need in one place
+              <div className="section-heading text-center mb-8 md:mb-10">
+                <p className="eyebrow text-wy-primary font-semibold">Почему Workyy</p>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-primary">
+                  Всё что нужно. В браузере. Без установки.
                 </h2>
               </div>
               <div className="cards-grid cards-grid-4">
@@ -409,65 +451,15 @@ const HomePage = () => {
             </div>
           </AnimatedSection>
 
-          {/* How it works */}
-          <AnimatedSection
-            className="section how-it-works py-20 md:py-28 bg-wy-bg-subtle"
-            id="how-it-works"
-          >
-            <div className="section-inner">
-              <div className="section-heading text-center mb-12">
-                <p className="eyebrow text-wy-muted">How it works</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">
-                  Get started in four steps
-                </h2>
-              </div>
-              <div className="cards-grid cards-grid-4">
-                {howStepsList.map((step, index) => (
-                  <AnimatedCard key={step.title} delay={index * 80} className="card text-center">
-                    <span className="text-4xl mb-4 block" aria-hidden>
-                      {step.icon}
-                    </span>
-                    <h3 className="text-xl font-semibold text-wy-text mb-2">{step.title}</h3>
-                    <p className="text-wy-muted">{step.description}</p>
-                  </AnimatedCard>
-                ))}
-              </div>
-            </div>
-          </AnimatedSection>
-
-          {/* Features */}
-          <AnimatedSection className="section feature-showcase py-20 md:py-28" id="features">
-            <div className="section-inner">
-              <div className="section-heading text-center mb-12">
-                <p className="eyebrow text-wy-muted">Features</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">
-                  Powerful tools for data teams
-                </h2>
-              </div>
-              <div className="cards-grid cards-grid-2">
-                {featureGroupsList.map((group, index) => (
-                  <AnimatedCard key={group.title} delay={index * 60} className="card feature">
-                    <h3 className="text-xl font-semibold text-wy-text mb-4">{group.title}</h3>
-                    <ul className="space-y-2 text-sm text-wy-muted list-disc pl-5">
-                      {group.bullets.map((bullet) => (
-                        <li key={bullet}>{bullet}</li>
-                      ))}
-                    </ul>
-                  </AnimatedCard>
-                ))}
-              </div>
-            </div>
-          </AnimatedSection>
-
           {/* Use Cases / Personas */}
           <AnimatedSection
-            className="section personas py-20 md:py-28 bg-wy-bg-subtle"
+            className="section personas py-12 md:py-16"
             id="personas"
           >
             <div className="section-inner">
-              <div className="section-heading text-center mb-12">
-                <p className="eyebrow text-wy-muted">Built for</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">Teams of all sizes</h2>
+              <div className="section-heading text-center mb-8 md:mb-10">
+                <p className="eyebrow text-wy-primary font-semibold">Создано для</p>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-primary">Команд любого размера</h2>
               </div>
               <div className="personas-grid">
                 {personasList.map((persona, index) => (
@@ -480,47 +472,60 @@ const HomePage = () => {
             </div>
           </AnimatedSection>
 
-          {/* Pricing */}
-          <AnimatedSection className="section pricing-teaser py-20 md:py-28" id="pricing">
+          {/* Use Cases Section */}
+          <AnimatedSection className="section use-cases-section py-12 md:py-16" id="use-cases">
             <div className="section-inner">
-              <div className="section-heading text-center mb-12">
-                <p className="eyebrow text-wy-muted">Pricing</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">
-                  Plans that scale with your team
+              <div className="section-heading text-center mb-8 md:mb-10">
+                <p className="eyebrow text-wy-primary font-semibold">Варианты использования</p>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-primary">
+                  Решения для разных задач
                 </h2>
               </div>
-              <div className="cards-grid pricing-grid">
-                {pricingPlansList.map((plan, index) => (
-                  <AnimatedCard key={plan.name} delay={index * 70} className="card space-y-4">
+              <div className="cards-grid cards-grid-3">
+                {Object.entries(useCasesContent).map(([key, useCase], index) => (
+                  <AnimatedCard key={key} delay={index * 60} className="card">
+                    <h3 className="text-xl font-semibold text-wy-text mb-3">{useCase.title}</h3>
+                    <p className="text-wy-muted">{useCase.description}</p>
+                  </AnimatedCard>
+                ))}
+              </div>
+            </div>
+          </AnimatedSection>
+
+          {/* Pricing */}
+          <AnimatedSection className="section pricing-teaser py-12 md:py-16" id="pricing">
+            <div className="section-inner">
+              <div className="section-heading text-center mb-8 md:mb-10">
+                <p className="eyebrow text-wy-primary font-semibold">Цены</p>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-primary">
+                  {pricingContent.title}
+                </h2>
+                <p className="text-wy-muted mt-4 max-w-2xl mx-auto">{pricingContent.description}</p>
+              </div>
+              <div className="pricing-grid-container">
+                {pricingContent.plans.map((plan, index) => (
+                  <AnimatedCard key={plan.name} delay={index * 70} className={`card space-y-4 ${plan.highlight ? 'ring-2 ring-wy-primary' : ''}`}>
                     <div>
-                      <p className="text-sm text-wy-muted mb-1">{plan.audience}</p>
-                      <h3 className="text-2xl font-bold text-wy-text">{plan.name}</h3>
+                      <h3 className="text-2xl font-bold text-wy-text mb-2">{plan.name}</h3>
+                      <p className="text-lg font-semibold text-wy-primary mb-4">{plan.price}</p>
                     </div>
                     <ul className="list-disc pl-5 text-sm text-wy-muted space-y-2">
-                      {plan.bullets.map((bullet) => (
-                        <li key={bullet}>{bullet}</li>
+                      {plan.features.map((feature, idx) => (
+                        <li key={idx}>{feature}</li>
                       ))}
                     </ul>
                   </AnimatedCard>
                 ))}
               </div>
-              <div className="flex flex-wrap gap-3 justify-center mt-8">
-                <a className="btn primary" href={getPath('/pricing')}>
-                  {lang === 'en' ? 'See detailed pricing' : 'Подробные цены'}
-                </a>
-                <a className="btn secondary" href={getPath('/pricing')}>
-                  {lang === 'en' ? 'Talk to sales' : 'Связаться с продажами'}
-                </a>
-              </div>
             </div>
           </AnimatedSection>
 
           {/* FAQ */}
-          <AnimatedSection className="section faq py-20 md:py-28 bg-wy-bg-subtle" id="faq">
+          <AnimatedSection className="section faq py-12 md:py-16" id="faq">
             <div className="section-inner">
-              <div className="section-heading text-center mb-12">
-                <p className="eyebrow text-wy-muted">FAQ</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-text">Common questions</h2>
+              <div className="section-heading text-center mb-8 md:mb-10">
+                <p className="eyebrow text-wy-primary font-semibold">Часто задаваемые вопросы</p>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-primary">Частые вопросы</h2>
               </div>
               <div className="faq-list max-w-3xl mx-auto">
                 {faqsList.map((faq, index) => (
@@ -533,27 +538,6 @@ const HomePage = () => {
             </div>
           </AnimatedSection>
 
-          {/* Final CTA */}
-          <AnimatedSection className="section py-20 md:py-28" id="cta">
-            <div className="section-inner">
-              <div className="text-center max-w-2xl mx-auto space-y-6 bg-wy-primary rounded-2xl p-12 text-white">
-                <h2 className="text-3xl md:text-4xl font-bold">
-                  {lang === 'en' ? 'Ready to get started?' : 'Готовы начать?'}
-                </h2>
-                <p className="text-lg opacity-90">
-                  {lang === 'en'
-                    ? 'Start building your first board today. No credit card required.'
-                    : 'Начните создавать свою первую доску сегодня. Без карты.'}
-                </p>
-                <a
-                  className="inline-flex px-6 py-3 rounded-lg bg-white text-wy-primary font-semibold hover:bg-wy-bg-subtle transition-colors"
-                  href={getPath('/pricing')}
-                >
-                  {lang === 'en' ? 'Start free trial' : 'Начать бесплатно'}
-                </a>
-              </div>
-            </div>
-          </AnimatedSection>
         </main>
       </div>
     </>

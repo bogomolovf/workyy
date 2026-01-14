@@ -90,6 +90,7 @@ body {
   width: 100%;
 }
 
+
 .surface-panel {
   background-color: var(--color-bg-surface) !important;
   border-color: var(--color-border) !important;
@@ -306,21 +307,42 @@ section[id] {
 
 .section {
   width: 100%;
+  background-color: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+.canvas-background {
+  background-color: white;
+  background-image: radial-gradient(circle, #e2e8f0 1.5px, transparent 1.5px);
+  background-size: 12px 12px;
+  background-position: 0 0;
+  min-height: 100vh;
+  position: relative;
 }
 
 .section-inner {
   width: 100%;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 1.5rem;
+  padding: 0 1rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  background-color: transparent;
+  position: relative;
+  z-index: 2;
 }
 
 @media (min-width: 768px) {
   .section-inner {
     gap: 2rem;
+    padding: 0 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .section-inner {
     padding: 0 2rem;
   }
 }
@@ -342,8 +364,7 @@ section[id] {
 .hero-section .section-inner {
   border-radius: var(--radius-card);
   padding: 3rem 2.5rem;
-  background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
+  background-color: transparent;
 }
 
 .eyebrow {
@@ -379,7 +400,110 @@ section[id] {
   margin: 1.5rem 0;
 }
 
-/* Social Proof */
+/* Social Proof - Стильный минималистичный дизайн */
+.social-proof-section {
+  position: relative;
+}
+
+.logo-marquee-wrapper {
+  position: relative;
+  padding: 1.5rem 0;
+  border-left: none;
+  outline: none;
+}
+
+.logo-marquee-container {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  mask-image: none;
+  -webkit-mask-image: none;
+  border-left: none;
+  outline: none;
+}
+
+.logo-marquee {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  animation: marquee 35s linear infinite;
+  width: fit-content;
+}
+
+.logo-item {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 2.5rem;
+  position: relative;
+}
+
+.logo-item::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  opacity: 0.5;
+}
+
+/* Убираем разделитель у последнего элемента в каждом наборе */
+.logo-item:nth-child(6)::after,
+.logo-item:nth-child(12)::after {
+  display: none;
+}
+
+.logo-text {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-accent-primary);
+  opacity: 0.8;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.logo-item:hover .logo-text {
+  opacity: 1;
+  color: var(--color-accent-primary);
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translate(-50%, -50%) translateY(0px);
+  }
+  50% {
+    transform: translate(-50%, -50%) translateY(-8px);
+  }
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 768px) {
+  .logo-item {
+    padding: 0 2rem;
+  }
+  
+  .logo-text {
+    font-size: 0.9rem;
+  }
+  
+  .logo-marquee {
+    animation-duration: 25s;
+  }
+}
+
 .social-proof-section .logo-row {
   display: flex;
   flex-wrap: wrap;
@@ -416,8 +540,23 @@ section[id] {
   }
 }
 
-.pricing-grid {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+.pricing-grid-container {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+@media (max-width: 1024px) {
+  .pricing-grid-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .pricing-grid-container {
+    grid-template-columns: 1fr;
+  }
 }
 
 .faq-list {
@@ -477,8 +616,10 @@ section[id] {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   padding: 1.5rem;
-  background-color: var(--color-bg-surface);
+  background-color: white;
   color: var(--color-text-primary);
+  position: relative;
+  z-index: 2;
   box-shadow: var(--shadow-soft);
   min-height: 100%;
   transition:
@@ -567,11 +708,11 @@ section[id] {
 
 /* Pricing */
 .pricing-teaser .section-inner {
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   padding: 2.5rem;
-  background-color: var(--color-bg-surface);
+  background-color: transparent;
 }
+
 
 /* Footer */
 .footer-section .section-inner {
