@@ -4,10 +4,13 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowRight,
+  ArrowLeft,
+  ArrowClockwise,
   ChartBar,
   Cursor,
   Cylinder,
   Database,
+  Eraser,
   NotePencil,
   PencilSimple,
   Play,
@@ -22,7 +25,7 @@ import type { NodeStatus } from '../state/executionStore';
 import { ShapePalette } from './ShapePalette';
 import type { ShapeType } from './flowNodes/ShapeNode';
 
-export type CanvasTool = 'select' | 'note' | 'pen' | 'text' | 'shape';
+export type CanvasTool = 'select' | 'note' | 'pen' | 'text' | 'shape' | 'eraser';
 
 type BoardCommandBarProps = {
   currentTool: CanvasTool;
@@ -41,6 +44,10 @@ type BoardCommandBarProps = {
   onAddPlotNode?: () => void;
   onDeleteSelection?: () => void;
   hasSelection?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
   portalRoot?: HTMLElement | null;
 };
 
@@ -96,6 +103,10 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   onAddPlotNode,
   onDeleteSelection,
   hasSelection,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
   portalRoot,
 }: BoardCommandBarProps) {
   const [root, setRoot] = useState<HTMLElement | null>(null);
@@ -226,6 +237,22 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               </div>
             );
           })}
+          {/* Eraser tool */}
+          <button
+            type="button"
+            className={`${baseButtonClass} ${currentTool === 'eraser' ? activeButtonClass : ''}`}
+            onClick={() => {
+              if (currentTool === 'eraser') {
+                onChangeTool('select');
+              } else {
+                onChangeTool('eraser');
+              }
+              setIsShapePaletteOpen(false);
+            }}
+            title="Eraser (E)"
+          >
+            <Eraser size={18} weight={currentTool === 'eraser' ? 'fill' : 'regular'} />
+          </button>
         </div>
         <div className="h-6 w-px bg-slate-200" />
         <div className="flex items-center gap-1.5">
@@ -333,6 +360,42 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                   <ArrowRight size={18} weight="regular" />
                 </button>
               )}
+            </div>
+          </>
+        )}
+        {/* Undo/Redo buttons - справа, рядом с Controls */}
+        {(onUndo || onRedo) && (
+          <>
+            <div className="h-6 w-px bg-slate-200" />
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  console.log('🔘 Undo button clicked, canUndo:', canUndo);
+                  if (onUndo && canUndo) {
+                    onUndo();
+                  }
+                }}
+                disabled={!canUndo}
+                className={`${baseButtonClass} ${!canUndo ? disabledButtonClass : ''}`}
+                title="Undo (Ctrl+Z)"
+              >
+                <ArrowLeft size={18} weight="regular" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  console.log('🔘 Redo button clicked, canRedo:', canRedo);
+                  if (onRedo && canRedo) {
+                    onRedo();
+                  }
+                }}
+                disabled={!canRedo}
+                className={`${baseButtonClass} ${!canRedo ? disabledButtonClass : ''}`}
+                title="Redo (Ctrl+Shift+Z)"
+              >
+                <ArrowClockwise size={18} weight="regular" />
+              </button>
             </div>
           </>
         )}

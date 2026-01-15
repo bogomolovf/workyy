@@ -1,22 +1,30 @@
 'use client';
 
-import { useRef, useState, useMemo, type PointerEvent } from 'react';
+import { useRef, useState, useMemo, useCallback, type PointerEvent } from 'react';
 import { useReactFlow, type ReactFlowInstance } from 'reactflow';
 
-import { pointsToPath, pathOptions } from './path';
+import { pointsToPath, shouldAddPoint, simplifyPoints } from './path';
 import type { PenPoint } from './types';
 import type { PenNodeType } from './PenNode';
+import { usePenSettingsStore } from '../../state/penSettingsStore';
 
 type FreehandOverlayProps = {
   onAddPenNode?: (node: PenNodeType) => void;
 };
 
+/**
+ * Process raw input points to flow coordinates
+ * Converts page coordinates to ReactFlow canvas coordinates
+ */
 function processPoints(
   points: PenPoint[],
   screenToFlowPosition: ReactFlowInstance['screenToFlowPosition'],
+  strokeWidth: number,
 ) {
-  // points в page coordinates (pageX/pageY), конвертируем в flow coordinates
-  // screenToFlowPosition ожидает clientX/clientY (координаты относительно viewport)
+  if (points.length === 0) {
+    return null;
+  }
+
   let x1 = Infinity;
   let y1 = Infinity;
   let x2 = -Infinity;
@@ -25,11 +33,11 @@ function processPoints(
   const flowPoints: PenPoint[] = [];
 
   for (const point of points) {
-    // Конвертируем pageX/pageY в clientX/clientY
+    // Convert pageX/pageY to clientX/clientY
     const clientX = point[0] - window.scrollX;
     const clientY = point[1] - window.scrollY;
 
-    // Конвертируем client coordinates в flow coordinates
+    // Convert to flow coordinates
     const { x, y } = screenToFlowPosition({ x: clientX, y: clientY });
     x1 = Math.min(x1, x);
     y1 = Math.min(y1, y);
@@ -39,121 +47,189 @@ function processPoints(
     flowPoints.push([x, y, point[2]]);
   }
 
-  // We correct for the thickness of the line
-  const thickness = pathOptions.size * 0.5;
+  // Add padding for stroke thickness
+  const thickness = strokeWidth * 0.5;
   x1 -= thickness;
   y1 -= thickness;
   x2 += thickness;
   y2 += thickness;
 
+  // Normalize points relative to bounding box origin
   for (const flowPoint of flowPoints) {
     flowPoint[0] -= x1;
     flowPoint[1] -= y1;
   }
+
   const width = x2 - x1;
   const height = y2 - y1;
 
-  // Убеждаемся, что размеры не слишком маленькие
+  // Ensure minimum size
   const minSize = 10;
   const finalWidth = Math.max(width, minSize);
   const finalHeight = Math.max(height, minSize);
-
-  console.log('processPoints result:', {
-    width,
-    height,
-    finalWidth,
-    finalHeight,
-    position: { x: x1, y: y1 },
-    pointsCount: flowPoints.length,
-  });
 
   return {
     position: { x: x1, y: y1 },
     width: finalWidth,
     height: finalHeight,
-    data: { points: flowPoints, initialSize: { width: finalWidth, height: finalHeight } },
+    data: {
+      points: flowPoints,
+      initialSize: { width: finalWidth, height: finalHeight },
+    },
   };
 }
 
 export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
   const { screenToFlowPosition, getViewport, setNodes } = useReactFlow<PenNodeType>();
   const overlayRef = useRef<HTMLDivElement>(null);
+  const penSettings = usePenSettingsStore();
 
   const pointRef = useRef<PenPoint[]>([]);
   const [points, setPoints] = useState<PenPoint[]>([]);
+  const isDrawingRef = useRef(false);
 
-  function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
+  const handlePointerDown = useCallback((e: PointerEvent<HTMLDivElement>) => {
+    // Prevent default to avoid text selection and other browser behaviors
+    e.preventDefault();
+    e.stopPropagation();
+
     (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
-    // Используем pageX/pageY как в оригинале
-    const nextPoints = [[e.pageX, e.pageY, e.pressure || 0.5]] satisfies PenPoint[];
+    isDrawingRef.current = true;
+
+    // Use pageX/pageY for consistent coordinates
+    const pressure = e.pressure > 0 ? e.pressure : 0.5;
+    const nextPoints: PenPoint[] = [[e.pageX, e.pageY, pressure]];
+
     pointRef.current = nextPoints;
     setPoints(nextPoints);
-  }
+  }, []);
 
-  function handlePointerMove(e: PointerEvent) {
-    if (e.buttons !== 1) return;
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    // Only process if we're drawing and left button is pressed
+    if (!isDrawingRef.current || e.buttons !== 1) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
     const points = pointRef.current;
-    // Используем pageX/pageY как в оригинале
-    const nextPoints = [...points, [e.pageX, e.pageY, e.pressure || 0.5]] satisfies PenPoint[];
-    pointRef.current = nextPoints;
-    setPoints(nextPoints);
-  }
+    const pressure = e.pressure > 0 ? e.pressure : 0.5;
+    const newPoint: PenPoint = [e.pageX, e.pageY, pressure];
 
-  function handlePointerUp(e: PointerEvent) {
-    (e.target as HTMLDivElement).releasePointerCapture(e.pointerId);
-
-    // Используем актуальные точки из ref для надежности
-    const finalPoints = pointRef.current;
-
-    // Ignore lines with too few points (accidental clicks)
-    if (finalPoints.length < 3) {
-      setPoints([]);
-      pointRef.current = [];
+    // Skip duplicate points (Excalidraw optimization)
+    if (!shouldAddPoint(points, newPoint, 1)) {
       return;
     }
 
-    const processed = processPoints(finalPoints, screenToFlowPosition);
-    const newNode: PenNodeType = {
-      id: crypto.randomUUID(),
-      type: 'pen',
-      ...processed,
-    };
+    const nextPoints = [...points, newPoint];
+    pointRef.current = nextPoints;
+    setPoints(nextPoints);
+  }, []);
 
-    console.log('Creating pen node:', {
-      id: newNode.id,
-      position: newNode.position,
-      width: newNode.width,
-      height: newNode.height,
-      pointsCount: newNode.data.points.length,
-      initialSize: newNode.data.initialSize,
-      firstPoint: newNode.data.points[0],
-      lastPoint: newNode.data.points[newNode.data.points.length - 1],
-    });
+  const handlePointerUp = useCallback(
+    (e: PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    // Используем callback если он передан, иначе setNodes
-    if (onAddPenNode) {
-      onAddPenNode(newNode);
-    } else {
-      setNodes((nodes) => [...nodes, newNode]);
-    }
+      (e.target as HTMLDivElement).releasePointerCapture(e.pointerId);
+      isDrawingRef.current = false;
+
+      const finalPoints = pointRef.current;
+
+      // Ignore lines with too few points (accidental clicks)
+      if (finalPoints.length < 3) {
+        setPoints([]);
+        pointRef.current = [];
+        return;
+      }
+
+      // Simplify points to reduce complexity
+      const simplifiedPoints = simplifyPoints(finalPoints, 1);
+
+      // Get current settings at the moment of node creation
+      const storeState = usePenSettingsStore.getState();
+      const currentSettings = {
+        color: storeState.color,
+        strokeWidth: storeState.strokeWidth,
+        opacity: storeState.opacity,
+        smoothing: storeState.smoothing ?? 0.5,
+        thinning: storeState.thinning ?? 0.6,
+      };
+
+      const processed = processPoints(
+        simplifiedPoints,
+        screenToFlowPosition,
+        currentSettings.strokeWidth,
+      );
+
+      if (!processed) {
+        setPoints([]);
+        pointRef.current = [];
+        return;
+      }
+
+      const newNode: PenNodeType = {
+        id: crypto.randomUUID(),
+        type: 'pen',
+        ...processed,
+        data: {
+          ...processed.data,
+          color: currentSettings.color,
+          strokeWidth: currentSettings.strokeWidth,
+          opacity: currentSettings.opacity,
+          smoothing: currentSettings.smoothing,
+          thinning: currentSettings.thinning,
+        },
+      };
+
+      // Use callback if provided, otherwise setNodes
+      if (onAddPenNode) {
+        onAddPenNode(newNode);
+      } else {
+        setNodes((nodes) => [...nodes, newNode]);
+      }
+
+      setPoints([]);
+      pointRef.current = [];
+    },
+    [screenToFlowPosition, setNodes, onAddPenNode],
+  );
+
+  const handlePointerCancel = useCallback((e: PointerEvent) => {
+    isDrawingRef.current = false;
     setPoints([]);
     pointRef.current = [];
-  }
+  }, []);
 
   const viewport = getViewport();
 
-  // Конвертируем points для preview: pageX/pageY -> координаты относительно overlay
+  // Convert points for preview: pageX/pageY -> coordinates relative to overlay
   const previewPoints = useMemo(() => {
     if (!points.length || !overlayRef.current) return [];
+
     const rect = overlayRef.current.getBoundingClientRect();
     return points.map((p) => {
-      // Конвертируем pageX/pageY в координаты относительно overlay
-      // pageX = clientX + scrollX, но нам нужны координаты относительно overlay
       const clientX = p[0] - window.scrollX;
       const clientY = p[1] - window.scrollY;
       return [clientX - rect.left, clientY - rect.top, p[2]] as PenPoint;
     });
   }, [points]);
+
+  // Memoize path data for rendering optimization
+  const previewPathData = useMemo(() => {
+    if (!previewPoints.length) return '';
+
+    return pointsToPath(previewPoints, viewport.zoom, {
+      size: penSettings.strokeWidth,
+      smoothing: penSettings.smoothing,
+      thinning: penSettings.thinning,
+    });
+  }, [
+    previewPoints,
+    viewport.zoom,
+    penSettings.strokeWidth,
+    penSettings.smoothing,
+    penSettings.thinning,
+  ]);
 
   return (
     <div
@@ -162,10 +238,22 @@ export function FreehandOverlay({ onAddPenNode }: FreehandOverlayProps = {}) {
       onPointerDown={handlePointerDown}
       onPointerMove={points.length > 0 ? handlePointerMove : undefined}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      style={{
+        touchAction: 'none', // Prevent touch scrolling while drawing
+      }}
     >
       <svg>
-        {previewPoints.length > 0 && (
-          <path d={pointsToPath(previewPoints, viewport.zoom)} fill="#ef4444" />
+        {previewPathData && (
+          <path
+            d={previewPathData}
+            fill={penSettings.color}
+            opacity={penSettings.opacity}
+            style={{
+              fill: penSettings.color,
+              opacity: penSettings.opacity,
+            }}
+          />
         )}
       </svg>
     </div>

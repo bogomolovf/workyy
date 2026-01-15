@@ -48,6 +48,9 @@ import { BoardInspector } from './BoardInspector';
 import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
 import { FreehandOverlay } from './pen/FreehandOverlay';
 import { PenNode } from './pen/PenNode';
+import { PenToolbar } from './pen/PenToolbar';
+import { EraserOverlay } from './pen/EraserOverlay';
+import { useCanvasHistoryStore } from '../state/canvasHistoryStore';
 import { TextNode } from './TextNode';
 import { DatabaseNode } from './flowNodes/DatabaseNode';
 import { PlotNode } from './flowNodes/PlotNode';
@@ -724,9 +727,47 @@ function InnerBoardCanvas({
   const textNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const shapeNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
+  // Undo/Redo с новым стором
+  const { saveSnapshot, undo, redo, canUndo, canRedo } = useCanvasHistoryStore();
+  const isUndoRedoInProgressRef = useRef(false);
+  const historyInitializedRef = useRef(false);
+  // Ref для setFlowNodes - будет инициализирован позже, используется в handleUndo/handleRedo
+  const setFlowNodesRef = useRef<React.Dispatch<React.SetStateAction<Node[]>> | null>(null);
+
   useEffect(() => {
+    // Не обновляем localNodes если идет undo/redo операция
+    if (isUndoRedoInProgressRef.current) {
+      return;
+    }
     setLocalNodes(nodes);
   }, [nodes]);
+
+  // Инициализируем историю один раз при загрузке данных
+  useEffect(() => {
+    // Инициализируем историю при первом рендере с данными
+    if (!historyInitializedRef.current) {
+      // Используем localNodes которые уже синхронизированы с props
+      const currentNodes = localNodes;
+      const currentEdges = localEdges;
+
+      console.log('📝 Initializing history with', currentNodes.length, 'nodes');
+      saveSnapshot(
+        currentNodes.map((n) => ({
+          id: n.id,
+          type: n.type,
+          position: (n as any).position ?? { x: 0, y: 0 },
+          payload: n.payload,
+        })),
+        currentEdges.map((e) => ({
+          id: e.id,
+          sourceId: e.sourceId,
+          targetId: e.targetId,
+          metadata: e.metadata,
+        })),
+      );
+      historyInitializedRef.current = true;
+    }
+  }, [localNodes, localEdges, saveSnapshot]);
 
   useEffect(() => {
     localNodesRef.current = localNodes;
@@ -799,18 +840,25 @@ function InnerBoardCanvas({
       }));
   }, []);
   const emitNodesChange = useCallback(
-    (next: BoardCanvasProps['nodes']) => {
+    (next: BoardCanvasProps['nodes'], shouldSaveToHistory = false) => {
       if (!onNodesChange) return;
       const sanitized = sanitizeExternalNodes(next);
       const signature = JSON.stringify(sanitized);
       if (signature === lastEmittedRef.current) return;
       lastEmittedRef.current = signature;
+
       queueMicrotask(() => {
         onNodesChange(sanitized);
       });
     },
     [onNodesChange, sanitizeExternalNodes],
   );
+
+  // Ref для edges чтобы иметь актуальное значение в callback
+  const localEdgesRef = useRef(localEdges);
+  useEffect(() => {
+    localEdgesRef.current = localEdges;
+  }, [localEdges]);
   const lastEdgesEmittedRef = useRef<string>('');
   const emitEdgesChange = useCallback(
     (next: BoardCanvasProps['edges']) => {
@@ -832,6 +880,7 @@ function InnerBoardCanvas({
   const [selectedShape, setSelectedShape] = useState<ShapeType | null>('rectangle');
   const isStickyMode = tool === 'note';
   const isPenMode = tool === 'pen';
+  const isEraserMode = tool === 'eraser';
   const isTextMode = tool === 'text';
   const isShapeMode = tool === 'shape';
 
@@ -872,6 +921,172 @@ function InnerBoardCanvas({
     onRunDownstream(selectedDataNodeId);
   }, [selectedDataNodeId, onRunDownstream]);
 
+  // Сохранение в историю - принимает данные напрямую
+  const saveToHistoryWithData = useCallback(
+    (nodesToSave: typeof localNodes, edgesToSave: typeof localEdges) => {
+      if (isUndoRedoInProgressRef.current) return;
+
+      console.log('📸 Saving to history:', nodesToSave.length, 'nodes');
+
+      saveSnapshot(
+        nodesToSave.map((n) => ({
+          id: n.id,
+          type: n.type,
+          position: (n as any).position ?? { x: 0, y: 0 },
+          width: (n as any).width,
+          height: (n as any).height,
+          payload: n.payload,
+          data: (n as any).data,
+        })),
+        edgesToSave.map((e) => ({
+          id: e.id,
+          sourceId: e.sourceId,
+          targetId: e.targetId,
+          metadata: e.metadata,
+        })),
+      );
+    },
+    [saveSnapshot],
+  );
+
+  // Undo handler
+  const handleUndo = useCallback(() => {
+    console.log('🔄 Undo triggered');
+
+    const snapshot = undo();
+    if (!snapshot) {
+      console.log('❌ Cannot undo: no history');
+      return;
+    }
+
+    console.log('✅ Undo:', snapshot.nodes.length, 'nodes');
+    isUndoRedoInProgressRef.current = true;
+
+    // Конвертируем snapshot в формат localNodes
+    const restoredNodes = snapshot.nodes.map((n) => ({
+      id: n.id,
+      type: n.type as CanvasNodeType,
+      position: n.position,
+      payload: n.payload ?? n.data,
+    }));
+
+    const restoredEdges = snapshot.edges.map((e) => ({
+      id: e.id,
+      sourceId: e.sourceId,
+      targetId: e.targetId,
+      metadata: e.metadata ?? {},
+    }));
+
+    // Очищаем flowNodes для pen узлов чтобы они пересоздались
+    setFlowNodesRef.current?.((prev) => {
+      // Получаем ID узлов из snapshot
+      const snapshotNodeIds = new Set(restoredNodes.map((n) => n.id));
+      // Удаляем все pen узлы которых нет в snapshot
+      return prev.filter((n) => {
+        if (n.type === 'pen') {
+          return snapshotNodeIds.has(n.id);
+        }
+        return true;
+      });
+    });
+
+    setLocalNodes(restoredNodes);
+    setLocalEdges(restoredEdges);
+
+    // Уведомляем родителя
+    if (onNodesChange) {
+      onNodesChange(restoredNodes);
+    }
+    if (onEdgesChange) {
+      onEdgesChange(restoredEdges);
+    }
+
+    setTimeout(() => {
+      isUndoRedoInProgressRef.current = false;
+    }, 100);
+  }, [undo, onNodesChange, onEdgesChange]);
+
+  // Redo handler
+  const handleRedo = useCallback(() => {
+    console.log('🔄 Redo triggered');
+
+    const snapshot = redo();
+    if (!snapshot) {
+      console.log('❌ Cannot redo: no history');
+      return;
+    }
+
+    console.log('✅ Redo:', snapshot.nodes.length, 'nodes');
+    isUndoRedoInProgressRef.current = true;
+
+    // Конвертируем snapshot в формат localNodes
+    const restoredNodes = snapshot.nodes.map((n) => ({
+      id: n.id,
+      type: n.type as CanvasNodeType,
+      position: n.position,
+      payload: n.payload ?? n.data,
+    }));
+
+    const restoredEdges = snapshot.edges.map((e) => ({
+      id: e.id,
+      sourceId: e.sourceId,
+      targetId: e.targetId,
+      metadata: e.metadata ?? {},
+    }));
+
+    // Очищаем flowNodes для pen узлов чтобы они пересоздались
+    setFlowNodesRef.current?.((prev) => {
+      const snapshotNodeIds = new Set(restoredNodes.map((n) => n.id));
+      return prev.filter((n) => {
+        if (n.type === 'pen') {
+          return snapshotNodeIds.has(n.id);
+        }
+        return true;
+      });
+    });
+
+    setLocalNodes(restoredNodes);
+    setLocalEdges(restoredEdges);
+
+    // Уведомляем родителя
+    if (onNodesChange) {
+      onNodesChange(restoredNodes);
+    }
+    if (onEdgesChange) {
+      onEdgesChange(restoredEdges);
+    }
+
+    setTimeout(() => {
+      isUndoRedoInProgressRef.current = false;
+    }, 100);
+  }, [redo, onNodesChange, onEdgesChange]);
+
+  // Eraser handler - просто удаляем узлы
+  const handleDeleteNodes = useCallback(
+    (nodeIds: string[]) => {
+      if (!nodeIds || nodeIds.length === 0) return;
+
+      console.log('🧹 Erasing nodes:', nodeIds);
+
+      // Сразу удаляем из flowNodes для мгновенной визуализации
+      setFlowNodesRef.current?.((prev) => prev.filter((n) => !nodeIds.includes(n.id)));
+
+      setLocalNodes((prev) => {
+        const next = prev.filter((n) => !nodeIds.includes(n.id));
+        const currentEdges = localEdgesRef.current ?? localEdges;
+
+        // Уведомляем родителя и сохраняем в историю с актуальными данными
+        queueMicrotask(() => {
+          emitNodesChange(next);
+          saveToHistoryWithData(next, currentEdges);
+        });
+
+        return next;
+      });
+    },
+    [emitNodesChange, saveToHistoryWithData, localEdges],
+  );
+
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false;
@@ -885,7 +1100,43 @@ function InnerBoardCanvas({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Проверяем, не в поле ввода
+      if (isEditableTarget(event.target)) {
+        // Для undo/redo всегда разрешаем (Ctrl+Z, Cmd+Z)
+        if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key === 'z') {
+          // Разрешаем стандартное поведение для полей ввода
+          return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'z') {
+          // Разрешаем стандартное поведение для полей ввода
+          return;
+        }
+        return;
+      }
+
       if (event.defaultPrevented) return;
+
+      // Обработка undo/redo (работает для всех действий)
+      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+        if (event.key.toLowerCase() === 'z') {
+          if (event.shiftKey) {
+            // Redo: Ctrl+Shift+Z
+            event.preventDefault();
+            event.stopPropagation();
+            console.log('⌨️ Ctrl+Shift+Z pressed, calling handleRedo');
+            handleRedo();
+            return;
+          } else {
+            // Undo: Ctrl+Z
+            event.preventDefault();
+            event.stopPropagation();
+            console.log('⌨️ Ctrl+Z pressed, calling handleUndo');
+            handleUndo();
+            return;
+          }
+        }
+      }
+
       if (isEditableTarget(event.target)) return;
 
       const key = event.key.toLowerCase();
@@ -902,6 +1153,10 @@ function InnerBoardCanvas({
           }
           if (key === 'p') {
             setTool((prev) => (prev === 'pen' ? 'select' : 'pen'));
+            return;
+          }
+          if (key === 'e') {
+            setTool((prev) => (prev === 'eraser' ? 'select' : 'eraser'));
             return;
           }
           if (key === 't') {
@@ -1048,6 +1303,12 @@ function InnerBoardCanvas({
                     width: 100,
                     height: 100,
                   }) as { width: number; height: number },
+                  // Передаем все настройки из payload
+                  color: (node.payload as any)?.color,
+                  strokeWidth: (node.payload as any)?.strokeWidth,
+                  opacity: (node.payload as any)?.opacity,
+                  smoothing: (node.payload as any)?.smoothing,
+                  thinning: (node.payload as any)?.thinning,
                 }
               : isText
                 ? (() => {
@@ -1337,6 +1598,11 @@ function InnerBoardCanvas({
     })),
   );
 
+  // Устанавливаем ref для доступа к setFlowNodes из callbacks определенных раньше
+  useEffect(() => {
+    setFlowNodesRef.current = setFlowNodes;
+  }, [setFlowNodes]);
+
   // Отдельный useEffect для обновления selected при изменении selectedNodeId
   // Это предотвращает бесконечные циклы, отделяя обновление selected от обновления структуры узлов
   useEffect(() => {
@@ -1368,6 +1634,8 @@ function InnerBoardCanvas({
       mapped.length,
       'pen nodes:',
       penNodesInMapped.length,
+      'localNodes pen:',
+      localNodes.filter((n) => n.type === 'pen').length,
     );
 
     setFlowNodes((prev) => {
@@ -1520,14 +1788,42 @@ function InnerBoardCanvas({
               : (((flowNode.data as NodeData | undefined)?.nodeKind ??
                   previous?.type ??
                   'sql') as BoardCanvasProps['nodes'][number]['type']);
-        // Для pen nodes сохраняем points и initialSize из data
+        // Для pen nodes сохраняем points, initialSize И ВСЕ НАСТРОЙКИ из data
         // Для shape nodes сохраняем размеры из flowNode (width/height) и остальной payload
         // Для заметок сохраняем размеры в ui, а текст и форматирование в payload
         const payload = isPenNode
-          ? {
-              points: (flowNode.data as any).points,
-              initialSize: (flowNode.data as any).initialSize,
-            }
+          ? (() => {
+              // Сохраняем все из data, включая настройки
+              // Приоритет: flowNode.data > previous.payload > defaults
+              const penPayload = {
+                points: (flowNode.data as any).points ?? (previous?.payload as any)?.points ?? [],
+                initialSize: (flowNode.data as any).initialSize ??
+                  (previous?.payload as any)?.initialSize ?? { width: 100, height: 100 },
+                // ВАЖНО: Сохраняем все настройки из data или из previous payload
+                color:
+                  (flowNode.data as any).color ?? (previous?.payload as any)?.color ?? '#ef4444',
+                strokeWidth:
+                  (flowNode.data as any).strokeWidth ??
+                  (previous?.payload as any)?.strokeWidth ??
+                  7,
+                opacity: (flowNode.data as any).opacity ?? (previous?.payload as any)?.opacity ?? 1,
+                smoothing:
+                  (flowNode.data as any).smoothing ?? (previous?.payload as any)?.smoothing ?? 0.5,
+                thinning:
+                  (flowNode.data as any).thinning ?? (previous?.payload as any)?.thinning ?? 0.5,
+              };
+
+              // Логируем если настройки потерялись
+              if (previous?.payload && (previous.payload as any).color && !penPayload.color) {
+                console.warn('Pen node lost color during commit:', {
+                  nodeId: flowNode.id,
+                  previousColor: (previous.payload as any).color,
+                  flowNodeDataColor: (flowNode.data as any).color,
+                });
+              }
+
+              return penPayload;
+            })()
           : isShapeNode && isNoteNode
             ? {
                 ...(previous?.payload ?? {}),
@@ -1618,11 +1914,15 @@ function InnerBoardCanvas({
       // Все изменения обрабатываются как flowChanges (заметки теперь shape nodes)
       const flowChanges: NodeChange[] = changes;
       if (flowChanges.length) {
+        // Определяем, завершен ли жест (drag или resize)
         const shouldCommit = flowChanges.some(
           (change) => change.type === 'position' && change.dragging !== true,
         );
         setFlowNodes((current) => {
           const next = applyNodeChanges(flowChanges, current);
+          // Создаем Map для быстрого доступа к предыдущим узлам
+          const currentById = new Map(current.map((n) => [n.id, n]));
+
           // Убеждаемся, что zIndex сохраняется после изменений и сортировка по слоям
           // Также обновляем selected для синхронизации с selectedNodeId
           const nextWithZIndex = next
@@ -1632,7 +1932,11 @@ function InnerBoardCanvas({
               const isShape = node.type === 'shapeNode';
               const isDataNode = node.type === 'sqlNode' || node.type === 'pythonNode';
 
+              // Получаем предыдущий узел для восстановления данных
+              const previousNode = currentById.get(node.id);
+
               // Для data nodes обновляем data.width из node.width (который React Flow обновляет через dimensions)
+              // Для pen nodes ВАЖНО сохранить все настройки из data или из предыдущего узла
               // Важно: используем node.width напрямую из applyNodeChanges, который уже содержит обновленные размеры и position
               const updatedData =
                 isDataNode && node.width
@@ -1640,7 +1944,27 @@ function InnerBoardCanvas({
                       ...(node.data as any),
                       width: node.width,
                     }
-                  : node.data;
+                  : isPen
+                    ? {
+                        // Для pen узлов сохраняем ВСЕ данные из node.data или из previousNode.data
+                        // applyNodeChanges может не сохранить все поля, поэтому восстанавливаем из предыдущего состояния
+                        points:
+                          (node.data as any)?.points ?? (previousNode?.data as any)?.points ?? [],
+                        initialSize: (node.data as any)?.initialSize ??
+                          (previousNode?.data as any)?.initialSize ?? { width: 100, height: 100 },
+                        // ВАЖНО: Сохраняем настройки из node.data или из previousNode.data
+                        color: (node.data as any)?.color ?? (previousNode?.data as any)?.color,
+                        strokeWidth:
+                          (node.data as any)?.strokeWidth ??
+                          (previousNode?.data as any)?.strokeWidth,
+                        opacity:
+                          (node.data as any)?.opacity ?? (previousNode?.data as any)?.opacity,
+                        smoothing:
+                          (node.data as any)?.smoothing ?? (previousNode?.data as any)?.smoothing,
+                        thinning:
+                          (node.data as any)?.thinning ?? (previousNode?.data as any)?.thinning,
+                      }
+                    : node.data;
 
               return {
                 ...node,
@@ -1676,6 +2000,7 @@ function InnerBoardCanvas({
             .sort((a, b) => (a._sortOrder ?? 0) - (b._sortOrder ?? 0));
           if (shouldCommit) {
             commitFlowNodesToLocal(nextWithZIndex, true);
+            // История сохранится автоматически через emitNodesChange
           }
           return nextWithZIndex;
         });
@@ -2442,13 +2767,17 @@ function InnerBoardCanvas({
             edges={flowEdges}
             fitView
             fitViewOptions={{ padding: 0.2, duration: 0 }}
-            panOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
+            panOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isEraserMode}
             panOnScroll={false}
             zoomOnScroll
             selectionOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
-            nodesDraggable={!isPenMode && !isTextMode && !isShapeMode}
-            nodesConnectable={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
-            elementsSelectable={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
+            nodesDraggable={!isPenMode && !isTextMode && !isShapeMode && !isEraserMode}
+            nodesConnectable={
+              !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isEraserMode
+            }
+            elementsSelectable={
+              !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isEraserMode
+            }
             proOptions={{ hideAttribution: true }}
             className="h-full bg-white"
             style={{ width: '100%', height: '100%' }}
@@ -2627,10 +2956,12 @@ function InnerBoardCanvas({
               style={{ left: 0, bottom: 0 }}
             />
             <ConnectionArrowsOverlay edges={flowEdges} />
+            {isPenMode && <PenToolbar />}
             {isPenMode && (
               <FreehandOverlay
                 onAddPenNode={(node) => {
-                  console.log('onAddPenNode called with:', node);
+                  console.log('✏️ New pen stroke:', node.id);
+
                   // Добавляем pen node в localNodes
                   const externalNode = {
                     id: node.id,
@@ -2639,20 +2970,21 @@ function InnerBoardCanvas({
                     payload: {
                       points: node.data.points,
                       initialSize: node.data.initialSize,
+                      color: node.data.color ?? '#ef4444',
+                      strokeWidth: node.data.strokeWidth ?? 7,
+                      opacity: node.data.opacity ?? 1,
+                      smoothing: node.data.smoothing ?? 0.5,
+                      thinning: node.data.thinning ?? 0.5,
                     },
                   };
-                  console.log('Adding to localNodes:', externalNode);
+
                   setLocalNodes((prev) => {
                     const next = [...prev, externalNode];
-                    console.log(
-                      'localNodes updated, new length:',
-                      next.length,
-                      'pen nodes:',
-                      next.filter((n) => n.type === 'pen').length,
-                    );
-                    // Вызываем emitNodesChange для сохранения изменений
+                    const currentEdges = localEdgesRef.current ?? localEdges;
+                    // Сохраняем в историю после добавления штриха
                     queueMicrotask(() => {
-                      emitNodesChange(next);
+                      emitNodesChange(next, false);
+                      saveToHistoryWithData(next, currentEdges);
                     });
                     return next;
                   });
@@ -2680,6 +3012,8 @@ function InnerBoardCanvas({
               />
             )}
           </ReactFlow>
+          {/* EraserOverlay внутри ReactFlow контейнера для правильного позиционирования */}
+          {isEraserMode && <EraserOverlay onDeleteNodes={handleDeleteNodes} eraserSize={20} />}
         </div>
       </div>
       <BoardCommandBar
@@ -2700,6 +3034,10 @@ function InnerBoardCanvas({
         onSelectShape={setSelectedShape}
         onDeleteSelection={handleDeleteSelection}
         hasSelection={hasSelection}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
     </div>
   );
