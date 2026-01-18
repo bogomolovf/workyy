@@ -12,26 +12,36 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export const LanguageProvider = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
+  // ВСЕГДА русский по умолчанию, игнорируя localStorage
   const [language, setLanguageState] = useState<Language>(() => {
     const path = window.location.pathname;
-    if (path.startsWith('/ru/')) return 'ru';
+    // Если путь явно указывает на английский - используем английский
     if (path.startsWith('/en/')) return 'en';
-    const saved = localStorage.getItem('workyy-language') as Language;
-    return saved || 'en';
+    // Во всех остальных случаях (включая /ru/ и корень) - русский по умолчанию
+    // Игнорируем localStorage - всегда русский по умолчанию
+    return 'ru';
   });
 
   useEffect(() => {
     const path = location.pathname;
-    if (path.startsWith('/ru/')) {
-      setLanguageState('ru');
-    } else if (path.startsWith('/en/')) {
+    // Обновляем язык только если явно указан английский
+    if (path.startsWith('/en/')) {
       setLanguageState('en');
+    } else {
+      // Для всех остальных путей (включая /ru/ и корень) - русский
+      setLanguageState('ru');
     }
   }, [location.pathname]);
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
-    localStorage.setItem('workyy-language', lang);
+    // Сохраняем только если явно выбран английский, иначе используем русский по умолчанию
+    if (lang === 'en') {
+      localStorage.setItem('workyy-language', lang);
+    } else {
+      // Для русского языка удаляем сохраненное значение, чтобы всегда использовать дефолт
+      localStorage.removeItem('workyy-language');
+    }
   };
 
   const content = getContent(language);
