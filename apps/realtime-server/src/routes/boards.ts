@@ -142,7 +142,10 @@ export async function boardsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get('/boards/:boardId', { preValidation: [app.authenticate] }, async (request, reply) => {
+  app.get('/boards/:boardId', { 
+    preValidation: [app.authenticate],
+    logLevel: 'silent', // Disable logging to avoid CSV data in response logs
+  }, async (request, reply) => {
     const userId = request.user!.userId;
     const parseParams = getBoardParamsSchema.safeParse(request.params);
     if (!parseParams.success) {
@@ -293,7 +296,10 @@ export async function boardsRoutes(app: FastifyInstance) {
 
   app.put(
     '/boards/:boardId/nodes',
-    { preValidation: [app.authenticate] },
+    { 
+      preValidation: [app.authenticate],
+      logLevel: 'silent', // Disable logging for this route to avoid CSV data in logs
+    },
     async (request, reply) => {
       const userId = request.user!.userId;
       const parseParams = getBoardParamsSchema.safeParse(request.params);
@@ -349,23 +355,28 @@ export async function boardsRoutes(app: FastifyInstance) {
       }
 
       for (const node of nodes) {
-        await container.prisma.node.upsert({
-          where: { id: node.id },
-          create: {
-            id: node.id,
-            boardId,
-            type: node.type,
-            positionX: node.position.x,
-            positionY: node.position.y,
-            payload: node.payload ?? Prisma.JsonNull,
-          },
-          update: {
-            positionX: node.position.x,
-            positionY: node.position.y,
-            type: node.type,
-            ...(node.payload !== undefined ? { payload: node.payload } : {}),
-          },
-        });
+        try {
+          await container.prisma.node.upsert({
+            where: { id: node.id },
+            create: {
+              id: node.id,
+              boardId,
+              type: node.type,
+              positionX: node.position.x,
+              positionY: node.position.y,
+              payload: node.payload ?? Prisma.JsonNull,
+            },
+            update: {
+              positionX: node.position.x,
+              positionY: node.position.y,
+              type: node.type,
+              ...(node.payload !== undefined ? { payload: node.payload } : {}),
+            },
+          });
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          throw new Error(`Failed to upsert node ${node.id} (type: ${node.type}): ${errMsg}`);
+        }
       }
 
       const existingEdges = await container.prisma.edge.findMany({

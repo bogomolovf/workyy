@@ -18,7 +18,8 @@ export type BoardResponse = {
       | 'shape'
       | 'image'
       | 'pen'
-      | 'database';
+      | 'database'
+      | 'csv';
     position: { x: number; y: number };
     payload?: Record<string, unknown>;
   }>;
@@ -146,7 +147,8 @@ export type PersistedNode = {
     | 'shape'
     | 'image'
     | 'pen'
-    | 'database';
+    | 'database'
+    | 'csv';
   position: { x: number; y: number };
   payload?: Record<string, unknown>;
   boardId?: string;

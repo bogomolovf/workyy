@@ -41,7 +41,7 @@ type HiddenOutputs = {
 };
 
 export type ExecutionEntry = {
-  nodeType: 'sql' | 'python' | 'table' | 'plot';
+  nodeType: 'sql' | 'python' | 'table' | 'plot' | 'csv';
   status: NodeStatus;
   code: string;
   error?: string | null;
@@ -124,13 +124,13 @@ export type ExecutionStoreState = {
   initFromNodes: (
     nodes: Array<{
       id: string;
-      type: 'sql' | 'python' | 'table' | 'plot';
+      type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
       payload?: Record<string, unknown>;
     }>,
   ) => void;
   registerNode: (node: {
     id: string;
-    type: 'sql' | 'python' | 'table' | 'plot';
+    type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
     payload?: Record<string, unknown>;
   }) => void;
   setCode: (nodeId: string, code: string) => void;
@@ -145,7 +145,7 @@ export type ExecutionStoreState = {
 };
 
 function getInitialCode(node: {
-  type: 'sql' | 'python' | 'table' | 'plot';
+  type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
   payload?: Record<string, unknown>;
 }) {
   if (node.type === 'sql') {
@@ -157,8 +157,8 @@ function getInitialCode(node: {
     const normalized = normalizeMultiline(pythonPayload);
     return normalized ?? DEFAULT_PYTHON_TEMPLATE;
   }
-  if (node.type === 'plot') {
-    // Plot nodes don't have code, but we return empty string for consistency
+  if (node.type === 'plot' || node.type === 'csv') {
+    // Plot and CSV nodes don't have code, but we return empty string for consistency
     return '';
   }
   return '';
@@ -173,6 +173,27 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
     }
     const entries: Record<string, ExecutionEntry> = {};
     for (const node of nodes) {
+      // CSV nodes have data directly in payload
+      if (node.type === 'csv') {
+        const csvData = (node.payload as { data?: SqlResult } | undefined)?.data;
+        const hiddenOutputs = resolveInitialHiddenOutputs(node.id);
+        entries[node.id] = {
+          nodeType: 'csv',
+          status: csvData ? 'success' : 'idle',
+          code: '',
+          error: null,
+          output: csvData
+            ? {
+                kind: 'sql',
+                result: csvData,
+                code: '',
+              }
+            : undefined,
+          hiddenOutputs,
+        };
+        continue;
+      }
+
       const code = getInitialCode(node);
       // Восстанавливаем результаты выполнения из payload, если они есть
       const savedExecution = (node.payload as Record<string, unknown> | undefined)?.execution as
@@ -200,6 +221,32 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
     const entries = get().entries;
     if (entries[node.id]) return;
     const hiddenOutputs = resolveInitialHiddenOutputs(node.id);
+
+    // CSV nodes have data directly in payload - register with success status
+    if (node.type === 'csv') {
+      const csvData = (node.payload as { data?: SqlResult } | undefined)?.data;
+      set({
+        entries: {
+          ...entries,
+          [node.id]: {
+            nodeType: 'csv',
+            status: csvData ? 'success' : 'idle',
+            code: '',
+            error: null,
+            output: csvData
+              ? {
+                  kind: 'sql',
+                  result: csvData,
+                  code: '',
+                }
+              : undefined,
+            hiddenOutputs,
+          },
+        },
+      });
+      return;
+    }
+
     set({
       entries: {
         ...entries,

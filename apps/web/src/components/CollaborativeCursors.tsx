@@ -2,6 +2,10 @@ import { EdgeLabelRenderer, useViewport } from 'reactflow';
 import { useEffect, useRef } from 'react';
 import type { Cursor } from '../hooks/useCursorStateSynced';
 
+// Scale factors - cursor and label are independent
+const CURSOR_SCALE = 0.9;  // Smaller cursor
+const LABEL_SCALE = 1.3;   // Bigger label
+
 function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
   const viewport = useViewport();
   const animatedLabelsRef = useRef<Set<string>>(new Set());
@@ -104,47 +108,57 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
                 }}
               >
               <g style={{ transform: scale, transformOrigin: '0 0' }}>
-                {/* Cursor icon */}
+                {/* Cursor icon - user color fill with bold black outline */}
                 <g
                   className="collaborative-cursor-icon"
                   style={{
-                    filter: `drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))`,
+                    transform: `translate(-8px, -2px) scale(${CURSOR_SCALE})`,
+                    transformOrigin: '0 0',
                   }}
                 >
+                  {/* Black outline layer */}
+                  <path
+                    d={cursorPath}
+                    fill="#000000"
+                    stroke="#000000"
+                    strokeWidth={2}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                  {/* User color fill layer on top */}
                   <path
                     d={cursorPath}
                     fill={color}
-                    fillRule="evenodd"
-                    clipRule="evenodd"
                     className="collaborative-cursor-path"
                   />
                 </g>
                 
-                {/* User name label */}
+                {/* User name label - bigger size */}
                 {userName && (
                   <g
                     className={`collaborative-cursor-label-group ${
                       animatedLabelsRef.current.has(id) ? 'animation-complete' : ''
                     }`}
                     style={{
-                      transform: `translate(18px, 18px)`,
+                      transform: `translate(10px, 14px) scale(${LABEL_SCALE})`,
+                      transformOrigin: '0 0',
                     }}
                   >
                     <rect
-                      x={-6}
-                      y={-11}
-                      width={Math.min(Math.max(userName.length * 6.5 + 12, 50), 150)}
-                      height={18}
-                      rx={6}
+                      x={-3}
+                      y={-8}
+                      width={Math.min(Math.max(userName.length * 5.5 + 10, 45), 120)}
+                      height={16}
+                      rx={4}
                       fill={color}
-                      opacity={0.9}
+                      opacity={0.95}
                     />
                     <text
                       x={0}
                       y={0}
                       fill="white"
-                      fontSize={11}
-                      fontWeight="500"
+                      fontSize={10}
+                      fontWeight="600"
                       style={{
                         pointerEvents: 'none',
                         userSelect: 'none',
@@ -153,7 +167,7 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
                         textAnchor: 'start',
                       }}
                     >
-                      {userName.length > 20 ? `${userName.substring(0, 17)}...` : userName}
+                      {userName.length > 14 ? `${userName.substring(0, 11)}...` : userName}
                     </text>
                   </g>
                 )}
@@ -167,18 +181,8 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
   );
 }
 
-const cursorPath = `
-  M3.29227 0.048984C3.47033 -0.032338 3.67946 -0.00228214 3.8274 0.125891L12.8587
-  7.95026C13.0134 8.08432 13.0708 8.29916 13.0035 8.49251C12.9362 8.68586 12.7578
-  8.81866 12.5533 8.82768L9.21887 8.97474L11.1504 13.2187C11.2648 13.47 11.1538
-  13.7664 10.9026 13.8808L8.75024 14.8613C8.499 14.9758 8.20255 14.8649 8.08802
-  14.6137L6.15339 10.3703L3.86279 12.7855C3.72196 12.934 3.50487 12.9817 3.31479
-  12.9059C3.1247 12.8301 3 12.6461 3 12.4414V0.503792C3 0.308048 3.11422 0.130306 
-  3.29227 0.048984ZM4 1.59852V11.1877L5.93799 9.14425C6.05238 9.02363 6.21924 8.96776
-  6.38319 8.99516C6.54715 9.02256 6.68677 9.12965 6.75573 9.2809L8.79056 13.7441L10.0332
-  13.178L8.00195 8.71497C7.93313 8.56376 7.94391 8.38824 8.03072 8.24659C8.11753
-  8.10494 8.26903 8.01566 8.435 8.00834L11.2549 7.88397L4 1.59852z
-`;
+// Simple clean cursor arrow path
+const cursorPath = `M0 0 L0 16 L4 12 L7 18 L10 17 L7 11 L12 11 Z`;
 
 export default CollaborativeCursors;
 

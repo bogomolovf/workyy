@@ -19,7 +19,37 @@ declare module 'fastify' {
 
 async function bootstrap() {
   const fastify = Fastify({
-    logger: true,
+    logger: {
+      level: 'info',
+      serializers: {
+        req(request) {
+          const url = request.url || '';
+          const isNodesUpdate = url.includes('/boards/') && url.includes('/nodes') && request.method === 'PUT';
+          
+          // For PUT /boards/:boardId/nodes - never log body to avoid CSV data in logs
+          if (isNodesUpdate) {
+            return {
+              method: request.method,
+              url: request.url,
+              hostname: request.hostname,
+              remoteAddress: request.ip,
+            };
+          }
+          
+          return {
+            method: request.method,
+            url: request.url,
+            hostname: request.hostname,
+            remoteAddress: request.ip,
+          };
+        },
+        res(reply) {
+          return {
+            statusCode: reply.statusCode,
+          };
+        },
+      },
+    },
   });
 
   // CORS configuration: allow requests from landing page and product app

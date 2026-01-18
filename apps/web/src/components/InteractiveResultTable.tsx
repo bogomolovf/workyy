@@ -55,6 +55,7 @@ export type InteractiveResultTableProps = {
   totalCount?: number;
   isPreview?: boolean;
   onLoadAll?: () => void;
+  maxHeight?: number;
 };
 
 function InteractiveResultTableInner({
@@ -63,6 +64,7 @@ function InteractiveResultTableInner({
   totalCount,
   isPreview,
   onLoadAll,
+  maxHeight,
 }: InteractiveResultTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [isPending, startTransition] = useTransition();
@@ -145,8 +147,8 @@ function InteractiveResultTableInner({
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
   
-  // Container height
-  const containerHeight = compact ? 224 : 320;
+  // Container height - use maxHeight if provided, otherwise use default based on compact
+  const containerHeight = maxHeight ?? (compact ? 224 : 320);
   
   // Format large numbers
   const formatCount = useCallback((count: number) => {
@@ -157,6 +159,10 @@ function InteractiveResultTableInner({
   
   const rowCount = deferredRows.length;
   const displayTotal = totalCount ?? rowCount;
+
+  const heightStyle = maxHeight
+    ? { maxHeight: `${maxHeight}px` }
+    : undefined;
 
   return (
     <div className="flex flex-col gap-2">
@@ -281,6 +287,7 @@ export const InteractiveResultTable = memo(InteractiveResultTableInner, (prev, n
     prev.compact === next.compact &&
     prev.totalCount === next.totalCount &&
     prev.isPreview === next.isPreview &&
-    prev.onLoadAll === next.onLoadAll
+    prev.onLoadAll === next.onLoadAll &&
+    prev.maxHeight === next.maxHeight
   );
 });

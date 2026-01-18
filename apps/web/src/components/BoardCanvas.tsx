@@ -47,6 +47,8 @@ import {
 } from './connectionUtils';
 import { BoardInspector } from './BoardInspector';
 import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
+import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
+import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
 import { FreehandOverlay } from './pen/FreehandOverlay';
 import { PenNode } from './pen/PenNode';
 import { PenToolbar } from './pen/PenToolbar';
@@ -55,6 +57,7 @@ import { useCanvasHistoryStore } from '../state/canvasHistoryStore';
 import { TextNode } from './TextNode';
 import { DatabaseNode } from './flowNodes/DatabaseNode';
 import { PlotNode } from './flowNodes/PlotNode';
+import { CsvNode } from './flowNodes/CsvNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
 import CustomConnectionLine from './flowEdges/CustomConnectionLine';
 import CollaborativeCursors from './CollaborativeCursors';
@@ -80,7 +83,8 @@ type CanvasNodeType =
   | 'shape'
   | 'image'
   | 'pen'
-  | 'database';
+  | 'database'
+  | 'csv';
 
 type BoardCanvasProps = {
   board: {
@@ -531,6 +535,7 @@ const nodeTypes = {
   textNode: TextNode,
   databaseNode: DatabaseNode,
   plotNode: PlotNode,
+  csvNode: CsvNode,
   shapeNode: ShapeNode, // Заметки теперь тоже shape nodes
 };
 
@@ -762,10 +767,14 @@ function InnerBoardCanvas({
   // When hovering toolbars, hide own cursor but keep updating position for other users
   const [isHoveringToolbar, setIsHoveringToolbar] = useState(false);
 
+  // Tool state - defined early because it's needed for cursor visibility
+  const [tool, setTool] = useState<CanvasTool>('hand');
+
   // Use cursor syncing hook (must be inside ReactFlowProvider)
   // Hide own cursor when hovering toolbars (like Miro behavior)
-  // Show own cursor normally, but hide it when hovering over toolbars
-  const showOwnCursor = !isHoveringToolbar;
+  // Also hide own cursor when using eraser (eraser has its own cursor indicator)
+  // Show own cursor normally, but hide it when hovering over toolbars or using eraser
+  const showOwnCursor = !isHoveringToolbar && tool !== 'eraser';
   const [cursors, onMouseMove] = cursorsMap && clientId
     ? useCursorStateSynced(cursorsMap, clientId, userInfo, { showOwnCursor })
     : ([[], () => {}] as const);
@@ -988,7 +997,6 @@ function InnerBoardCanvas({
     setLocalEdges(edges);
   }, [edges]);
 
-  const [tool, setTool] = useState<CanvasTool>('hand');
   const [selectedShape, setSelectedShape] = useState<ShapeType | null>('rectangle');
   const isHandMode = tool === 'hand';
   const isStickyMode = tool === 'note';
@@ -1365,12 +1373,21 @@ function InnerBoardCanvas({
     }, 100);
   }, [redo, onNodesChange, onEdgesChange]);
 
-  // Eraser handler - просто удаляем узлы
+  // Eraser handler - удаляем узлы и синхронизируем через Yjs
   const handleDeleteNodes = useCallback(
     (nodeIds: string[]) => {
       if (!nodeIds || nodeIds.length === 0) return;
 
       console.log('🧹 Erasing nodes:', nodeIds);
+
+      // Sync deletion through Yjs to ensure real-time collaboration
+      if (yjsOnNodesChange && nodeIds.length > 0) {
+        const removeNodeChanges = nodeIds.map((id) => ({
+          type: 'remove' as const,
+          id,
+        }));
+        yjsOnNodesChange(removeNodeChanges);
+      }
 
       // Сразу удаляем из flowNodes для мгновенной визуализации
       setFlowNodesRef.current?.((prev) => prev.filter((n) => !nodeIds.includes(n.id)));
@@ -1388,7 +1405,7 @@ function InnerBoardCanvas({
         return next;
       });
     },
-    [emitNodesChange, saveToHistoryWithData, localEdges],
+    [emitNodesChange, saveToHistoryWithData, localEdges, yjsOnNodesChange],
   );
 
   useEffect(() => {
@@ -1509,6 +1526,7 @@ function InnerBoardCanvas({
           const isPython = node.type === 'python';
           const isDatabase = node.type === 'database';
           const isPlot = node.type === 'plot';
+          const isCsv = node.type === 'csv';
           const isPen = node.type === 'pen';
           const isText = node.type === 'text';
           const isShape = node.type === 'shape';
@@ -1521,16 +1539,18 @@ function InnerBoardCanvas({
                 ? 'databaseNode'
                 : isPlot
                   ? 'plotNode'
-                  : isPen
-                    ? 'pen'
-                    : isText
-                      ? 'textNode'
-                      : isShape || isNote
-                        ? 'shapeNode'
-                        : 'default';
+                  : isCsv
+                    ? 'csvNode'
+                    : isPen
+                      ? 'pen'
+                      : isText
+                        ? 'textNode'
+                        : isShape || isNote
+                          ? 'shapeNode'
+                          : 'default';
 
           // Определяем тип слоя для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
-          const isDataNode = isSql || isPython || isDatabase || isPlot;
+          const isDataNode = isSql || isPython || isDatabase || isPlot || isCsv;
           const isCanvasNode = isPen || isText || isShape || isNote;
 
           // NOTE: executionEntries removed - SqlNode/PythonNode fetch their own state via useExecutionStore
@@ -1727,7 +1747,16 @@ function InnerBoardCanvas({
                           edges: localEdges,
                           width: storedWidth,
                         }
-                      : {
+                      : isCsv
+                        ? {
+                            nodeId: node.id,
+                            payload: node.payload,
+                            width: storedWidth,
+                            onResize: (nodeId: string, width: number, _height: number) => {
+                              setNodeWidth(nodeId, width);
+                            },
+                          }
+                        : {
                           nodeId: node.id,
                           nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
                           // NOTE: execution removed - SqlNode/PythonNode fetch their own state via useExecutionStore
@@ -2498,6 +2527,81 @@ function InnerBoardCanvas({
     });
     onSelectNode?.(template.id);
   }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
+
+  const handleUploadSpreadsheet = useCallback(
+    async (file: File) => {
+      const result = await parseSpreadsheetFile(file);
+
+      if (!result.success) {
+        alert(`Error: ${result.error}`);
+        return;
+      }
+
+      // Register the dataset in DuckDB so SQL nodes can query it
+      let tableName = '';
+      let normalizedColumns: string[] = [];
+      try {
+        const duckDbResult = await registerDatasetFromCsvNode(
+          result.filename,
+          result.data,
+          board.id,
+        );
+        tableName = duckDbResult.tableName;
+        normalizedColumns = duckDbResult.normalizedColumns;
+        console.log(
+          `Registered table "${tableName}" with ${duckDbResult.rows} rows in DuckDB`,
+        );
+      } catch (err) {
+        console.error('Failed to register dataset in DuckDB:', err);
+        // Fallback table name
+        tableName = result.filename
+          .replace(/\.[^/.]+$/, '')
+          .toLowerCase()
+          .replace(/[^a-zA-Z0-9_]/g, '_');
+      }
+
+      // Получаем центр viewport пользователя и преобразуем в координаты flow
+      const viewportCenterX = window.innerWidth / 2;
+      const viewportCenterY = window.innerHeight / 2;
+      const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
+
+      const nodeId = crypto.randomUUID();
+      // Create data with normalized column names for display
+      const displayData = normalizedColumns.length > 0
+        ? { ...result.data, columns: normalizedColumns }
+        : result.data;
+
+      const csvNode: BoardCanvasProps['nodes'][number] = {
+        id: nodeId,
+        type: 'csv',
+        position,
+        payload: {
+          filename: result.filename,
+          tableName, // Store the DuckDB table name
+          data: displayData, // Use normalized column names
+          originalColumns: result.data.columns, // Keep original for reference
+          uploadedAt: new Date().toISOString(),
+          fileType: result.fileType,
+        },
+      };
+
+      // Register in executionStore with data ready
+      registerNode({
+        id: nodeId,
+        type: 'csv' as 'sql' | 'python' | 'table' | 'plot',
+        position,
+        payload: csvNode.payload,
+      });
+
+      setLocalNodes((prev) => {
+        const next = [...prev, csvNode];
+        emitNodesChange(next);
+        return next;
+      });
+      onSelectNode?.(nodeId);
+    },
+    [rf, emitNodesChange, onSelectNode, registerNode, board.id],
+  );
 
   const handleConnectStart = useCallback(
     (_event: React.MouseEvent | React.TouchEvent, params: ConnectionStartParams) => {
@@ -3292,7 +3396,7 @@ function InnerBoardCanvas({
             )}
           </ReactFlow>
           {/* EraserOverlay внутри ReactFlow контейнера для правильного позиционирования */}
-          {isEraserMode && <EraserOverlay onDeleteNodes={handleDeleteNodes} eraserSize={20} />}
+          {isEraserMode && <EraserOverlay onDeleteNodes={handleDeleteNodes} eraserSize={20} onCursorMove={onMouseMove} />}
         </div>
       </div>
       <BoardCommandBar
@@ -3309,6 +3413,7 @@ function InnerBoardCanvas({
         onAddPythonNode={handleAddPythonNode}
         onAddDatabaseNode={handleAddDatabaseNode}
         onAddPlotNode={handleAddPlotNode}
+        onUploadSpreadsheet={handleUploadSpreadsheet}
         selectedShape={selectedShape}
         onSelectShape={setSelectedShape}
         onDeleteSelection={handleDeleteSelection}

@@ -390,6 +390,140 @@ async function ensureDemoDatasetForBoard(
   `);
 }
 
+/**
+ * Normalize column name for SQL compatibility:
+ * - Replace spaces and special chars with underscores
+ * - Convert to lowercase
+ * - Remove leading/trailing underscores
+ */
+function normalizeColumnName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, '_') // Replace spaces with underscores
+    .replace(/[^a-z0-9_]/g, '_') // Replace special chars with underscores
+    .replace(/_+/g, '_') // Collapse multiple underscores
+    .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
+}
+
+/**
+ * Register data from a CSV node directly into DuckDB as a table.
+ * This allows SQL nodes to query the data using `SELECT * FROM tablename`.
+ */
+export async function registerDatasetFromCsvNode(
+  filename: string,
+  data: SqlResult,
+  boardId?: string,
+): Promise<{ tableName: string; rows: number; normalizedColumns: string[] }> {
+  const { connection } = await getDuckDbContext();
+
+  // Create table name from filename (without extension)
+  const baseName = filename.replace(/\.[^/.]+$/, ''); // Remove extension
+  const tableName = sanitizeIdentifier(baseName.toLowerCase());
+
+  // Normalize column names for SQL compatibility
+  const normalizedColumns = data.columns.map(normalizeColumnName);
+
+  // Handle duplicate column names after normalization
+  const uniqueColumns: string[] = [];
+  const columnCounts = new Map<string, number>();
+  for (const col of normalizedColumns) {
+    const count = columnCounts.get(col) || 0;
+    if (count > 0) {
+      uniqueColumns.push(`${col}_${count}`);
+    } else {
+      uniqueColumns.push(col);
+    }
+    columnCounts.set(col, count + 1);
+  }
+
+  // Drop existing table with same name
+  await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(tableName)};`);
+
+  // Create table with appropriate column types
+  const columnTypes = data.columns.map((col) => {
+    // Sample first non-null value to infer type
+    const sampleValue = data.rows.find((row) => {
+      const idx = data.columns.indexOf(col);
+      return row[idx] !== null && row[idx] !== undefined;
+    })?.[data.columns.indexOf(col)];
+
+    if (typeof sampleValue === 'number') {
+      return Number.isInteger(sampleValue) ? 'BIGINT' : 'DOUBLE';
+    }
+    return 'TEXT';
+  });
+
+  const columnsDef = uniqueColumns
+    .map((col, idx) => `${quotedIdentifier(col)} ${columnTypes[idx]}`)
+    .join(', ');
+
+  await connection.query(
+    `CREATE TABLE ${quotedIdentifier(tableName)} (${columnsDef});`,
+  );
+
+  // Insert data in batches to avoid query size limits
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < data.rows.length; i += BATCH_SIZE) {
+    const batch = data.rows.slice(i, i + BATCH_SIZE);
+    const rowsSql = batch
+      .map((row) => {
+        const values = row
+          .map((value, idx) => {
+            if (value === null || value === undefined) return 'NULL';
+            if (columnTypes[idx] === 'BIGINT' || columnTypes[idx] === 'DOUBLE') {
+              return String(value);
+            }
+            const text = String(value).replace(/'/g, "''");
+            return `'${text}'`;
+          })
+          .join(', ');
+        return `(${values})`;
+      })
+      .join(', ');
+
+    if (batch.length > 0) {
+      await connection.query(
+        `INSERT INTO ${quotedIdentifier(tableName)} VALUES ${rowsSql};`,
+      );
+    }
+  }
+
+  // Persist to localStorage for restore on page reload (with normalized columns)
+  if (boardId) {
+    const dataset: PersistedDataset = {
+      tableName,
+      columns: uniqueColumns,
+      rows: data.rows,
+    };
+    saveDatasetMeta(boardId, dataset);
+  }
+
+  return { tableName, rows: data.rows.length, normalizedColumns: uniqueColumns };
+}
+
+/**
+ * Remove a dataset from DuckDB when CSV node is deleted
+ */
+export async function unregisterDataset(tableName: string, boardId?: string): Promise<void> {
+  try {
+    const { connection } = await getDuckDbContext();
+    await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(tableName)};`);
+
+    // Also remove from localStorage
+    if (boardId && typeof window !== 'undefined') {
+      const key = getDatasetsKey(boardId);
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        const datasets: PersistedDataset[] = JSON.parse(raw);
+        const filtered = datasets.filter((d) => d.tableName !== tableName);
+        window.localStorage.setItem(key, JSON.stringify(filtered));
+      }
+    }
+  } catch {
+    // ignore errors
+  }
+}
+
 export async function restoreDatasetsForBoard(boardId: string): Promise<void> {
   if (typeof window === 'undefined') return;
   try {

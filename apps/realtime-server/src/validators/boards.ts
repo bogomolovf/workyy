@@ -63,6 +63,7 @@ const nodeTypeSchema = z.enum([
   'image',
   'pen',
   'database',
+  'csv',
 ]);
 
 const updateNodeSchema = z.object({

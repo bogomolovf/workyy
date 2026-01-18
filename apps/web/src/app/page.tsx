@@ -10,6 +10,7 @@ import { LANDING_URL } from '../lib/appConfig';
 import { RequireAuth } from '../components/RequireAuth';
 import { useAuthStore } from '../state/authStore';
 import { WorkspaceMembers } from '../components/WorkspaceMembers';
+import { CursorColorPicker } from '../components/CursorColorPicker';
 
 const DEFAULT_WORKSPACE_ID = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_ID ?? '';
 
@@ -208,6 +209,8 @@ function HomePageContent() {
             </a>
             {user && (
               <div className="flex items-center gap-4">
+                <CursorColorPicker />
+                <div className="hidden h-6 w-px bg-slate-200 sm:block" />
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-medium text-slate-900">{user.name || user.email}</p>
                   {user.name && <p className="text-xs text-slate-500">{user.email}</p>}

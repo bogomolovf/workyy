@@ -9,6 +9,7 @@ import type { PenNodeData } from './types';
 type EraserOverlayProps = {
   eraserSize?: number;
   onDeleteNodes: (nodeIds: string[]) => void;
+  onCursorMove?: (event: React.PointerEvent<HTMLDivElement>) => void;
 };
 
 class EraserTrail {
@@ -53,7 +54,7 @@ class EraserTrail {
   }
 }
 
-export function EraserOverlay({ eraserSize = 20, onDeleteNodes }: EraserOverlayProps) {
+export function EraserOverlay({ eraserSize = 20, onDeleteNodes, onCursorMove }: EraserOverlayProps) {
   const { screenToFlowPosition, getNodes, getViewport } = useReactFlow();
   const eraserTrailRef = useRef(new EraserTrail());
   const isErasingRef = useRef(false);
@@ -183,6 +184,11 @@ export function EraserOverlay({ eraserSize = 20, onDeleteNodes }: EraserOverlayP
     (e: React.PointerEvent) => {
       if (e.button !== 0) return;
 
+      // Sync cursor position when starting to erase
+      if (onCursorMove) {
+        onCursorMove(e as React.PointerEvent<HTMLDivElement>);
+      }
+
       e.preventDefault();
       e.stopPropagation();
 
@@ -195,11 +201,16 @@ export function EraserOverlay({ eraserSize = 20, onDeleteNodes }: EraserOverlayP
       eraserTrailRef.current.startPath(flowPos.x, flowPos.y);
       eraseAtPoint(e.clientX, e.clientY);
     },
-    [screenToFlowPosition, eraseAtPoint],
+    [screenToFlowPosition, eraseAtPoint, onCursorMove],
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      // Sync cursor position so other users can see where we're erasing
+      if (onCursorMove) {
+        onCursorMove(e as React.PointerEvent<HTMLDivElement>);
+      }
+
       setCursorPos({ x: e.clientX, y: e.clientY });
       setIsOverCanvas(true); // We're over the overlay = over canvas
 
@@ -210,7 +221,7 @@ export function EraserOverlay({ eraserSize = 20, onDeleteNodes }: EraserOverlayP
 
       processEraserMove(e.clientX, e.clientY);
     },
-    [processEraserMove],
+    [processEraserMove, onCursorMove],
   );
 
   const handlePointerEnter = useCallback(() => {

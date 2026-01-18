@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReactFlow } from 'reactflow';
 import type { Map as YMapType } from 'yjs';
-import { stringToColor } from '../lib/yjs/utils';
+import { useCursorSettingsStore } from '../state/cursorSettingsStore';
 
 const MAX_IDLE_TIME = 10000; // 10 seconds
 // Optimized throttle for smooth 60 FPS cursor movement (~16.67ms per frame)
@@ -35,7 +35,8 @@ export function useCursorStateSynced(
   const observerRafRef = useRef<number | null>(null);
   const previousClientIdRef = useRef<string | null>(null);
 
-  const cursorColor = useMemo(() => stringToColor(clientId), [clientId]);
+  // Use user-selected cursor color from settings store
+  const cursorColor = useCursorSettingsStore((s) => s.cursorColor);
 
   // CRITICAL FIX: Remove old cursor entries that belong to this user but have different clientId
   // This prevents duplicate cursors after page refresh when Yjs creates a new clientId
