@@ -106,6 +106,7 @@ enum NodeType {
   draw
   pen
   database
+  csv
 }
 
 model Edge {

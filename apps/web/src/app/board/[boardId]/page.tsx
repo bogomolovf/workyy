@@ -22,6 +22,7 @@ import {
   listTables,
   loadFileIntoDuckDb,
   restoreDatasetsForBoard,
+  registerDatasetFromCsvNode,
 } from '../../../lib/duckdbClient';
 import { runPython } from '../../../lib/pythonExecutor';
 import type { SqlResult, PlotResult } from '../../../state/executionStore';
@@ -29,12 +30,16 @@ import type { PlotConfig, PlotNodePayload } from '../../../lib/visualization/cha
 
 type ExecutionNode = Extract<
   BoardResponse['nodes'][number],
-  { type: 'sql' | 'python' | 'table' | 'plot' }
+  { type: 'sql' | 'python' | 'table' | 'plot' | 'csv' }
 >;
 
 const isExecutionNode = (node: BoardResponse['nodes'][number]): node is ExecutionNode => {
   return (
-    node.type === 'sql' || node.type === 'python' || node.type === 'table' || node.type === 'plot'
+    node.type === 'sql' ||
+    node.type === 'python' ||
+    node.type === 'table' ||
+    node.type === 'plot' ||
+    node.type === 'csv'
   );
 };
 
@@ -286,12 +291,44 @@ function BoardPageContent({ params }: BoardPageProps) {
     });
   }, [data]);
 
+  const csvNodesRegisteredRef = useRef(false);
+
   useEffect(() => {
     void (async () => {
       await restoreDatasetsForBoard(boardId);
       await refreshTables();
     })();
   }, [boardId, refreshTables]);
+
+  // Register CSV nodes from payload into DuckDB on initial load
+  // This ensures CSV data is available for SQL queries after page reload
+  useEffect(() => {
+    if (csvNodesRegisteredRef.current) return;
+
+    const csvNodes = nodesState.filter((n) => n.type === 'csv');
+    if (csvNodes.length === 0) return;
+
+    csvNodesRegisteredRef.current = true;
+
+    void (async () => {
+      for (const node of csvNodes) {
+        const payload = node.payload as {
+          filename?: string;
+          tableName?: string;
+          data?: SqlResult;
+        } | undefined;
+        if (payload?.data && payload?.filename) {
+          try {
+            await registerDatasetFromCsvNode(payload.filename, payload.data, boardId);
+            console.log(`Registered CSV "${payload.filename}" as table in DuckDB`);
+          } catch (err) {
+            console.error(`Failed to register CSV node ${node.id} in DuckDB:`, err);
+          }
+        }
+      }
+      await refreshTables();
+    })();
+  }, [nodesState, boardId, refreshTables]);
 
   const adjacency = useMemo(() => {
     const map = new Map<string, string[]>();

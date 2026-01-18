@@ -33,9 +33,10 @@ type TableRow = Record<string, string | number | null> & { __rowId: number };
 type InteractiveResultTableProps = {
   result: SqlResult;
   compact?: boolean;
+  maxHeight?: number;
 };
 
-export function InteractiveResultTable({ result, compact }: InteractiveResultTableProps) {
+export function InteractiveResultTable({ result, compact, maxHeight }: InteractiveResultTableProps) {
   const rows = useMemo<TableRow[]>(() => {
     return result.rows.map((row, rowIndex) => {
       const record: TableRow = { __rowId: rowIndex } as TableRow;
@@ -115,10 +116,15 @@ export function InteractiveResultTable({ result, compact }: InteractiveResultTab
 
   const hasBaseRows = rows.length > 0;
 
+  const heightStyle = maxHeight
+    ? { maxHeight: `${maxHeight}px` }
+    : undefined;
+
   return (
     <div className="flex flex-col gap-2">
       <div
-        className={`overflow-auto rounded-lg border border-slate-200 bg-white ${compact ? 'max-h-56' : 'max-h-80'}`}
+        className={`overflow-auto rounded-lg border border-slate-200 bg-white ${compact && !maxHeight ? 'max-h-56' : !maxHeight ? 'max-h-80' : ''}`}
+        style={heightStyle}
       >
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">

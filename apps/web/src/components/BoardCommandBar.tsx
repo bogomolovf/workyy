@@ -8,6 +8,7 @@ import {
   Cursor,
   Cylinder,
   Database,
+  FileArrowUp,
   NotePencil,
   PencilSimple,
   Play,
@@ -39,6 +40,7 @@ type BoardCommandBarProps = {
   onAddPythonNode?: () => void;
   onAddDatabaseNode?: () => void;
   onAddPlotNode?: () => void;
+  onUploadSpreadsheet?: (file: File) => void;
   onDeleteSelection?: () => void;
   hasSelection?: boolean;
   portalRoot?: HTMLElement | null;
@@ -94,6 +96,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   onAddPythonNode,
   onAddDatabaseNode,
   onAddPlotNode,
+  onUploadSpreadsheet,
   onDeleteSelection,
   hasSelection,
   portalRoot,
@@ -101,6 +104,20 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   const [root, setRoot] = useState<HTMLElement | null>(null);
   const [isShapePaletteOpen, setIsShapePaletteOpen] = useState(false);
   const shapeButtonRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUploadSpreadsheet) {
+      onUploadSpreadsheet(file);
+    }
+    // Reset input to allow re-uploading same file
+    e.target.value = '';
+  };
 
   useEffect(() => {
     if (portalRoot) {
@@ -288,6 +305,30 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                 className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-0.5"
               />
             </button>
+          )}
+          {onUploadSpreadsheet && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsb,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
+              />
+              <button
+                type="button"
+                className={`${baseButtonClass} ${ghostButtonClass} relative`}
+                onClick={handleFileUploadClick}
+                title="Upload CSV/Excel"
+              >
+                <FileArrowUp size={18} weight="regular" />
+                <Plus
+                  size={10}
+                  weight="bold"
+                  className="absolute -top-0.5 -right-0.5 bg-emerald-600 text-white rounded-full p-0.5"
+                />
+              </button>
+            </>
           )}
           {onDeleteSelection && hasSelection && (
             <button
