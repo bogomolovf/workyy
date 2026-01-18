@@ -1,0 +1,11 @@
+id,region,category,status,revenue,quantity,discount,date,customer_id,rating
+1,North,Electronics,active,1234.56,15,0.1,2023-01-15,12345,4.5
+2,South,Clothing,pending,567.89,8,0.05,2023-02-20,23456,3.8
+3,East,Food,completed,89.12,42,0.15,2023-03-10,34567,4.2
+4,West,Books,active,234.56,5,0.0,2023-04-05,45678,4.9
+5,Central,Home,cancelled,1567.89,2,0.2,2023-05-12,56789,2.5
+6,North,Sports,active,345.67,20,0.1,2023-06-18,67890,4.0
+7,South,Auto,pending,2345.67,1,0.05,2023-07-22,78901,4.7
+8,East,Health,completed,123.45,30,0.0,2023-08-30,89012,3.5
+9,West,Electronics,active,4567.89,3,0.15,2023-09-14,90123,4.8
+10,Central,Clothing,pending,678.90,12,0.1,2023-10-25,10234,4.1

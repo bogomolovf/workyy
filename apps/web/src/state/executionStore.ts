@@ -7,6 +7,10 @@ export type SqlResult = {
   columns: string[];
   rows: Array<Array<string | number | null>>;
   arrow?: Uint8Array;
+  /** Total number of rows when using preview mode */
+  totalCount?: number;
+  /** Whether this is a preview (limited) result set */
+  isPreview?: boolean;
 };
 
 export type PythonResult = {

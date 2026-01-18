@@ -4,15 +4,9 @@ import { useMemo } from 'react';
 import { NodeResizer, type Node, type NodeProps } from 'reactflow';
 
 import { pointsToPath } from './path';
-import type { PenPoint } from './types';
+import type { PenPoint, PenNodeData } from './types';
 
-export type PenNodeType = Node<
-  {
-    points: PenPoint[];
-    initialSize: { width: number; height: number };
-  },
-  'pen'
->;
+export type PenNodeType = Node<PenNodeData, 'pen'>;
 
 export function PenNode({ data, width, height, selected, dragging }: NodeProps<PenNodeType>) {
   // Убеждаемся, что width и height - это числа
@@ -37,17 +31,28 @@ export function PenNode({ data, width, height, selected, dragging }: NodeProps<P
     [data.points, scaleX, scaleY],
   );
 
+  // Настройки из payload с дефолтными значениями (Excalidraw-optimized)
+  const color = data.color || '#ef4444';
+  const strokeWidth = data.strokeWidth || 7;
+  const opacity = data.opacity ?? 1;
+  const smoothing = data.smoothing ?? 0.5;
+  const thinning = data.thinning ?? 0.6; // Excalidraw uses 0.6
+
   const pathData = useMemo(() => {
     if (!points || points.length === 0) {
       console.warn('PenNode: No points', { points, data, nodeWidth, nodeHeight });
       return '';
     }
-    const path = pointsToPath(points);
+    const path = pointsToPath(points, 1, {
+      size: strokeWidth,
+      smoothing,
+      thinning,
+    });
     if (!path) {
       console.warn('PenNode: Empty path', { points });
     }
     return path;
-  }, [points, data, nodeWidth, nodeHeight]);
+  }, [points, strokeWidth, smoothing, thinning]);
 
   if (!pathData) {
     console.warn('PenNode: No pathData, rendering placeholder', {
@@ -79,7 +84,8 @@ export function PenNode({ data, width, height, selected, dragging }: NodeProps<P
           style={{
             pointerEvents: 'visiblePainted',
             cursor: 'pointer',
-            fill: '#ef4444',
+            fill: color,
+            opacity: opacity,
           }}
           d={pathData}
         />

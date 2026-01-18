@@ -10,3 +10,16 @@ export type PenLine = {
     height: number;
   };
 };
+
+export type PenNodeData = {
+  points: PenPoint[];
+  initialSize: {
+    width: number;
+    height: number;
+  };
+  color?: string;
+  strokeWidth?: number;
+  opacity?: number;
+  smoothing?: number;
+  thinning?: number;
+};

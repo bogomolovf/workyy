@@ -22,8 +22,16 @@
 
 - `apps/web` - Next.js 14+ (App Router), React, ReactFlow, Zustand
 - `apps/realtime-server` - Fastify, y-websocket, Prisma, PostgreSQL
-- `packages/core-domain` - Доменные схемы
+- `packages/core-domain` - Доменные схемы (типы узлов: sql, python, table, plot)
 - `packages/dag-executor` - Исполнитель DAG
+
+**Ключевые компоненты:**
+
+- `apps/web/src/state/executionStore.ts` - хранение результатов выполнения узлов
+- `apps/web/src/components/flowNodes/` - компоненты узлов (SqlNode, PythonNode, PlotNode)
+- `apps/web/src/lib/yjs/adapters.ts` - адаптеры для Yjs синхронизации
+- `apps/web/src/hooks/useNodesStateSynced.ts` - синхронизация узлов
+- `apps/realtime-server/src/services/` - бэкенд сервисы
 
 **Ключевые особенности:**
 
@@ -31,6 +39,7 @@
 - Выполнение узлов: SQL (DuckDB-WASM), Python (Pyodide) в браузере
 - Execution Store (Zustand) для результатов выполнения узлов
 - DAG (Directed Acyclic Graph) для зависимостей узлов
+- Код узлов хранится через `setCode()`, НЕ в `node.payload`
 
 **Подробнее:** См. `.cursor/commands/agents/developer-agent.md` для полного контекста.
 
@@ -81,25 +90,25 @@
 3. **Связанные элементы системы:**
    - API endpoints (если проблема в backend)
    - React компоненты (если проблема в frontend)
-   - Store состояния (Zustand stores)
+   - Store состояния (executionStore, authStore, penSettingsStore)
    - Сервисы и утилиты
    - Типы и интерфейсы
    - Конфигурация (env, схемы БД)
 
-**Используй codebase_search для поиска:**
+**Используй SemanticSearch для поиска:**
 
 ```
-codebase_search: "How does [проблемная функциональность] work?"
-codebase_search: "Where is [затронутый компонент] used?"
-codebase_search: "What files import [измененный файл]?"
+SemanticSearch: "How does [проблемная функциональность] work?"
+SemanticSearch: "Where is [затронутый компонент] used?"
+SemanticSearch: "What files import [измененный файл]?"
 ```
 
-**Используй grep для точного поиска:**
+**Используй Grep для точного поиска:**
 
 ```
-grep: найти все использования измененных функций/компонентов
-grep: найти все импорты измененных модулей
-grep: найти все места, где используются затронутые типы
+Grep: найти все использования измененных функций/компонентов
+Grep: найти все импорты измененных модулей
+Grep: найти все места, где используются затронутые типы
 ```
 
 ### Шаг 3: Анализ причин неудачи
@@ -123,9 +132,9 @@ grep: найти все места, где используются затрон
 
 4. **Специфика Workyy:**
    - Проблема с Yjs синхронизацией?
-   - Проблема с executionStore?
+   - Проблема с executionStore (код в payload вместо setCode)?
    - Проблема с DAG зависимостями?
-   - Проблема с выполнением узлов?
+   - Проблема с выполнением узлов (передача контекста)?
 
 ### Шаг 4: Создание детального описания
 
@@ -181,27 +190,23 @@ grep: найти все места, где используются затрон
 
 - [аналогично]
 
-**Попытка N: [описание]**
-
-- [аналогично]
-
 ### Связанные файлы и элементы
 
 **Прямо связанные:**
 
-- `path/to/file1.ts` - [описание связи]
-- `path/to/file2.tsx` - [описание связи]
+- `apps/web/src/...` - [описание связи]
+- `apps/realtime-server/src/...` - [описание связи]
 
 **Косвенно связанные:**
 
-- `path/to/file3.ts` - [описание связи]
-- `path/to/file4.ts` - [описание связи]
+- `apps/web/src/state/executionStore.ts` - [описание связи]
+- `apps/web/src/lib/yjs/adapters.ts` - [описание связи]
 
 **Связанные компоненты системы:**
 
 - API endpoints: `/api/...` - [если применимо]
 - React компоненты: `ComponentName` - [если применимо]
-- Stores: `storeName` - [если применимо]
+- Stores: `executionStore`, `authStore` - [если применимо]
 - Сервисы: `serviceName` - [если применимо]
 - Типы: `TypeName` - [если применимо]
 
@@ -223,12 +228,13 @@ grep: найти все места, где используются затрон
 **Связано ли с:**
 
 - [ ] Yjs реалтайм синхронизацией
-- [ ] Execution Store (Zustand)
+- [ ] Execution Store (Zustand) - код в payload вместо setCode
 - [ ] DAG зависимостями узлов
-- [ ] Выполнением узлов (SQL/Python)
+- [ ] Выполнением узлов (SQL/Python) - передача контекста
 - [ ] WebSocket соединением
 - [ ] Prisma/PostgreSQL
 - [ ] Next.js App Router
+- [ ] ReactFlow адаптерами
 - [ ] Другое: [описание]
 
 ### Дополнительный контекст

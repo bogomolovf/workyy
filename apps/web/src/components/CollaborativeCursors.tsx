@@ -84,7 +84,7 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
             width: '100%',
             height: '100%',
             pointerEvents: 'none',
-            zIndex: 1200, // Ensure cursors are above nodes (nodes have z-index up to 20) and Controls (1100)
+            zIndex: 1300, // Ensure cursors are above all UI elements: nodes (up to 20), Controls (1100), PenToolbar (1000)
           }}
         >
           {cursors.map(({ id, color, x, y, userName }) => {
@@ -101,7 +101,6 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
                   pointerEvents: 'none',
                   overflow: 'visible',
                   willChange: 'transform', // Optimize rendering for frequent transform updates
-                  zIndex: 1000, // Ensure cursor is above all elements
                 }}
               >
               <g style={{ transform: scale, transformOrigin: '0 0' }}>

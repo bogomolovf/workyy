@@ -127,9 +127,7 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
 
   return (
     <div
-      className={`group rounded-md border bg-white shadow-lg transition-all ${
-        selected ? 'ring-2 ring-indigo-400' : 'border-slate-200'
-      }`}
+      className="group rounded-md border border-slate-200 bg-white shadow-lg transition-all"
       style={{ width: nodeWidth, minHeight: 400 }}
     >
       {/* Target handles on left for incoming data */}

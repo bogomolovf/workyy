@@ -10,7 +10,7 @@
 
 - Сохрани ВСЕ детали задачи пользователя - не теряй контекст
 - Работай автономно до полного завершения разработки
-- Используй codebase_search для изучения существующих паттернов
+- Используй SemanticSearch для изучения существующих паттернов
 - Планируй сложные задачи через todo_write (для задач с 3+ шагами)
 - Параллелизуй независимые операции (читай файлы одновременно, делай множественные поиски)
 
@@ -20,10 +20,18 @@
 
 **Архитектура:**
 
-- `apps/web` - Next.js 14+ (App Router), React, ReactFlow, Zustand
+- `apps/web` - Next.js 14+ (App Router), React, ReactFlow, Zustand, ECharts
 - `apps/realtime-server` - Fastify, y-websocket, Prisma, PostgreSQL
-- `packages/core-domain` - Доменные схемы
+- `packages/core-domain` - Доменные схемы (типы: sql, python, table, plot)
 - `packages/dag-executor` - Исполнитель DAG
+
+**Ключевые файлы:**
+
+- `apps/web/src/state/executionStore.ts` - результаты выполнения узлов
+- `apps/web/src/components/flowNodes/` - компоненты узлов
+- `apps/web/src/lib/visualization/` - построение графиков (ECharts)
+- `apps/realtime-server/src/routes/` - API endpoints
+- `apps/realtime-server/src/services/` - бизнес-логика
 
 **Ключевые особенности:**
 
@@ -31,6 +39,7 @@
 - Выполнение узлов: SQL (DuckDB-WASM), Python (Pyodide) в браузере
 - Execution Store (Zustand) для результатов выполнения узлов
 - DAG (Directed Acyclic Graph) для зависимостей узлов
+- Код узлов хранится через `setCode()`, НЕ в `node.payload`
 
 **Подробнее:** См. `.cursor/commands/agents/developer-agent.md` для полного контекста.
 
@@ -56,20 +65,20 @@
 
 ### Шаг 2: Изучение существующих паттернов
 
-**Используй codebase_search для изучения:**
+**Используй SemanticSearch для изучения:**
 
 1. **Похожие компоненты/сервисы:**
 
    ```
-   codebase_search: "How are similar features implemented?"
-   codebase_search: "Where is [похожая функциональность] implemented?"
+   SemanticSearch: "How are similar features implemented?"
+   SemanticSearch: "Where is [похожая функциональность] implemented?"
    ```
 
 2. **Паттерны проекта:**
 
    ```
-   codebase_search: "What patterns are used for [тип компонента]?"
-   codebase_search: "How is [технология] used in this project?"
+   SemanticSearch: "What patterns are used for [тип компонента]?"
+   SemanticSearch: "How is [технология] used in this project?"
    ```
 
 3. **Существующие пакеты:**
@@ -89,15 +98,6 @@
    - Проверь совместимость с существующими зависимостями
 
 **Выполняй множественные поиски параллельно** для максимальной эффективности.
-
-**Примеры хороших поисков:**
-
-```
-codebase_search: "How are API endpoints created with authentication and authorization?"
-codebase_search: "How are React components created for nodes on the canvas?"
-codebase_search: "How does executionStore work for storing node execution results?"
-codebase_search: "Where is authorizationService used for checking board access?"
-```
 
 ### Шаг 3: Планирование
 
@@ -129,7 +129,7 @@ todo_write:
 #### Для API endpoints (Backend):
 
 ```typescript
-// 1. Создай роут в apps/realtime-server/src/routes/
+// apps/realtime-server/src/routes/boards.ts
 export async function boardsRoutes(fastify: FastifyInstance) {
   fastify.delete(
     '/boards/:boardId',
@@ -140,20 +140,20 @@ export async function boardsRoutes(fastify: FastifyInstance) {
       preHandler: [fastify.authenticate],
     },
     async (request, reply) => {
-      // 2. Проверка прав доступа
+      // 1. Проверка прав доступа
       await ensureBoardAccess({
         userId: request.user!.userId,
         boardId: request.params.boardId,
         requiredRoles: ['owner'],
       });
 
-      // 3. Бизнес-логика
+      // 2. Бизнес-логика
       await prisma.board.delete({ where: { id: request.params.boardId } });
 
-      // 4. Аудит событие
-      await auditService.record({ type: 'board.deleted', boardId }, tx);
+      // 3. Аудит событие
+      await auditService.record({ type: 'board.deleted', boardId });
 
-      // 5. Возврат результата
+      // 4. Возврат результата
       return reply.code(204).send();
     },
   );
@@ -165,7 +165,7 @@ export async function boardsRoutes(fastify: FastifyInstance) {
 - [ ] Валидация параметров/тела через Zod схемы
 - [ ] Аутентификация (`preHandler: [fastify.authenticate]`)
 - [ ] Авторизация через `ensureBoardAccess()` или `ensureWorkspaceAccess()`
-- [ ] Обработка ошибок (404, 403, 500)
+- [ ] Обработка ошибок (404, 403, 500) через `sendProblem()`
 - [ ] Аудит событие через `auditService.record()` (если нужно)
 - [ ] Использование `select` в Prisma для оптимизации
 - [ ] Обновление `docs/api/openapi.yaml`
@@ -213,7 +213,12 @@ export function BoardList({ workspaceId }: { workspaceId: string }) {
 ```typescript
 import { useExecutionStore } from '../state/executionStore';
 
-// Сохранение кода узла
+const { setCode, setStatus, setSuccess, setError, registerNode } = useExecutionStore.getState();
+
+// Регистрация узла
+registerNode({ id: nodeId, type: 'sql', payload: {} });
+
+// Сохранение кода узла (НЕ в payload!)
 setCode(nodeId, code);
 
 // Выполнение узла
@@ -242,51 +247,29 @@ try {
 
 #### Для нового типа узла:
 
-1. **Добавь в core-domain:**
+1. **Добавь в core-domain (если доменный тип):**
 
    ```typescript
    // packages/core-domain/src/schemas/node.ts
-   export enum NodeType {
-     // ... существующие
-     CSV = 'csv',
-   }
+   export const NodeTypeSchema = z.enum(['sql', 'python', 'table', 'plot', 'newtype']);
    ```
 
 2. **Создай компонент:**
 
    ```typescript
-   // apps/web/src/components/flowNodes/CsvNode.tsx
-   export function CsvNode({ data, selected }: NodeProps) {
+   // apps/web/src/components/flowNodes/NewTypeNode.tsx
+   export function NewTypeNode({ data, selected }: NodeProps) {
      // UI компонент узла
    }
    ```
 
-3. **Добавь обработку выполнения:**
+3. **Добавь обработку выполнения (если выполняемый):**
    ```typescript
    // В handleRunNode
-   if (node.type === 'csv') {
+   if (node.type === 'newtype') {
      // обработка выполнения
    }
    ```
-
-**Чеклист для нового типа узла:**
-
-- [ ] Добавлен тип в `packages/core-domain`
-- [ ] Создан UI компонент в `apps/web/src/components/flowNodes/`
-- [ ] Добавлена обработка выполнения в `handleRunNode`
-- [ ] Добавлен в executionStore если нужно
-- [ ] Обновлены тесты
-
-#### Общие принципы:
-
-- Используй правильные типы TypeScript (strict mode)
-- Используй алиасы импортов `@workyy/<package>`
-- Обрабатывай ошибки правильно (показывай пользователю понятные сообщения)
-- Валидируй входные данные (Zod схемы на backend)
-- Проверяй права доступа если нужно
-- Пиши тесты для нового кода
-- Документируй сложную бизнес-логику (JSDoc)
-- Используй существующие пакеты из `packages/` если возможно
 
 ### Шаг 5: Тестирование
 
@@ -301,7 +284,6 @@ import { build } from '../src/server';
 describe('DELETE /boards/:boardId', () => {
   it('should delete board with owner role', async () => {
     const app = await build();
-    // ... setup
     const response = await app.inject({
       method: 'DELETE',
       url: '/boards/board-id',
@@ -311,10 +293,6 @@ describe('DELETE /boards/:boardId', () => {
   });
 
   it('should return 403 without owner role', async () => {
-    // ...
-  });
-
-  it('should return 404 if board not found', async () => {
     // ...
   });
 });
@@ -341,97 +319,25 @@ describe('BoardList', () => {
 });
 ```
 
-**Чеклист тестирования:**
-
-- [ ] Юнит-тесты для функций и компонентов (Vitest)
-- [ ] Интеграционные тесты для API если нужно
-- [ ] Покрытие критичной логики минимум 80%
-- [ ] Тесты для успешных сценариев
-- [ ] Тесты для ошибок (404, 403, validation errors)
-- [ ] Тесты независимые и детерминированные
-
 ### Шаг 6: Обновление документации
 
 **Обнови документацию:**
-
-**Чеклист документации:**
 
 - [ ] API документация (`docs/api/openapi.yaml`) если новый endpoint
 - [ ] ADR (`docs/architecture/adr/NNNN-feature-name.md`) если архитектурные изменения
 - [ ] JSDoc комментарии для публичных функций
 - [ ] README если новая функциональность или package
-- [ ] Комментарии в коде для сложной логики
-
-**Пример обновления OpenAPI:**
-
-```yaml
-/boards/{boardId}:
-  delete:
-    summary: Delete board
-    description: Deletes a board. Requires owner role.
-    parameters:
-      - name: boardId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    responses:
-      '204':
-        description: Board deleted successfully
-      '403':
-        description: Forbidden - insufficient permissions
-      '404':
-        description: Board not found
-```
 
 ### Шаг 7: Проверка и финализация
 
 **Перед завершением:**
-
-**Чеклист проверки:**
 
 - [ ] Код проходит линтер: `pnpm run lint`
 - [ ] Все тесты проходят: `pnpm run test`
 - [ ] Код соответствует стандартам проекта
 - [ ] ВСЕ требования пользователя выполнены
 - [ ] Нет очевидных багов
-- [ ] Обработаны все edge cases
-- [ ] Производительность приемлема (нет лишних ре-рендеров, оптимизированы запросы)
-
-**Финальный чеклист по типу фичи:**
-
-**API Endpoint:**
-
-- [ ] Валидация входных данных
-- [ ] Аутентификация и авторизация
-- [ ] Обработка ошибок
-- [ ] Аудит события (если нужно)
-- [ ] Тесты покрывают все сценарии
-- [ ] OpenAPI документация обновлена
-
-**UI Component:**
-
-- [ ] Обработка состояний (loading, error, success)
-- [ ] Понятные сообщения об ошибках
-- [ ] Использованы компоненты из ui-kit
-- [ ] Оптимизированы ре-рендеры
-- [ ] Тесты написаны
-
-**Работа с узлами:**
-
-- [ ] Используется executionStore правильно
-- [ ] Код хранится отдельно (не в payload)
-- [ ] Обработка зависимостей через DAG
-- [ ] Синхронизация через Yjs (автоматическая)
-
-**Новый тип узла:**
-
-- [ ] Тип добавлен в core-domain
-- [ ] UI компонент создан
-- [ ] Обработка выполнения добавлена
-- [ ] Интеграция с executionStore
-- [ ] Тесты написаны
+- [ ] Обработаны edge cases
 
 ## Формат использования
 
@@ -445,32 +351,19 @@ describe('BoardList', () => {
 Название фичи: Удаление доски
 
 Контекст:
-Нужно добавить возможность удалять доски через API. Пользователи должны иметь возможность удалять свои доски (owner role), а также админы должны иметь возможность удалять любые доски.
+Нужно добавить возможность удалять доски через API.
 
 Требования:
 1. Endpoint DELETE /boards/:boardId
 2. Проверка прав доступа (только owner)
-3. Каскадное удаление связанных узлов и соединений (Prisma onDelete: Cascade)
-4. Аудит событие при удалении (type: 'board.deleted')
+3. Каскадное удаление связанных узлов и соединений
+4. Аудит событие при удалении
 5. Возврат 404 если доска не найдена
 6. Возврат 403 если нет прав доступа
-7. Возврат 204 при успешном удалении
 
 Технические детали:
-- Используй authorizationService.ensureBoardAccess для проверки прав
-- Используй auditService.record для логирования
+- Используй authorizationService.ensureBoardAccess
 - Следуй паттернам из apps/realtime-server/src/routes/boards.ts
-- Используй валидацию Zod для параметров
-- Используй select в Prisma запросах
-
-Тесты:
-- Успешное удаление с owner role
-- Ошибка 403 без owner role
-- Ошибка 404 если доска не найдена
-- Аудит событие записывается
-
-Документация:
-- Обновить docs/api/openapi.yaml
 ```
 
 ### Пример 2: UI Component
@@ -481,110 +374,37 @@ describe('BoardList', () => {
 Название фичи: Список досок с поиском
 
 Контекст:
-Нужно создать компонент для отображения списка досок текущего workspace с возможностью поиска и фильтрации.
+Нужно создать компонент для отображения списка досок с поиском.
 
 Требования:
 1. Компонент BoardList отображает доски workspace
 2. Поиск по названию (debounced, 300ms)
-3. Фильтрация по дате создания (последние 7/30 дней / все)
-4. Пагинация (10 досок на страницу)
-5. Клик по доске открывает её на канве (router.push)
-6. Отображение статуса загрузки и ошибок
+3. Пагинация (10 досок на страницу)
+4. Клик по доске открывает её на канве
 
 Технические детали:
-- Используй API endpoint GET /boards?workspaceId=...&search=...&filter=...
 - Используй компоненты из @workyy/ui-kit
 - Следуй паттернам из apps/web/src/components/BoardInspector.tsx
-- Обрабатывай состояния через useState
-- Используй useCallback для оптимизации
-
-Расположение:
-- apps/web/src/components/BoardList.tsx
-- Использовать на странице workspace
-
-Тесты:
-- Отображение списка досок
-- Работа поиска
-- Работа фильтрации
-- Обработка ошибок загрузки
 ```
 
-### Пример 3: Новый тип узла
+### Пример 3: Работа с узлами
 
 ```
 /develop-feature
 
-Название фичи: CSV узел для загрузки данных
+Название фичи: Автозапуск downstream узлов
 
 Контекст:
-Нужно добавить новый тип узла CSV, который позволяет загружать CSV файлы и использовать их как источник данных в пайплайне.
+При успешном выполнении SQL узла нужно автоматически запускать downstream узлы.
 
 Требования:
-1. Новый тип узла 'csv' в core-domain
-2. UI компонент CsvNode для отображения узла
-3. Загрузка CSV файла через file input
-4. Парсинг CSV в SqlResult формат
-5. Результат доступен для downstream узлов (Python/SQL)
-6. Отображение предпросмотра таблицы
+1. После успешного выполнения SQL узла находить downstream узлы
+2. Запускать их в правильном порядке (topological sort)
+3. Обрабатывать ошибки - если один узел упал, остальные запускаются
 
 Технические детали:
-- Добавить NodeType.CSV в packages/core-domain
-- Использовать библиотеку papaparse для парсинга CSV
-- Результат в формате SqlResult (columns, rows)
-- Использовать executionStore для хранения результата
-- Добавить обработку в handleRunNode
-
-Тесты:
-- Парсинг CSV файла
-- Обработка ошибок (неверный формат, пустой файл)
-- Интеграция с downstream узлами
-```
-
-### Пример 4: Использование референсов из search-web
-
-```
-/develop-feature
-
-Название фичи: Интеграция библиотеки для визуализации данных
-
-Контекст:
-Нужно добавить визуализацию результатов SQL узлов. Используй референсы, собранные командой search-web.
-
-Референсы (из /search-web):
-[Вставь здесь результаты команды search-web или укажи путь к файлу с референсами]
-
-Требования:
-1. Библиотека должна работать в браузере
-2. Поддержка TypeScript
-3. Интеграция с React
-4. Различные типы графиков (line, bar, pie, scatter)
-5. Интерактивность (zoom, pan, tooltips)
-
-Технические детали:
-- Используй референсы для выбора библиотеки
-- Адаптируй примеры кода под архитектуру Workyy
-- Интегрируй с executionStore для получения данных
-- Следуй best practices из референсов
-
-Тесты:
-- Отображение различных типов графиков
-- Интерактивность (zoom, pan, tooltips)
-- Обработка больших объемов данных
-```
-
-**Альтернативный формат (если референсы в файле):**
-
-```
-/develop-feature
-
-Название фичи: [Название]
-
-[Описание фичи]
-
-Референсы:
-См. файл: .cursor/knowledge/references-[feature-name].md
-
-[Остальные требования...]
+- Используй dependencyResolver.getDownstreamNodeIds()
+- Используй executionStore для статусов
 ```
 
 ## Готов к работе
@@ -592,10 +412,10 @@ describe('BoardList', () => {
 Разработай новую функциональность на основе предоставленных требований. Я:
 
 1. Сохраню ВСЕ детали твоей задачи
-2. Изучу существующие паттерны через codebase_search
-3. Использую референсы из search-web (если предоставлены) для выбора библиотек и паттернов
+2. Изучу существующие паттерны через SemanticSearch
+3. Использую референсы из search-web (если предоставлены)
 4. Спланирую решение (используя todo_write для сложных задач)
-5. Реализую с учетом всех требований, паттернов Workyy и найденных референсов
+5. Реализую с учетом всех требований и паттернов Workyy
 6. Напишу тесты для критичной логики
 7. Обновлю документацию
 8. Проверю что все работает (lint, tests)

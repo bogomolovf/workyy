@@ -25,7 +25,7 @@
 
 **Monorepo структура:**
 
-- `apps/web` - Next.js 14+ приложение с канвой tldraw, узлами SQL/Python и визуализациями
+- `apps/web` - Next.js 14+ приложение с канвой ReactFlow, узлами SQL/Python и визуализациями
 - `apps/realtime-server` - Fastify/y-websocket сервер для синхронизации и API
 - `apps/landing` - Landing page (Vite + React) для маркетинга
 - `packages/core-domain` - Доменные схемы и типы данных
@@ -35,11 +35,61 @@
 
 **Основные технологии:**
 
-- Frontend: Next.js 14+ (App Router), React, ReactFlow, Zustand
+- Frontend: Next.js 14+ (App Router), React, ReactFlow, Zustand, ECharts
 - Backend: Fastify, y-websocket, Prisma, PostgreSQL, Redis
 - Выполнение кода: DuckDB-WASM (SQL), Pyodide (Python)
 - Тестирование: Vitest (юнит), Playwright (E2E)
 - Инструменты: TypeScript, ESLint, Prettier, pnpm
+
+### Структура фронтенда (apps/web/src)
+
+```
+apps/web/src/
+├── app/                    # Next.js App Router страницы
+│   ├── board/[boardId]/   # Страница доски
+│   ├── login/, signup/    # Аутентификация
+│   └── layout.tsx, page.tsx
+├── components/             # React компоненты
+│   ├── flowNodes/         # Узлы ReactFlow (SqlNode, PythonNode, PlotNode, etc.)
+│   ├── flowEdges/         # Кастомные рёбра
+│   ├── pen/               # Компоненты рисования (PenNode, FreehandOverlay)
+│   ├── visualizations/    # Визуализации (ECharts)
+│   ├── BoardCanvas.tsx    # Главный компонент канвы
+│   └── ...
+├── hooks/                  # React хуки (useBoardCollaboration, useNodesStateSynced)
+├── lib/                    # Утилиты и клиенты
+│   ├── yjs/               # Yjs адаптеры и утилиты
+│   ├── visualization/     # Построение графиков (chartBuilder, dataAnalyzer)
+│   ├── duckdbClient.ts    # DuckDB-WASM клиент
+│   ├── pythonExecutor.ts  # Python выполнение
+│   └── api.ts             # API клиент
+├── state/                  # Zustand stores
+│   ├── executionStore.ts  # Результаты выполнения узлов (ГЛАВНЫЙ STORE)
+│   ├── authStore.ts       # Аутентификация
+│   ├── penSettingsStore.ts # Настройки пера
+│   └── canvasHistoryStore.ts # История канвы
+└── workers/                # Web Workers (python.worker.ts)
+```
+
+### Структура бэкенда (apps/realtime-server/src)
+
+```
+apps/realtime-server/src/
+├── routes/                 # API роуты
+│   ├── boards.ts          # CRUD для досок
+│   ├── runs.ts            # Выполнение узлов
+│   ├── auth.ts            # Аутентификация
+│   ├── workspaces.ts      # Рабочие пространства
+│   └── ...
+├── services/               # Бизнес-логика
+│   ├── authorizationService.ts  # Проверка прав доступа
+│   ├── auditService.ts    # Аудит событий
+│   ├── dependencyResolver.ts # Разрешение зависимостей DAG
+│   └── ...
+├── validators/             # Zod схемы валидации
+├── lib/                    # Утилиты (prisma, problem)
+└── workers/                # Фоновые задачи
+```
 
 ### База данных
 
@@ -55,6 +105,25 @@
 
 ## Специфика проекта Workyy
 
+### Типы узлов
+
+**Доменные типы в core-domain (sql, python, table, plot):**
+
+```typescript
+// packages/core-domain/src/schemas/node.ts
+export const NodeTypeSchema = z.enum(['sql', 'python', 'table', 'plot']);
+```
+
+**UI типы узлов в ReactFlow (дополнительно):**
+
+- `pen` - рисование от руки (FreehandOverlay)
+- `note` - стикер/заметка (StickyNode)
+- `text` - текстовый блок (TextNode)
+- `shape` - геометрическая фигура (ShapeNode)
+- `database` - подключение к внешней БД (DatabaseNode)
+
+**ВАЖНО:** Доменные типы (`sql`, `python`, `table`, `plot`) используют executionStore и выполняются. UI типы (`pen`, `note`, `text`, `shape`) - только для отображения.
+
 ### Реалтайм коллаборация (Yjs)
 
 **ВАЖНО:** Реалтайм синхронизация через Yjs/WebSocket:
@@ -65,71 +134,90 @@
 - НЕ нужно вручную отправлять события через WebSocket - Yjs делает это автоматически
 - При изменении узлов/рёбер они автоматически синхронизируются между всеми клиентами
 
-**При реализации:**
+**Адаптеры (apps/web/src/lib/yjs/adapters.ts):**
 
-- Если добавляешь изменение узлов/рёбер - они автоматически синхронизируются через Yjs
-- Не создавай дополнительную логику синхронизации вручную
-- Для рисования на канве (pen, draw) используется отдельная система через BoardDrawing
+```typescript
+// Конвертация между CanvasNode и ReactFlow Node
+canvasNodeToReactFlowNode(canvasNode: CanvasNode): Node
+reactFlowNodeToCanvasNode(reactFlowNode: Node): CanvasNode
+
+// Конвертация между CanvasEdge и ReactFlow Edge  
+canvasEdgeToReactFlowEdge(canvasEdge: CanvasEdge): Edge
+reactFlowEdgeToCanvasEdge(reactFlowEdge: Edge): CanvasEdge
+```
+
+### Execution Store (Zustand) - ГЛАВНЫЙ STORE
+
+**Все результаты выполнения узлов хранятся в executionStore:**
+
+```typescript
+import { useExecutionStore } from '../state/executionStore';
+
+// Типы
+type NodeStatus = 'idle' | 'running' | 'success' | 'error';
+type SqlResult = { columns: string[]; rows: Array<Array<string | number | null>>; arrow?: Uint8Array };
+type PythonResult = { stdout: string; stderr?: string; table?: SqlResult | null; plotJson?: string | null };
+type PlotResult = { chartType: ChartType; config: PlotConfig; inputData: SqlResult; rendered?: { library: 'echarts'; spec: unknown } };
+
+// Получить запись узла
+const entry = useExecutionStore.getState().entries[nodeId];
+
+// Основные методы
+registerNode(node)           // Зарегистрировать узел
+setCode(nodeId, code)        // Установить код узла
+setStatus(nodeId, 'running') // Установить статус (idle, running, success, error)
+setSuccess(nodeId, output)   // Сохранить успешный результат
+setError(nodeId, message)    // Сохранить ошибку
+reset(nodeId)                // Сбросить выполнение
+resetOutput(nodeId)          // Сбросить только output
+removeNode(nodeId)           // Удалить узел
+```
+
+**КРИТИЧЕСКИ ВАЖНО:**
+
+- Код узла хранится через `setCode(nodeId, code)` - НЕ в `node.payload`!
+- Результаты выполнения в `entry.output` (kind: 'sql' | 'python' | 'plot')
+- Статусы: `'idle' | 'running' | 'success' | 'error'`
+- Для персистентности результаты могут сохраняться в `node.payload.execution`
 
 ### Выполнение узлов
 
 **SQL узлы:**
 
-- Выполняются через DuckDB-WASM в браузере
-- Функция: `executeSql(code: string)` возвращает `SqlResult`
-- Результат: `{ columns: string[], rows: Array<Array<string | number | null>> }`
-- Может использовать подключение к PostgreSQL через Database Node (connectionId)
+```typescript
+import { executeSql } from '../lib/duckdbClient';
+
+const result: SqlResult = await executeSql(code);
+// result = { columns: ['col1', 'col2'], rows: [[1, 'a'], [2, 'b']] }
+setSuccess(nodeId, { kind: 'sql', result, code });
+```
 
 **Python узлы:**
 
-- Выполняются через Pyodide в Web Workers
-- Функция: `runPython(code: string, context: { sqlResult?: SqlResult })` возвращает `PythonExecutionOutput`
-- Контекст из upstream SQL узла передается через `sqlResult` параметр
-- Результат может содержать: `stdout`, `stderr`, `table` (SqlResult), `plotJson`
-
-**Выполнение происходит в браузере** - не на сервере!
-
-**Примеры:**
-
 ```typescript
-// SQL узел
-const result = await executeSql(code);
-setSuccess(nodeId, { kind: 'sql', result, code });
+import { runPython } from '../lib/pythonExecutor';
 
-// Python узел с контекстом от SQL
+// Получить результат от upstream SQL узла
 const upstreamResult = entries[upstreamNodeId]?.output?.result;
-const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
+const pythonOutput: PythonResult = await runPython(code, { sqlResult: upstreamResult });
+// pythonOutput = { stdout: '...', stderr: '...', table: SqlResult | null, plotJson: string | null }
 setSuccess(nodeId, { kind: 'python', result: pythonOutput, code });
 ```
 
-### Execution Store (Zustand)
-
-**Все результаты выполнения хранятся в executionStore:**
+**Plot узлы:**
 
 ```typescript
-import { useExecutionStore } from '../state/executionStore';
-
-// Получить запись узла
-const entry = useExecutionStore.getState().entries[nodeId];
-
-// Установить статус
-setStatus(nodeId, 'running'); // или 'success', 'error', 'idle'
-
-// Сохранить успешный результат
-setSuccess(nodeId, { kind: 'sql', result, code });
-
-// Сохранить ошибку
-setError(nodeId, errorMessage);
-
-// Сбросить выполнение
-reset(nodeId);
+// Plot узлы используют данные от upstream SQL узла для визуализации
+const plotResult: PlotResult = {
+  chartType: 'bar',
+  config: plotConfig,
+  inputData: upstreamSqlResult,
+  rendered: { library: 'echarts', spec: echartsOption }
+};
+setSuccess(nodeId, { kind: 'plot', result: plotResult });
 ```
 
-**Важно:**
-
-- Код узла хранится отдельно через `setCode(nodeId, code)` - НЕ в payload узла
-- Результаты выполнения могут сохраняться в `node.payload.execution` для персистентности
-- Статусы: `'idle' | 'running' | 'success' | 'error'`
+**Выполнение происходит в браузере** - не на сервере!
 
 ### DAG (Directed Acyclic Graph)
 
@@ -154,60 +242,42 @@ for (const downstreamId of downstreamIds) {
 }
 ```
 
-### Типы узлов
+### Визуализации (ECharts)
 
-**Доступные типы узлов (NodeType):**
+**Workyy использует ECharts для построения графиков:**
 
-- `sql` - SQL запросы (DuckDB или PostgreSQL)
-- `python` - Python код (Pyodide)
-- `table` - Отображение таблицы
-- `plot` - График/визуализация
-- `note` - Текстовая заметка
-- `text` - Текстовый блок
-- `shape` - Геометрическая фигура
-- `image` - Изображение
-- `draw` - Рисование на канве
-- `pen` - Перо для рисования
-- `database` - Подключение к внешней БД (PostgreSQL)
+```
+apps/web/src/lib/visualization/
+├── chartBuilder.ts     # Построение конфигурации ECharts
+├── chartTypes.ts       # Типы графиков (line, bar, pie, scatter, etc.)
+├── dataAnalyzer.ts     # Анализ данных для автоконфигурации
+├── fieldMapper.ts      # Маппинг полей данных
+└── autoConfig.ts       # Автоматическая конфигурация
 
-**При добавлении нового типа узла:**
-
-1. Добавь в `packages/core-domain/src/schemas/node.ts`
-2. Добавь обработку в логику выполнения узлов
-3. Создай UI компонент в `apps/web/src/components/flowNodes/`
-
-### Управление состоянием канвы
-
-**Узлы и рёбра:**
-
-- Хранятся в состоянии компонента (useState или через Yjs)
-- При изменении автоматически синхронизируются через Yjs
-- Позиции узлов: `positionX`, `positionY`
-- Payload узла: JSON с метаданными (НЕ код!)
-
-**Код узлов:**
-
-- Хранится отдельно в `codeStore` (НЕ в payload)
-- Используй `setCode(nodeId, code)` для сохранения кода
+apps/web/src/components/visualizations/
+├── ChartRenderer.tsx   # Рендер графиков
+└── echarts/
+    └── EChartsRenderer.tsx  # ECharts компонент
+```
 
 ## Использование инструментов
 
-### codebase_search - ПРАВИЛЬНОЕ использование
+### SemanticSearch - ПРАВИЛЬНОЕ использование
 
 **Стратегия поиска:**
 
 1. **Начни с широкого семантического поиска** для понимания общей картины:
 
    ```
-   codebase_search: "How does board creation work in the API?"
-   codebase_search: "Where are SQL nodes executed in the browser?"
+   SemanticSearch: "How does board creation work in the API?"
+   SemanticSearch: "Where are SQL nodes executed in the browser?"
    ```
 
 2. **Конкретизируй** для поиска деталей:
 
    ```
-   codebase_search: "How does handleRunNode work for SQL nodes?"
-   codebase_search: "Where is executionStore used for storing node results?"
+   SemanticSearch: "How does handleRunNode work for SQL nodes?"
+   SemanticSearch: "Where is executionStore used for storing node results?"
    ```
 
 3. **Задавай вопросы как коллеге:**
@@ -226,20 +296,20 @@ for (const downstreamId of downstreamIds) {
 **Примеры хороших поисков:**
 
 ```
-codebase_search: "How does real-time synchronization work with Yjs for nodes and edges?"
-codebase_search: "Where is executionStore initialized and how does it store node execution results?"
-codebase_search: "How are downstream nodes executed when upstream node completes?"
-codebase_search: "Where is PostgreSQL database connection used for SQL node execution?"
+SemanticSearch: "How does real-time synchronization work with Yjs for nodes and edges?"
+SemanticSearch: "Where is executionStore initialized and how does it store node execution results?"
+SemanticSearch: "How are downstream nodes executed when upstream node completes?"
+SemanticSearch: "Where is authorizationService used for checking board access?"
 ```
 
-### read_file - Когда использовать
+### Read - Когда использовать
 
-- После codebase_search для детального изучения найденных файлов
+- После SemanticSearch для детального изучения найденных файлов
 - Перед модификацией существующего кода
 - Для понимания структуры компонента/сервиса
 - **Читай несколько файлов параллельно** когда возможно (независимые файлы)
 
-### grep - Для точного поиска
+### Grep - Для точного поиска
 
 - Когда нужно найти конкретное использование функции/типа
 - Для поиска импортов и зависимостей
@@ -264,7 +334,7 @@ codebase_search: "Where is PostgreSQL database connection used for SQL node exec
 
 ### Шаг 2: Изучение кодовой базы
 
-**Используй codebase_search как основной инструмент:**
+**Используй SemanticSearch как основной инструмент:**
 
 1. Начни с широкого поиска для понимания контекста
 2. Изучай похожие компоненты/сервисы перед созданием новых
@@ -272,15 +342,6 @@ codebase_search: "Where is PostgreSQL database connection used for SQL node exec
 4. Изучай паттерны из `.cursor/knowledge/patterns.md`
 5. Проверяй ADR из `docs/architecture/adr/` при архитектурных решениях
 6. Проверяй API контракты в `docs/api/openapi.yaml`
-
-**Примеры поисков:**
-
-```
-codebase_search: "How does board creation work in the API?"
-codebase_search: "Where are similar components implemented?"
-codebase_search: "What patterns are used for form validation?"
-codebase_search: "How does authorizationService check board access?"
-```
 
 ### Шаг 3: Планирование
 
@@ -294,16 +355,6 @@ codebase_search: "How does authorizationService check board access?"
 - Отмечай задачи как `completed` сразу после завершения
 - Только ОДНА задача `in_progress` одновременно
 
-**Пример планирования:**
-
-```typescript
-todo_write:
-1. "Create BoardList component with search and pagination" [in_progress]
-2. "Add API endpoint for board search with filters" [pending]
-3. "Implement BoardList tests with Vitest" [pending]
-4. "Integrate BoardList into workspace page" [pending]
-```
-
 ### Шаг 4: Реализация
 
 **При реализации следуй паттернам:**
@@ -311,12 +362,12 @@ todo_write:
 1. **Используй правильные типы:**
 
    ```typescript
-   import { NodeType } from '@workyy/core-domain';
-   import type { SqlResult } from '../state/executionStore';
+   import { NodeTypeSchema } from '@workyy/core-domain';
+   import type { SqlResult, ExecutionEntry } from '../state/executionStore';
    ```
 
 2. **Следуй паттернам проекта:**
-   - Frontend: смотри примеры в `apps/web/src/components/`
+   - Frontend: смотри примеры в `apps/web/src/components/flowNodes/`
    - Backend: смотри примеры в `apps/realtime-server/src/routes/` и `src/services/`
    - Используй алиасы: `@workyy/core-domain`, `@workyy/ui-kit`
 
@@ -333,7 +384,7 @@ todo_write:
 
 6. **Параллелизуй операции:**
    - Читай несколько файлов одновременно
-   - Выполняй множественные codebase_search параллельно
+   - Выполняй множественные SemanticSearch параллельно
    - Группируй независимые операции
 
 ### Шаг 5: Проверка
@@ -359,7 +410,7 @@ todo_write:
 
 ```typescript
 // ✅ Правильно
-import { NodeType } from '@workyy/core-domain';
+import { NodeTypeSchema } from '@workyy/core-domain';
 import { Button } from '@workyy/ui-kit';
 import { useExecutionStore } from '../state/executionStore';
 
@@ -418,37 +469,21 @@ export async function boardsRoutes(fastify: FastifyInstance) {
 }
 ```
 
-### Prisma запросы
-
-```typescript
-// Всегда используй select для оптимизации
-const board = await prisma.board.findUnique({
-  where: { id },
-  select: {
-    id: true,
-    title: true,
-    nodes: { select: { id: true, type: true } },
-  },
-});
-
-// Используй транзакции для связанных операций
-await prisma.$transaction(async (tx) => {
-  const board = await tx.board.create({ data });
-  await tx.node.createMany({ data: nodes });
-  await auditService.record({ type: 'board.created', boardId: board.id }, tx);
-});
-```
-
 ### Работа с executionStore
 
 ```typescript
 import { useExecutionStore } from '../state/executionStore';
 
-const { setStatus, setSuccess, setError, setCode } = useExecutionStore.getState();
+const { setStatus, setSuccess, setError, setCode, registerNode } = useExecutionStore.getState();
+
+// При создании узла
+registerNode({ id: nodeId, type: 'sql', payload: {} });
+
+// При изменении кода
+setCode(nodeId, newCode);
 
 // При выполнении узла
 setStatus(nodeId, 'running');
-setCode(nodeId, code);
 
 try {
   if (nodeType === 'sql') {
@@ -496,41 +531,7 @@ if (!board) {
     detail: `Board with id ${boardId} does not exist`,
   });
 }
-
-try {
-  // операция
-} catch (error) {
-  request.log.error({ err: error, boardId }, 'Failed to create board');
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    // обработка ошибок Prisma
-  }
-  throw fastify.httpErrors.internalServerError();
-}
 ```
-
-## Производительность
-
-### Frontend
-
-- Используй `React.memo` для тяжелых компонентов
-- Ленивая загрузка компонентов (dynamic imports в Next.js)
-- Оптимизируй ре-рендеры (useMemo, useCallback)
-- Для больших списков используй виртуализацию
-- Оптимизируй размер бандла (не импортируй весь lodash, только нужные функции)
-
-### Backend
-
-- Всегда используй `select` в Prisma запросах (не `include`)
-- Добавляй индексы для частых запросов
-- Используй connection pooling (Prisma делает это автоматически)
-- Кэшируй часто запрашиваемые данные
-- Оптимизируй WebSocket сообщения (только дельты, не полное состояние)
-
-### Выполнение узлов
-
-- SQL: DuckDB-WASM эффективен для небольших/средних данных
-- Python: выполняй в Web Workers для избежания блокировки UI
-- Ограничивай время выполнения (timeout для Python узлов)
 
 ## Безопасность
 
@@ -539,16 +540,13 @@ try {
 - Валидация всех входных данных (Zod схемы)
 - Проверка прав доступа через `authorizationService.ensureBoardAccess()`
 - Используй prepared statements для SQL (Prisma делает это автоматически)
-- CORS настроен правильно
-- Обработка ошибок не раскрывает чувствительную информацию
-- Пароли хешируются через bcrypt (11 rounds)
 
 ## Тестирование
 
 - Новый код должен иметь тесты
 - Покрытие критичной логики минимум 80%
 - Используй Vitest для юнит-тестов
-- Используй Playwright для E2E тестов (когда будут добавлены)
+- Используй Playwright для E2E тестов
 - Тесты должны быть независимыми и детерминированными
 
 ```typescript
@@ -574,7 +572,7 @@ describe('BoardService', () => {
 ## Важные напоминания
 
 - **Сохраняй контекст:** Все детали задачи пользователя должны быть учтены
-- **Изучай код:** Используй codebase_search вместо предположений
+- **Изучай код:** Используй SemanticSearch вместо предположений
 - **Планируй:** Используй todo_write для сложных задач (3+ шага)
 - **Параллелизуй:** Выполняй независимые операции одновременно
 - **Автономность:** Работай до полного завершения задачи
@@ -584,7 +582,6 @@ describe('BoardService', () => {
 - TypeScript strict mode обязателен
 - Всегда валидируй входные данные
 - Проверяй права доступа перед операциями
-- Оптимизируй Prisma запросы (используй select)
 - Пиши тесты для нового кода
 - **Для узлов:** используй executionStore, не храни код в payload
 - **Для синхронизации:** Yjs делает это автоматически, не создавай свою логику
@@ -594,7 +591,7 @@ describe('BoardService', () => {
 Опиши задачу, которую нужно реализовать. Я:
 
 1. Сохраню ВСЕ детали твоей задачи
-2. Изучу существующий код через codebase_search
+2. Изучу существующий код через SemanticSearch
 3. Спланирую решение (используя todo_write для сложных задач)
 4. Реализую с учетом всех требований и паттернов проекта
 5. Проверю что все работает (lint, tests)

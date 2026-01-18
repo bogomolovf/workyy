@@ -132,6 +132,112 @@ export async function executeSql(query: string): Promise<SqlResult> {
   return tableToSqlResult(table);
 }
 
+/** Default number of rows to show in preview mode */
+export const DEFAULT_PREVIEW_LIMIT = 10000;
+
+/** Result type for preview-aware SQL execution */
+export type PreviewSqlResult = SqlResult & {
+  /** Total number of rows in the full result set */
+  totalCount: number;
+  /** Whether this result is a preview (limited) subset */
+  isPreview: boolean;
+};
+
+export type ExecuteSqlOptions = {
+  /** Maximum rows to return in preview mode (default: 1000) */
+  previewLimit?: number;
+  /** If true, load all data regardless of size */
+  fullLoad?: boolean;
+};
+
+/**
+ * Execute SQL with optional preview mode.
+ * When preview mode is active (default), large result sets are automatically
+ * limited to previewLimit rows, with totalCount indicating the full size.
+ */
+export async function executeSqlWithPreview(
+  query: string,
+  options?: ExecuteSqlOptions,
+): Promise<PreviewSqlResult> {
+  const { previewLimit = DEFAULT_PREVIEW_LIMIT, fullLoad = false } = options ?? {};
+  const { connection } = await getDuckDbContext();
+
+  // Normalize query - remove trailing semicolons and whitespace
+  const normalizedQuery = query.replace(/;\s*$/, '').trim();
+
+  // Get total row count first
+  // We wrap the query as a subquery to handle complex queries with ORDER BY, etc.
+  const countQuery = `SELECT COUNT(*) as cnt FROM (${normalizedQuery}) AS _count_subquery`;
+  let totalCount: number;
+  try {
+    const countResult = await connection.query(countQuery);
+    const countRows = countResult.toArray() as Array<{ cnt: bigint | number }>;
+    totalCount = Number(countRows[0]?.cnt ?? 0);
+  } catch {
+    // If count query fails (e.g., for DDL statements), execute normally
+    const table = await connection.query(query);
+    const result = tableToSqlResult(table);
+    return {
+      ...result,
+      totalCount: result.rows.length,
+      isPreview: false,
+    };
+  }
+
+  // If full load requested or data fits within preview limit, return all
+  if (fullLoad || totalCount <= previewLimit) {
+    const table = await connection.query(query);
+    const result = tableToSqlResult(table);
+    return {
+      ...result,
+      totalCount,
+      isPreview: false,
+    };
+  }
+
+  // Apply preview limit
+  const previewQuery = `${normalizedQuery} LIMIT ${previewLimit}`;
+  const table = await connection.query(previewQuery);
+  const result = tableToSqlResult(table);
+
+  return {
+    ...result,
+    totalCount,
+    isPreview: true,
+  };
+}
+
+/**
+ * Execute SQL with pagination support.
+ * Used for loading specific pages of large result sets.
+ */
+export async function executeSqlPaginated(
+  query: string,
+  options: { pageSize: number; offset: number },
+): Promise<SqlResult> {
+  const { pageSize, offset } = options;
+  const { connection } = await getDuckDbContext();
+
+  // Normalize query - remove trailing semicolons
+  const normalizedQuery = query.replace(/;\s*$/, '').trim();
+
+  const paginatedQuery = `${normalizedQuery} LIMIT ${pageSize} OFFSET ${offset}`;
+  const table = await connection.query(paginatedQuery);
+  return tableToSqlResult(table);
+}
+
+/**
+ * Get the total row count for a query without fetching data.
+ */
+export async function getSqlRowCount(query: string): Promise<number> {
+  const { connection } = await getDuckDbContext();
+  const normalizedQuery = query.replace(/;\s*$/, '').trim();
+  const countQuery = `SELECT COUNT(*) as cnt FROM (${normalizedQuery}) AS _count_subquery`;
+  const countResult = await connection.query(countQuery);
+  const countRows = countResult.toArray() as Array<{ cnt: bigint | number }>;
+  return Number(countRows[0]?.cnt ?? 0);
+}
+
 export type DuckDbLoadOptions = {
   tableName?: string;
   format?: 'auto' | 'csv' | 'parquet';

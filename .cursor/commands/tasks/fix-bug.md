@@ -10,7 +10,7 @@
 
 - Сохрани ВСЕ детали описания бага - не теряй контекст
 - Работай автономно до полного исправления бага
-- Используй codebase_search для изучения связанных компонентов
+- Используй SemanticSearch для изучения связанных компонентов
 - Протестируй исправление перед завершением
 - Убедись что исправление не создает новых проблем
 
@@ -22,8 +22,16 @@
 
 - `apps/web` - Next.js 14+ (App Router), React, ReactFlow, Zustand
 - `apps/realtime-server` - Fastify, y-websocket, Prisma, PostgreSQL
-- `packages/core-domain` - Доменные схемы
+- `packages/core-domain` - Доменные схемы (типы: sql, python, table, plot)
 - `packages/dag-executor` - Исполнитель DAG
+
+**Ключевые файлы для отладки:**
+
+- `apps/web/src/state/executionStore.ts` - результаты выполнения узлов
+- `apps/web/src/components/flowNodes/` - компоненты узлов
+- `apps/web/src/lib/yjs/adapters.ts` - адаптеры Yjs
+- `apps/web/src/hooks/useNodesStateSynced.ts` - синхронизация узлов
+- `apps/realtime-server/src/services/dependencyResolver.ts` - зависимости DAG
 
 **Ключевые особенности:**
 
@@ -31,6 +39,7 @@
 - Выполнение узлов: SQL (DuckDB-WASM), Python (Pyodide) в браузере
 - Execution Store (Zustand) для результатов выполнения узлов
 - DAG (Directed Acyclic Graph) для зависимостей узлов
+- Код узлов хранится через `setCode()`, НЕ в `node.payload`
 
 **Подробнее:** См. `.cursor/commands/agents/developer-agent.md` для полного контекста.
 
@@ -81,17 +90,11 @@
 **Используй инструменты для локализации:**
 
 ```
-codebase_search: "How does [проблемная функциональность] work?"
-codebase_search: "Where is [затронутый компонент] implemented?"
-grep: найти использование проблемных функций/переменных
-read_file: изучить связанные файлы
+SemanticSearch: "How does [проблемная функциональность] work?"
+SemanticSearch: "Where is [затронутый компонент] implemented?"
+Grep: найти использование проблемных функций/переменных
+Read: изучить связанные файлы
 ```
-
-**Проверь логи:**
-
-- Консоль браузера (DevTools)
-- Логи сервера (если проблема в backend)
-- Network tab (если проблема с API)
 
 ### Шаг 3: Анализ связанных компонентов
 
@@ -110,7 +113,7 @@ read_file: изучить связанные файлы
 3. **Связанные системы:**
    - API endpoints (если проблема в backend)
    - React компоненты (если проблема в frontend)
-   - Stores (executionStore, authStore и др.)
+   - Stores (executionStore, authStore, penSettingsStore)
    - Сервисы и утилиты
 
 **Особое внимание к специфике Workyy:**
@@ -120,24 +123,27 @@ read_file: изучить связанные файлы
 - Изменения узлов/рёбер автоматически синхронизируются
 - Не создавай дополнительную логику синхронизации
 - Проверь нет ли конфликтов с Yjs
+- Смотри `apps/web/src/lib/yjs/adapters.ts`
 
 **Execution Store:**
 
-- Код узлов хранится через `setCode()`, не в `node.payload`
+- Код узлов хранится через `setCode()`, НЕ в `node.payload`
 - Статусы и результаты через executionStore
 - Проверь правильность использования store методов
+- Смотри `apps/web/src/state/executionStore.ts`
 
 **DAG зависимости:**
 
 - Узлы связаны через Edges (sourceId → targetId)
 - Используй `getDownstreamNodeIds` для зависимостей
 - Проверь нет ли циклических зависимостей
+- Смотри `apps/realtime-server/src/services/dependencyResolver.ts`
 
 **Выполнение узлов:**
 
-- SQL через `executeSql()`
-- Python через `runPython()` с контекстом от upstream узла
-- Проверь передачу данных между узлами
+- SQL через `executeSql()` из `apps/web/src/lib/duckdbClient.ts`
+- Python через `runPython()` из `apps/web/src/lib/pythonExecutor.ts`
+- Проверь передачу данных между узлами (upstreamResult)
 
 ### Шаг 4: Определение корневой причины
 
@@ -160,34 +166,26 @@ read_file: изучить связанные файлы
 
 **Частые причины багов в Workyy:**
 
-- Неправильная работа с executionStore (код в payload вместо setCode)
-- Проблемы с синхронизацией через Yjs (попытка ручной синхронизации)
-- Неправильная обработка зависимостей DAG (не учитываются downstream узлы)
-- Ошибки при выполнении узлов (неправильная передача контекста между узлами)
-- Проблемы с аутентификацией/авторизацией (нет проверки прав)
-- Неправильная обработка ошибок (не показываются пользователю)
+- **Код в payload вместо setCode** - неправильная работа с executionStore
+- **Ручная синхронизация** - попытка ручной синхронизации вместо Yjs
+- **Неправильный DAG** - не учитываются downstream узлы
+- **Потеря контекста** - неправильная передача upstreamResult между узлами
+- **Неправильные адаптеры** - проблемы в `reactFlowNodeToCanvasNode`
+- **Проблемы с аутентификацией** - нет проверки прав
+- **Неправильная обработка ошибок** - ошибки не показываются пользователю
 
 ### Шаг 5: Планирование исправления
 
 **Для сложных багов (3+ шага) используй todo_write:**
 
-**Правила создания задач:**
-
-- Атомарные задачи (≤14 слов, глагол-действие)
-- Задачи высокоуровневые (≈20 минут работы)
-- НЕ включай операционные действия (linting, testing, searching)
-- Отмечай задачи как `completed` сразу после завершения
-- Только ОДНА задача `in_progress` одновременно
-
 **Пример планирования:**
 
 ```
 todo_write:
-1. "Fix executionStore code storage issue in node payload" [in_progress]
-2. "Update handleRunNode to use setCode instead of payload" [pending]
+1. "Fix executionStore code storage issue" [in_progress]
+2. "Update handleRunNode to use setCode" [pending]
 3. "Fix downstream nodes execution trigger" [pending]
 4. "Add tests for node code storage fix" [pending]
-5. "Verify Yjs synchronization still works" [pending]
 ```
 
 ### Шаг 6: Реализация исправления
@@ -195,7 +193,7 @@ todo_write:
 **При исправлении:**
 
 1. **Следуй паттернам проекта:**
-   - Используй правильные типы TypeScript (strict mode)
+   - Используй правильные типы TypeScript
    - Используй алиасы импортов `@workyy/<package>`
    - Следуй существующим паттернам обработки ошибок
 
@@ -210,11 +208,6 @@ todo_write:
    - Не рефакторь без необходимости
    - Сохраняй существующую функциональность
 
-4. **Обрабатывай ошибки:**
-   - Показывай понятные сообщения пользователю
-   - Логируй ошибки для отладки
-   - Обрабатывай edge cases
-
 **Примеры исправлений:**
 
 **Исправление проблемы с executionStore:**
@@ -226,6 +219,7 @@ setNodesState((prev) =>
 );
 
 // ✅ Правильно - код через setCode
+const { setCode } = useExecutionStore.getState();
 setCode(nodeId, newCode);
 ```
 
@@ -236,6 +230,9 @@ setCode(nodeId, newCode);
 await handleRunNode(nodeId);
 
 // ✅ Правильно - учитываются все зависимости
+import { getDownstreamNodeIds } from '@workyy/dag-executor';
+
+await handleRunNode(nodeId);
 const downstreamIds = getDownstreamNodeIds(nodeId, edges);
 for (const downstreamId of downstreamIds) {
   await handleRunNode(downstreamId);
@@ -249,6 +246,7 @@ for (const downstreamId of downstreamIds) {
 const pythonOutput = await runPython(code);
 
 // ✅ Правильно - передается контекст
+const { entries } = useExecutionStore.getState();
 const upstreamEdge = edges.find((e) => e.targetId === nodeId);
 const upstreamResult = entries[upstreamEdge?.sourceId]?.output?.result;
 const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
@@ -271,35 +269,23 @@ const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
 3. **Запусти тесты:**
    - Существующие тесты должны проходить
    - Добавь тест для исправленного бага (если нужно)
-   - Проверь покрытие критичной логики
 
 **Чеклист тестирования:**
 
 - [ ] Проблема воспроизведена и исправлена
 - [ ] Ожидаемое поведение работает
-- [ ] Существующие тесты проходят
+- [ ] Существующие тесты проходят: `pnpm run test`
 - [ ] Нет регрессий в связанной функциональности
 - [ ] Edge cases обработаны
-- [ ] Ошибки обрабатываются корректно
+- [ ] Линтер проходит: `pnpm run lint`
 
 ### Шаг 8: Проверка и финализация
-
-**Перед завершением:**
-
-**Чеклист проверки:**
-
-- [ ] Код проходит линтер: `pnpm run lint`
-- [ ] Все тесты проходят: `pnpm run test`
-- [ ] Проблема решена полностью
-- [ ] Нет побочных эффектов
-- [ ] Код соответствует стандартам проекта
-- [ ] Исправление не создает новых проблем
 
 **Специфичные проверки для Workyy:**
 
 **Для проблем с узлами:**
 
-- [ ] Код хранится правильно (не в payload)
+- [ ] Код хранится правильно (через setCode, не в payload)
 - [ ] executionStore используется корректно
 - [ ] Статусы узлов обновляются правильно
 
@@ -307,7 +293,7 @@ const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
 
 - [ ] Yjs синхронизация работает (автоматически)
 - [ ] Нет конфликтов с существующей логикой
-- [ ] Изменения синхронизируются между клиентами
+- [ ] Адаптеры работают корректно
 
 **Для проблем с DAG:**
 
@@ -318,38 +304,25 @@ const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
 **Для проблем с выполнением:**
 
 - [ ] SQL узлы выполняются корректно
-- [ ] Python узлы получают правильный контекст
+- [ ] Python узлы получают правильный контекст (upstreamResult)
 - [ ] Результаты передаются между узлами
 
 ## Типы багов и подходы к исправлению
 
 ### Тип 1: UI/UX баги
 
-**Характеристики:**
-
-- Проблемы с отображением
-- Проблемы с интерактивностью
-- Проблемы с состоянием UI
-
 **Подход:**
 
-- Изучи React компоненты
+- Изучи React компоненты в `apps/web/src/components/`
 - Проверь состояние (useState, stores)
 - Проверь обработку событий
 - Убедись в правильной работе ре-рендеров
 
 ### Тип 2: API/Backend баги
 
-**Характеристики:**
-
-- Проблемы с endpoints
-- Проблемы с авторизацией
-- Проблемы с валидацией
-- Ошибки БД
-
 **Подход:**
 
-- Изучи Fastify роуты
+- Изучи Fastify роуты в `apps/realtime-server/src/routes/`
 - Проверь аутентификацию/авторизацию
 - Проверь валидацию (Zod схемы)
 - Проверь Prisma запросы
@@ -357,48 +330,28 @@ const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
 
 ### Тип 3: Баги выполнения узлов
 
-**Характеристики:**
-
-- Узлы не выполняются
-- Неправильные результаты
-- Проблемы с передачей данных между узлами
-
 **Подход:**
 
-- Проверь executionStore
+- Проверь executionStore в `apps/web/src/state/executionStore.ts`
 - Проверь handleRunNode
 - Проверь передачу контекста между узлами
-- Проверь обработку зависимостей DAG
-- Проверь executeSql/runPython
+- Проверь `executeSql` / `runPython`
 
 ### Тип 4: Баги синхронизации
-
-**Характеристики:**
-
-- Изменения не синхронизируются
-- Конфликты между клиентами
-- Проблемы с Yjs
 
 **Подход:**
 
 - Убедись что Yjs работает автоматически
 - Не создавай ручную логику синхронизации
-- Проверь WebSocket соединение
-- Проверь правильность работы с Y.Doc
+- Проверь адаптеры в `apps/web/src/lib/yjs/adapters.ts`
+- Проверь хуки в `apps/web/src/hooks/useNodesStateSynced.ts`
 
 ### Тип 5: Баги состояния (Stores)
 
-**Характеристики:**
-
-- Состояние не обновляется
-- Потеря данных
-- Некорректное состояние
-
 **Подход:**
 
-- Изучи Zustand stores
+- Изучи Zustand stores в `apps/web/src/state/`
 - Проверь правильность использования методов store
-- Проверь персистентность (если используется)
 - Проверь синхронизацию между stores
 
 ## Формат использования
@@ -425,41 +378,6 @@ const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
 
 Ожидаемое: Python узел должен получить результат SQL узла
 Фактическое: Python узел получает None
-
-Логи: нет ошибок в консоли
-```
-
-### С детальным описанием
-
-```
-/fix-bug
-
-Краткое резюме: Python узел не получает контекст от upstream SQL узла при выполнении
-
-Дефектное поведение:
-- Python узел выполняется, но не получает данные от SQL узла
-- В Python коде переменная df равна None
-- Нет ошибок в консоли
-
-Ожидаемое поведение:
-- Python узел должен получить результат SQL узла в переменной df
-- Данные должны быть доступны для обработки
-
-Воспроизведение:
-1. Создать SQL узел с запросом SELECT * FROM table
-2. Выполнить SQL узел - получаем результат
-3. Создать Python узел
-4. Подключить Python узел к SQL узлу (создать edge)
-5. Выполнить Python узел - df равен None
-
-Связанные файлы:
-- apps/web/src/app/board/[boardId]/page.tsx - handleRunNode
-- apps/web/src/lib/pythonExecutor.ts - runPython
-- apps/web/src/state/executionStore.ts - executionStore
-
-Корневая причина:
-- В handleRunNode не передается результат SQL узла в runPython
-- Неправильная работа с зависимостями узлов
 ```
 
 ## Готов к исправлению

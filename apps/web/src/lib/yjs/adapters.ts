@@ -61,6 +61,12 @@ export function reactFlowNodeToCanvasNode(reactFlowNode: Node): CanvasNode {
       payload: {
         points: data.points ?? [],
         initialSize: data.initialSize ?? { width: 100, height: 100 },
+        // Preserve pen settings (color, stroke, opacity, etc.)
+        color: data.color,
+        strokeWidth: data.strokeWidth,
+        opacity: data.opacity,
+        smoothing: data.smoothing,
+        thinning: data.thinning,
       },
     };
   }

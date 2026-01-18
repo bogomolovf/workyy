@@ -8,41 +8,48 @@
   color-scheme: dark;
 }
 
+/* Hand mode cursor styles - показываем grab/grabbing курсор как в Miro */
+.rf-hand-mode .react-flow__pane {
+  cursor: grab !important;
+}
+
+.rf-hand-mode .react-flow__pane.dragging,
+.rf-hand-mode .react-flow__pane:active {
+  cursor: grabbing !important;
+}
+
+/* Hand mode - узлы не должны показывать pointer курсор */
+.rf-hand-mode .react-flow__node {
+  cursor: grab !important;
+}
+
+/* Select mode cursor - default cursor for nodes */
 .rf-select-cursor .react-flow__node {
+  cursor: default !important;
+}
+
+/* Select mode pane - default cursor */
+.rf-select-cursor .react-flow__pane {
   cursor: default !important;
 }
 
 /* CRITICAL FIX for Bug 2: Force hide cursor on all ReactFlow elements to prevent hand icon */
 /* This ensures only collaborative cursors are visible, not the system cursor */
-/* We never want the hand cursor - only collaborative cursors should be visible */
-.rf-hand-cursor .react-flow__node,
-.rf-hand-cursor .react-flow__pane,
-.rf-hand-cursor,
-.rf-select-cursor,
-.rf-hand-cursor *,
-.rf-select-cursor * {
+/* Apply only when NOT in hand mode */
+.rf-cursor-hidden .react-flow__node,
+.rf-cursor-hidden .react-flow__pane,
+.rf-cursor-hidden,
+.rf-cursor-hidden * {
   cursor: none !important;
 }
 
-/* Hide cursor when panning is active (prevent grabbing cursor) */
-.react-flow__pane.dragging {
+/* Hide cursor when panning is active in non-hand modes */
+.rf-cursor-hidden .react-flow__pane.dragging {
   cursor: none !important;
 }
 
-/* Ensure ReactFlow pane always hides system cursor to show only collaborative cursors */
-/* This prevents the grab/grabbing hand icon from appearing */
-.react-flow__pane {
-  cursor: none !important;
-}
-
-/* Hide cursor on all ReactFlow elements when collaborative cursors are active */
-.react-flow__node,
-.react-flow {
-  cursor: none !important;
-}
-
-/* Hide cursor on ReactFlow children, but exclude Controls and MiniMap */
-.react-flow *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(.react-flow__minimap *) {
+/* Hide cursor on ReactFlow children in non-hand modes, but exclude Controls and MiniMap */
+.rf-cursor-hidden *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(.react-flow__minimap *) {
   cursor: none !important;
 }
 
@@ -62,4 +69,52 @@
 .react-flow__minimap,
 .react-flow__minimap * {
   cursor: pointer !important;
+}
+
+/* Remove selection border/box-shadow on selected nodes - keep functionality */
+.react-flow__node.selected,
+.react-flow__node.selected:focus,
+.react-flow__node.selected:active {
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Remove selection box background (marquee selection rectangle) - only border */
+.react-flow__selection {
+  border: 1px dashed rgba(100, 116, 139, 0.4) !important;
+  background: transparent !important;
+}
+
+/* Also hide the selection box completely if needed */
+.react-flow__nodesselection-rect {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Prevent text selection during drag operations on canvas */
+.react-flow__pane,
+.react-flow__node,
+.react-flow__node * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+/* Allow text selection only when editing (focused inputs/textareas/contenteditable) */
+.react-flow__node input:focus,
+.react-flow__node textarea:focus,
+.react-flow__node [contenteditable="true"]:focus,
+.react-flow__node [contenteditable="true"].ProseMirror-focused,
+.react-flow__node .ProseMirror-focused,
+.react-flow__node .ProseMirror-focused * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+/* Remove selected edge highlight if needed */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: inherit !important;
 }

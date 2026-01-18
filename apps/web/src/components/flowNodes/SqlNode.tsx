@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { NodeProps } from 'reactflow';
 import { InteractiveResultTable } from '../InteractiveResultTable';
 import { useExecutionStore } from '../../state/executionStore';
@@ -12,6 +12,7 @@ const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
 type SqlNodeData = {
   nodeId: string;
   onRun: () => void;
+  onRunFull?: () => void;
   onChangeCode: (value: string) => void;
 };
 
@@ -53,6 +54,13 @@ export function SqlNode({ data }: NodeProps<SqlNodeData>) {
   const code = entry?.code ?? '';
   const error = entry?.error ?? null;
   const result = entry?.output?.kind === 'sql' ? entry.output.result : undefined;
+
+  // Handle "Load All" button click
+  const handleLoadAll = useCallback(() => {
+    if (data.onRunFull) {
+      data.onRunFull();
+    }
+  }, [data.onRunFull]);
 
   return (
     <div className="w-[360px] rounded-2xl border border-slate-700 bg-slate-900/80 shadow-lg">
@@ -97,7 +105,13 @@ export function SqlNode({ data }: NodeProps<SqlNodeData>) {
         <span className="text-[10px] uppercase tracking-wide text-slate-500">Result preview</span>
         {result && result.rows.length > 0 ? (
           <div className="mt-2">
-            <InteractiveResultTable result={result} compact />
+            <InteractiveResultTable
+              result={result}
+              compact
+              totalCount={result.totalCount}
+              isPreview={result.isPreview}
+              onLoadAll={data.onRunFull ? handleLoadAll : undefined}
+            />
           </div>
         ) : (
           <div className="mt-2 rounded-md border border-dashed border-slate-700 px-3 py-2 text-xs text-slate-500">

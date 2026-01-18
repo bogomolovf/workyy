@@ -20,6 +20,7 @@ import { useCanvasLayoutStore, type CanvasLayoutState } from '../../../state/can
 import { useBoardCollaboration } from '../../../hooks/useBoardCollaboration';
 import {
   executeSql,
+  executeSqlWithPreview,
   listTables,
   loadFileIntoDuckDb,
   restoreDatasetsForBoard,
@@ -660,8 +661,8 @@ function BoardPageContent({ params }: BoardPageProps) {
               throw err;
             }
           } else {
-            // Execute via DuckDB (default)
-            result = await executeSql(code);
+            // Execute via DuckDB (default) with preview mode for large results
+            result = await executeSqlWithPreview(code);
           }
 
           const output = { kind: 'sql' as const, result, code };
@@ -956,6 +957,55 @@ function BoardPageContent({ params }: BoardPageProps) {
       resetExecutionOutput,
       collaboration,
     ],
+  );
+
+  // Handler for loading full SQL results without preview limit
+  const handleRunNodeFull = useCallback(
+    async (nodeId: string) => {
+      const node = nodesState.find((item) => item.id === nodeId);
+      if (!node || node.type !== 'sql') {
+        return; // Only support full load for SQL nodes
+      }
+      
+      resetExecutionOutput(nodeId);
+      const currentEntries = useExecutionStore.getState().entries;
+      const entry = currentEntries[nodeId];
+      const code = entry?.code ?? '';
+
+      setStatus(nodeId, 'running');
+      
+      try {
+        // Execute with fullLoad=true to bypass preview limit
+        const result = await executeSqlWithPreview(code, { fullLoad: true });
+        const output = { kind: 'sql' as const, result, code };
+        setSuccess(nodeId, output);
+        
+        // Sync through Yjs
+        setNodesState((prev) => {
+          const next = prev.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  payload: {
+                    ...(n.payload ?? {}),
+                    execution: {
+                      status: 'success' as const,
+                      output,
+                    },
+                  },
+                }
+              : n,
+          );
+          collaboration.handleCanvasNodesChange(next);
+          return next;
+        });
+        markDirty();
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(nodeId, errorMessage);
+      }
+    },
+    [nodesState, setStatus, setSuccess, setError, resetExecutionOutput, markDirty, collaboration],
   );
 
   const runDownstreamRecursive = useCallback(
@@ -1751,6 +1801,7 @@ function BoardPageContent({ params }: BoardPageProps) {
               executionEntries={entries}
               onCodeChange={handleCodeChange}
               onRunNode={handleRunNode}
+              onRunNodeFull={handleRunNodeFull}
               onRunDownstream={handleRunDownstream}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}

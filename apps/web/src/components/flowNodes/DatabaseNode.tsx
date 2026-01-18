@@ -57,9 +57,7 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
   return (
     <>
       <div
-        className={`relative rounded-lg border bg-gradient-to-br from-slate-50 to-slate-100 shadow-lg transition-all ${
-          selected ? 'ring-2 ring-indigo-400' : ''
-        }`}
+        className="relative rounded-lg border bg-gradient-to-br from-slate-50 to-slate-100 shadow-lg transition-all"
         style={{ width: 280 }}
       >
         <Handle
