@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { DatabaseNodePayload } from '../lib/databaseNodeTypes';
+import type { DatabaseNodePayload, DatabaseType } from '../lib/databaseNodeTypes';
+import { DATABASE_TYPE_LABELS, DATABASE_DEFAULT_PORTS } from '../lib/databaseNodeTypes';
 import {
   testDatabaseConnection,
   createDatabaseConnection,
@@ -20,6 +21,7 @@ type DatabaseConnectionModalProps = {
 // Default values for a new database connection
 const getDefaultPayload = (): DatabaseNodePayload => ({
   connectionName: 'New Database',
+  dbType: 'postgresql',
   host: '',
   port: 5432,
   database: '',
@@ -70,6 +72,7 @@ export function DatabaseConnectionModal({
 
     try {
       const result = await testDatabaseConnection({
+        dbType: formData.dbType,
         host: formData.host,
         port: formData.port,
         database: formData.database,
@@ -124,6 +127,7 @@ export function DatabaseConnectionModal({
         const result = await createDatabaseConnection({
           workspaceId,
           connectionName: formData.connectionName,
+          dbType: formData.dbType,
           host: formData.host,
           port: formData.port,
           database: formData.database,
@@ -137,6 +141,7 @@ export function DatabaseConnectionModal({
         // Update existing connection
         await updateDatabaseConnection(connectionId, {
           connectionName: formData.connectionName,
+          dbType: formData.dbType,
           host: formData.host,
           port: formData.port,
           database: formData.database,
@@ -180,7 +185,9 @@ export function DatabaseConnectionModal({
       <div className="relative z-10 w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="border-b border-slate-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-900">Database Connection</h2>
-          <p className="mt-1 text-sm text-slate-500">Configure PostgreSQL connection settings</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Configure {DATABASE_TYPE_LABELS[formData.dbType]} connection settings
+          </p>
         </div>
 
         <div className="px-6 py-4 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
@@ -203,6 +210,35 @@ export function DatabaseConnectionModal({
                 : `✗ ${testResult.message || 'Connection failed'}`}
             </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Database Type <span className="text-rose-500">*</span>
+            </label>
+            <div className="flex gap-2">
+              {(Object.keys(DATABASE_TYPE_LABELS) as DatabaseType[]).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      dbType: type,
+                      port: DATABASE_DEFAULT_PORTS[type],
+                    }));
+                    setTestResult(null);
+                  }}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    formData.dbType === type
+                      ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {DATABASE_TYPE_LABELS[type]}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -238,10 +274,13 @@ export function DatabaseConnectionModal({
               type="number"
               value={formData.port}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, port: parseInt(e.target.value) || 5432 }))
+                setFormData((prev) => ({
+                  ...prev,
+                  port: parseInt(e.target.value) || DATABASE_DEFAULT_PORTS[prev.dbType],
+                }))
               }
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder="5432"
+              placeholder={String(DATABASE_DEFAULT_PORTS[formData.dbType])}
               min="1"
               max="65535"
             />
@@ -256,7 +295,15 @@ export function DatabaseConnectionModal({
               value={formData.database}
               onChange={(e) => setFormData((prev) => ({ ...prev, database: e.target.value }))}
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder="mydb"
+              placeholder={
+                formData.dbType === 'oracle'
+                  ? 'FREEPDB1'
+                  : formData.dbType === 'sqlserver'
+                    ? 'master'
+                    : formData.dbType === 'clickhouse'
+                      ? 'default'
+                      : 'mydb'
+              }
             />
           </div>
 
@@ -269,7 +316,17 @@ export function DatabaseConnectionModal({
               value={formData.username}
               onChange={(e) => setFormData((prev) => ({ ...prev, username: e.target.value }))}
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder="postgres"
+              placeholder={
+                formData.dbType === 'mysql'
+                  ? 'root'
+                  : formData.dbType === 'oracle'
+                    ? 'system'
+                    : formData.dbType === 'sqlserver'
+                      ? 'sa'
+                      : formData.dbType === 'clickhouse'
+                        ? 'default'
+                        : 'postgres'
+              }
             />
           </div>
 

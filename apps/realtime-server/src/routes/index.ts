@@ -2,10 +2,11 @@ import { FastifyInstance } from 'fastify';
 import { authRoutes } from './auth';
 import { boardsRoutes } from './boards';
 import { connectionsRoutes } from './connections';
+import { databaseConnectionsRoutes } from './databaseConnections';
 import { drawingRoutes } from './drawing';
+import { filesRoutes } from './files';
 import { runsRoutes } from './runs';
 import { secretsRoutes } from './secrets';
-import { databaseConnectionsRoutes } from './databaseConnections';
 
 export async function createServiceRouter(app: FastifyInstance) {
   app.get('/version', async () => ({
@@ -20,4 +21,5 @@ export async function createServiceRouter(app: FastifyInstance) {
   await app.register(secretsRoutes);
   await app.register(databaseConnectionsRoutes);
   await app.register(drawingRoutes);
+  await app.register(filesRoutes);
 }

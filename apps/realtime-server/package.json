@@ -14,10 +14,13 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@clickhouse/client": "^1.16.0",
     "@fastify/cookie": "^9.0.0",
     "@fastify/cors": "^9.0.0",
     "@fastify/jwt": "^6.0.0",
+    "@fastify/multipart": "^8.3.1",
     "@fastify/rate-limit": "^8.0.0",
+    "@fastify/static": "^9.0.0",
     "@fastify/websocket": "^8.3.0",
     "@prisma/client": "^5.17.0",
     "@types/pg": "^8.15.6",
@@ -26,6 +29,9 @@
     "bcrypt": "^6.0.0",
     "dotenv": "^17.2.3",
     "fastify": "^4.27.2",
+    "mssql": "^12.2.0",
+    "mysql2": "^3.16.1",
+    "oracledb": "^6.7.0",
     "pg": "^8.16.3",
     "pino": "^9.4.0",
     "ws": "^8.17.1",
@@ -35,6 +41,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
+    "@types/mssql": "^9.1.9",
     "@types/ws": "^8.5.10",
     "eslint": "^9.3.0",
     "prisma": "^5.22.0",

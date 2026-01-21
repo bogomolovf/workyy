@@ -4,6 +4,28 @@ set -e
 echo "🚀 Запуск Workyy..."
 echo ""
 
+# Проверка и запуск Docker/Colima
+echo "🐳 Проверка Docker..."
+if ! docker info > /dev/null 2>&1; then
+    echo "⚠️  Docker не запущен. Проверяю Colima..."
+    if command -v colima > /dev/null 2>&1; then
+        if ! colima status > /dev/null 2>&1; then
+            echo "🚀 Запуск Colima..."
+            colima start
+            echo "✅ Colima запущен"
+        else
+            echo "✅ Colima уже запущен"
+        fi
+        # Даем время на инициализацию Docker
+        sleep 2
+    else
+        echo "❌ Ошибка: Docker не запущен и Colima не установлен"
+        echo "   Установите Colima: brew install colima"
+        echo "   Или запустите Docker Desktop вручную"
+        exit 1
+    fi
+fi
+
 # Проверка зависимостей
 if [ ! -d "node_modules" ]; then
     echo "📦 Установка зависимостей..."
