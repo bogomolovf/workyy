@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Doc } from 'yjs';
-import type { NodeChange, EdgeChange } from 'reactflow';
+import type { NodeChange, EdgeChange, Node, Edge } from 'reactflow';
 import { getBoardYdoc, getBoardProvider, cleanupBoardYdoc } from '../lib/yjs/boardYdoc';
 import {
   canvasNodeToReactFlowNode,
@@ -130,12 +130,18 @@ export function useBoardCollaboration(
     }
   }, [initialNodes, initialEdges, nodesMap, edgesMap]);
 
-  // Use synced hooks
+  // Use synced hooks with ydoc and clientId for UndoManager tracking
   const [reactFlowNodes, setReactFlowNodes, onNodesChange] = useNodesStateSynced(
     nodesMap,
-    edgesMap
+    edgesMap,
+    ydoc,
+    clientId
   );
-  const [reactFlowEdges, setReactFlowEdges, onEdgesChange] = useEdgesStateSynced(edgesMap);
+  const [reactFlowEdges, setReactFlowEdges, onEdgesChange] = useEdgesStateSynced(
+    edgesMap,
+    ydoc,
+    clientId
+  );
 
   // Convert ReactFlow nodes/edges back to Canvas format for compatibility
   const canvasNodes = useMemo(
@@ -170,8 +176,8 @@ export function useBoardCollaboration(
       // Convert Canvas nodes to ReactFlow format
       const reactFlowNodes = nodes.map(canvasNodeToReactFlowNode);
       
-      // Get current nodes from Yjs map
-      const currentNodes = Array.from(nodesMap.values());
+      // Get current nodes from Yjs map (cast to Node[] since map stores unknown)
+      const currentNodes = Array.from(nodesMap.values()) as Node[];
       const currentById = new Map(currentNodes.map((n) => [n.id, n]));
       const newById = new Map(reactFlowNodes.map((n) => [n.id, n]));
 
@@ -202,7 +208,8 @@ export function useBoardCollaboration(
   const handleCanvasEdgesChange = useCallback(
     (edges: CanvasEdge[]) => {
       // Get current edges from Yjs map (source of truth for all clients)
-      const currentReactFlowEdges = Array.from(edgesMap.values());
+      // Cast to Edge[] since map stores unknown
+      const currentReactFlowEdges = Array.from(edgesMap.values()) as Edge[];
       const newReactFlowEdges = edges.map(canvasEdgeToReactFlowEdge);
 
       // Compute incremental changes instead of replacing all edges
@@ -270,9 +277,11 @@ export function useBoardCollaboration(
     // Canvas format handlers (for compatibility with current code)
     handleCanvasNodesChange,
     handleCanvasEdgesChange,
-    // Yjs maps and client ID for cursor tracking (to be used inside ReactFlowProvider)
+    // Yjs maps and client ID for cursor tracking and UndoManager
     cursorsMap,
     datasetsMap,
+    nodesMap,  // Exported for UndoManager
+    edgesMap,  // Exported for UndoManager
     clientId,
     provider,
     ydoc,

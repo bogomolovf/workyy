@@ -53,7 +53,7 @@ import { FreehandOverlay } from './pen/FreehandOverlay';
 import { PenNode } from './pen/PenNode';
 import { PenToolbar } from './pen/PenToolbar';
 import { EraserOverlay } from './pen/EraserOverlay';
-import { useCanvasHistoryStore } from '../state/canvasHistoryStore';
+// Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
 import { TextNode } from './TextNode';
 import { DatabaseNode } from './flowNodes/DatabaseNode';
 import { PlotNode } from './flowNodes/PlotNode';
@@ -804,47 +804,12 @@ function InnerBoardCanvas({
   const textNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const shapeNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
-  // Undo/Redo с новым стором
-  const { saveSnapshot, undo, redo, canUndo, canRedo } = useCanvasHistoryStore();
-  const isUndoRedoInProgressRef = useRef(false);
-  const historyInitializedRef = useRef(false);
-  // Ref для setFlowNodes - будет инициализирован позже, используется в handleUndo/handleRedo
-  const setFlowNodesRef = useRef<React.Dispatch<React.SetStateAction<Node[]>> | null>(null);
+  // Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
+  // Changes are automatically tracked through Yjs transactions with clientId origin
 
   useEffect(() => {
-    // Не обновляем localNodes если идет undo/redo операция
-    if (isUndoRedoInProgressRef.current) {
-      return;
-    }
     setLocalNodes(nodes);
   }, [nodes]);
-
-  // Инициализируем историю один раз при загрузке данных
-  useEffect(() => {
-    // Инициализируем историю при первом рендере с данными
-    if (!historyInitializedRef.current) {
-      // Используем localNodes которые уже синхронизированы с props
-      const currentNodes = localNodes;
-      const currentEdges = localEdges;
-
-      console.log('📝 Initializing history with', currentNodes.length, 'nodes');
-      saveSnapshot(
-        currentNodes.map((n) => ({
-          id: n.id,
-          type: n.type,
-          position: (n as any).position ?? { x: 0, y: 0 },
-          payload: n.payload,
-        })),
-        currentEdges.map((e) => ({
-          id: e.id,
-          sourceId: e.sourceId,
-          targetId: e.targetId,
-          metadata: e.metadata,
-        })),
-      );
-      historyInitializedRef.current = true;
-    }
-  }, [localNodes, localEdges, saveSnapshot]);
 
   useEffect(() => {
     localNodesRef.current = localNodes;
@@ -1233,145 +1198,7 @@ function InnerBoardCanvas({
     onRunDownstream(selectedDataNodeId);
   }, [selectedDataNodeId, onRunDownstream]);
 
-  // Сохранение в историю - принимает данные напрямую
-  const saveToHistoryWithData = useCallback(
-    (nodesToSave: typeof localNodes, edgesToSave: typeof localEdges) => {
-      if (isUndoRedoInProgressRef.current) return;
-
-      console.log('📸 Saving to history:', nodesToSave.length, 'nodes');
-
-      saveSnapshot(
-        nodesToSave.map((n) => ({
-          id: n.id,
-          type: n.type,
-          position: (n as any).position ?? { x: 0, y: 0 },
-          width: (n as any).width,
-          height: (n as any).height,
-          payload: n.payload,
-          data: (n as any).data,
-        })),
-        edgesToSave.map((e) => ({
-          id: e.id,
-          sourceId: e.sourceId,
-          targetId: e.targetId,
-          metadata: e.metadata,
-        })),
-      );
-    },
-    [saveSnapshot],
-  );
-
-  // Undo handler
-  const handleUndo = useCallback(() => {
-    console.log('🔄 Undo triggered');
-
-    const snapshot = undo();
-    if (!snapshot) {
-      console.log('❌ Cannot undo: no history');
-      return;
-    }
-
-    console.log('✅ Undo:', snapshot.nodes.length, 'nodes');
-    isUndoRedoInProgressRef.current = true;
-
-    // Конвертируем snapshot в формат localNodes
-    const restoredNodes = snapshot.nodes.map((n) => ({
-      id: n.id,
-      type: n.type as CanvasNodeType,
-      position: n.position,
-      payload: n.payload ?? n.data,
-    }));
-
-    const restoredEdges = snapshot.edges.map((e) => ({
-      id: e.id,
-      sourceId: e.sourceId,
-      targetId: e.targetId,
-      metadata: e.metadata ?? {},
-    }));
-
-    // Очищаем flowNodes для pen узлов чтобы они пересоздались
-    setFlowNodesRef.current?.((prev) => {
-      // Получаем ID узлов из snapshot
-      const snapshotNodeIds = new Set(restoredNodes.map((n) => n.id));
-      // Удаляем все pen узлы которых нет в snapshot
-      return prev.filter((n) => {
-        if (n.type === 'pen') {
-          return snapshotNodeIds.has(n.id);
-        }
-        return true;
-      });
-    });
-
-    setLocalNodes(restoredNodes);
-    setLocalEdges(restoredEdges);
-
-    // Уведомляем родителя
-    if (onNodesChange) {
-      onNodesChange(restoredNodes);
-    }
-    if (onEdgesChange) {
-      onEdgesChange(restoredEdges);
-    }
-
-    setTimeout(() => {
-      isUndoRedoInProgressRef.current = false;
-    }, 100);
-  }, [undo, onNodesChange, onEdgesChange]);
-
-  // Redo handler
-  const handleRedo = useCallback(() => {
-    console.log('🔄 Redo triggered');
-
-    const snapshot = redo();
-    if (!snapshot) {
-      console.log('❌ Cannot redo: no history');
-      return;
-    }
-
-    console.log('✅ Redo:', snapshot.nodes.length, 'nodes');
-    isUndoRedoInProgressRef.current = true;
-
-    // Конвертируем snapshot в формат localNodes
-    const restoredNodes = snapshot.nodes.map((n) => ({
-      id: n.id,
-      type: n.type as CanvasNodeType,
-      position: n.position,
-      payload: n.payload ?? n.data,
-    }));
-
-    const restoredEdges = snapshot.edges.map((e) => ({
-      id: e.id,
-      sourceId: e.sourceId,
-      targetId: e.targetId,
-      metadata: e.metadata ?? {},
-    }));
-
-    // Очищаем flowNodes для pen узлов чтобы они пересоздались
-    setFlowNodesRef.current?.((prev) => {
-      const snapshotNodeIds = new Set(restoredNodes.map((n) => n.id));
-      return prev.filter((n) => {
-        if (n.type === 'pen') {
-          return snapshotNodeIds.has(n.id);
-        }
-        return true;
-      });
-    });
-
-    setLocalNodes(restoredNodes);
-    setLocalEdges(restoredEdges);
-
-    // Уведомляем родителя
-    if (onNodesChange) {
-      onNodesChange(restoredNodes);
-    }
-    if (onEdgesChange) {
-      onEdgesChange(restoredEdges);
-    }
-
-    setTimeout(() => {
-      isUndoRedoInProgressRef.current = false;
-    }, 100);
-  }, [redo, onNodesChange, onEdgesChange]);
+  // Undo/Redo removed - now handled at page level via Yjs UndoManager (per-user undo)
 
   // Eraser handler - удаляем узлы и синхронизируем через Yjs
   const handleDeleteNodes = useCallback(
@@ -1389,23 +1216,18 @@ function InnerBoardCanvas({
         yjsOnNodesChange(removeNodeChanges);
       }
 
-      // Сразу удаляем из flowNodes для мгновенной визуализации
-      setFlowNodesRef.current?.((prev) => prev.filter((n) => !nodeIds.includes(n.id)));
-
       setLocalNodes((prev) => {
         const next = prev.filter((n) => !nodeIds.includes(n.id));
-        const currentEdges = localEdgesRef.current ?? localEdges;
 
-        // Уведомляем родителя и сохраняем в историю с актуальными данными
+        // Уведомляем родителя (history is tracked automatically via Yjs UndoManager)
         queueMicrotask(() => {
           emitNodesChange(next);
-          saveToHistoryWithData(next, currentEdges);
         });
 
         return next;
       });
     },
-    [emitNodesChange, saveToHistoryWithData, localEdges, yjsOnNodesChange],
+    [emitNodesChange, localEdges, yjsOnNodesChange],
   );
 
   useEffect(() => {
@@ -1437,26 +1259,7 @@ function InnerBoardCanvas({
 
       if (event.defaultPrevented) return;
 
-      // Обработка undo/redo (работает для всех действий)
-      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
-        if (event.key.toLowerCase() === 'z') {
-          if (event.shiftKey) {
-            // Redo: Ctrl+Shift+Z
-            event.preventDefault();
-            event.stopPropagation();
-            console.log('⌨️ Ctrl+Shift+Z pressed, calling handleRedo');
-            handleRedo();
-            return;
-          } else {
-            // Undo: Ctrl+Z
-            event.preventDefault();
-            event.stopPropagation();
-            console.log('⌨️ Ctrl+Z pressed, calling handleUndo');
-            handleUndo();
-            return;
-          }
-        }
-      }
+      // Undo/Redo keyboard shortcuts now handled at page level via useYjsUndoManager
 
       if (isEditableTarget(event.target)) return;
 
@@ -1833,11 +1636,6 @@ function InnerBoardCanvas({
       selected: node.id === selectedNodeId,
     })),
   );
-
-  // Устанавливаем ref для доступа к setFlowNodes из callbacks определенных раньше
-  useEffect(() => {
-    setFlowNodesRef.current = setFlowNodes;
-  }, [setFlowNodes]);
 
   // Отдельный useEffect для обновления selected при изменении selectedNodeId
   // Это предотвращает бесконечные циклы, отделяя обновление selected от обновления структуры узлов
@@ -3333,12 +3131,10 @@ function InnerBoardCanvas({
 
                   setLocalNodes((prev) => {
                     const next = [...prev, externalNode];
-                    const currentEdges = localEdgesRef.current ?? localEdges;
                     
-                    // Сохраняем в историю после добавления штриха
+                    // Notify parent (history is tracked automatically via Yjs UndoManager)
                     queueMicrotask(() => {
                       emitNodesChange(next, false);
-                      saveToHistoryWithData(next, currentEdges);
                     });
                     
                     return next;
@@ -3374,26 +3170,6 @@ function InnerBoardCanvas({
               />
             )}
             {cursors && cursors.length > 0 && <CollaborativeCursors cursors={cursors} />}
-            {/* Debug: Always render to check if component receives cursors */}
-            {process.env.NODE_ENV === 'development' && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 10,
-                  right: 10,
-                  background: 'rgba(0,0,0,0.7)',
-                  color: 'white',
-                  padding: '8px',
-                  fontSize: '12px',
-                  zIndex: 1000,
-                  borderRadius: '4px',
-                  fontFamily: 'monospace',
-                }}
-              >
-                Cursors: {cursors.length} | Map size: {cursorsMap?.size || 0} | ClientId:{' '}
-                {clientId || 'none'}
-              </div>
-            )}
           </ReactFlow>
           {/* EraserOverlay внутри ReactFlow контейнера для правильного позиционирования */}
           {isEraserMode && <EraserOverlay onDeleteNodes={handleDeleteNodes} eraserSize={20} onCursorMove={onMouseMove} />}
@@ -3418,10 +3194,7 @@ function InnerBoardCanvas({
         onSelectShape={setSelectedShape}
         onDeleteSelection={handleDeleteSelection}
         hasSelection={hasSelection}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        canUndo={canUndo}
-        canRedo={canRedo}
+        // Undo/Redo moved to UndoRedoControls in board header (per-user undo via Yjs)
       />
     </div>
   );

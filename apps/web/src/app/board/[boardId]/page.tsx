@@ -11,13 +11,16 @@ import {
   type BoardResponse,
   type SaveBoardStructureInput,
 } from '../../../lib/api';
-import { LANDING_URL } from '../../../lib/appConfig';
 import { RequireAuth } from '../../../components/RequireAuth';
 import { useAuthStore } from '../../../state/authStore';
 import { useRouter } from 'next/navigation';
 import { useExecutionStore, type ExecutionStoreState } from '../../../state/executionStore';
 import { useCanvasLayoutStore, type CanvasLayoutState } from '../../../state/canvasLayoutStore';
 import { useBoardCollaboration } from '../../../hooks/useBoardCollaboration';
+import { useBoardPresence } from '../../../hooks/useBoardPresence';
+import { useYjsUndoManager } from '../../../hooks/useYjsUndoManager';
+import { UserPresenceIndicator } from '../../../components/UserPresenceIndicator';
+import { UndoRedoControls } from '../../../components/UndoRedoControls';
 import {
   executeSql,
   executeSqlWithPreview,
@@ -137,6 +140,53 @@ function BoardPageContent({ params }: BoardPageProps) {
     data ? mapNodesToCanvas(data.nodes) : undefined,
     data ? mapEdgesToCanvas(data.edges) : undefined
   );
+
+  // Get list of users on the board for presence indicator
+  const presenceUsers = useBoardPresence(collaboration.cursorsMap, collaboration.clientId);
+
+  // Per-user undo/redo using Yjs UndoManager
+  // Only tracks changes made by the current user
+  const {
+    undo: handleUndo,
+    redo: handleRedo,
+    canUndo,
+    canRedo,
+  } = useYjsUndoManager(
+    collaboration.ydoc,
+    collaboration.nodesMap,
+    collaboration.edgesMap,
+    collaboration.clientId
+  );
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+Z or Cmd+Z for undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        if (canUndo) {
+          handleUndo();
+        }
+      }
+      // Ctrl+Shift+Z or Cmd+Shift+Z for redo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        if (canRedo) {
+          handleRedo();
+        }
+      }
+      // Ctrl+Y or Cmd+Y for redo (alternative)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        if (canRedo) {
+          handleRedo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo, canUndo, canRedo]);
 
   // Use Yjs as the single source of truth for nodes and edges
   const yjsNodes = collaboration.canvasNodes.length > 0 ? collaboration.canvasNodes : nodesState;
@@ -1696,99 +1746,40 @@ function BoardPageContent({ params }: BoardPageProps) {
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-[#f7f9fd] text-slate-900">
-      <header className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">
+      <header className="border-b border-slate-200 bg-white px-4 py-3">
+        <div className="flex items-center justify-between">
+          {/* Left: Board title + Undo/Redo controls */}
+          <div className="flex items-center gap-4">
+            <h1 className="text-lg font-semibold text-slate-900 truncate">
               {data?.board.title ?? 'Board'}
             </h1>
-            <p className="text-sm text-slate-500">
-              Изменения сохраняются автоматически каждые 0.5 секунды.
-            </p>
-            {tableNames.length > 0 && (
-              <div className="mt-3">
-                <p className="text-[11px] uppercase tracking-wide text-slate-400">Таблицы DuckDB</p>
-                <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600">
-                  {tableNames.map((name) => (
-                    <span
-                      key={name}
-                      className="group relative inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-0.5 pr-1.5 hover:border-slate-300"
-                    >
-                      {name}
-                      <button
-                        type="button"
-                        onClick={() => handleDatasetDelete(name)}
-                        className="ml-1 flex h-4 w-4 items-center justify-center rounded-full text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
-                        title={`Удалить таблицу "${name}"`}
-                        aria-label={`Удалить таблицу "${name}"`}
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          className="h-3 w-3"
-                        >
-                          <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
-                        </svg>
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
+            
+            {/* Undo/Redo controls - per-user */}
+            <div className="flex items-center border-l border-slate-200 pl-4">
+              <UndoRedoControls
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                canUndo={canUndo}
+                canRedo={canRedo}
+              />
+            </div>
           </div>
-          <div className="flex flex-col items-start gap-3 md:ml-auto md:flex-row md:items-center md:justify-end">
-            {user && (
-              <div className="flex items-center gap-3 mr-2">
-                <div className="text-right hidden sm:block">
-                  <p className="text-sm font-medium text-slate-900">{user.name || user.email}</p>
-                  {user.name && <p className="text-xs text-slate-500">{user.email}</p>}
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
-                >
-                  Log out
-                </button>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={handleDatasetButtonClick}
-              disabled={isUploadingDataset}
-              className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:border-indigo-300 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isUploadingDataset ? 'Загружаем…' : 'Загрузить CSV/Parquet'}
-            </button>
-            {/* Кнопка "Сохранить борд" скрыта, так как работает автосохранение */}
-            {/* <button
-              type="button"
-              onClick={handleSaveBoard}
-              disabled={(!isDirty && !saveError) || isSaving}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium shadow-sm focus:outline-none focus:ring-2 ${
-                (!isDirty && !saveError) || isSaving
-                  ? 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400 focus:ring-slate-200'
-                  : 'border border-emerald-400 text-emerald-600 hover:bg-emerald-50 focus:ring-emerald-200'
-              }`}
-            >
-              {isSaving ? 'Сохраняем…' : 'Сохранить борд'}
-            </button> */}
+
+          {/* Right: Presence indicator + Back to home */}
+          <div className="flex items-center gap-3">
+            <UserPresenceIndicator 
+              users={presenceUsers} 
+              currentUserId={user?.id}
+            />
             <Link
-              className="rounded-md border border-indigo-400 px-3 py-1.5 text-sm font-medium text-indigo-500 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              className="rounded-md border border-indigo-400 px-3 py-1.5 text-sm font-medium text-indigo-500 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
               href="/"
             >
               ← Back to home
             </Link>
-            <a
-              href={LANDING_URL}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              Back to website
-            </a>
           </div>
         </div>
-        {saveError && <p className="mt-3 text-sm text-rose-500">{saveError}</p>}
-        {uploadMessage && <p className="mt-2 text-xs text-slate-500">{uploadMessage}</p>}
+        {/* Hidden file input for dataset upload (triggered from canvas toolbar) */}
         <input
           ref={fileInputRef}
           type="file"
