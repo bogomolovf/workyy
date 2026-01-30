@@ -1,8 +1,11 @@
 'use client';
 
-import { useMemo, useRef, useCallback, useState } from 'react';
+import { useMemo, useRef, useCallback, useState, useEffect } from 'react';
 import { NodeResizer, type NodeProps, useStore, NodeToolbar } from 'reactflow';
+import { RichTextEditor, type RichTextEditorRef } from '../RichTextEditor';
+import { ShapeToolbar } from '../shape/ShapeToolbar';
 import { StickyToolbar } from '../StickyToolbar';
+import { TextToolbar } from '../TextToolbar';
 
 // Утилита для генерации SVG path из точек (как в React Flow Pro)
 function generatePath(points: number[][]): string {
@@ -31,14 +34,26 @@ export type ShapeType =
   | 'cylinder'
   | 'star'
   | 'arrow-rectangle'
-  | 'plus';
+  | 'plus'
+  | 'line'
+  | 'arrow';
 
 export type ShapeNodeData = {
   shapeType?: ShapeType;
-  shapeColor?: string;
+  shapeColor?: string; // Legacy, use fill instead
   shapeLabel?: string;
   width?: number;
   height?: number;
+  // Style properties (Miro-like)
+  fill?: string; // Color or 'none'/'transparent'
+  stroke?: string; // Color
+  strokeWidth?: number; // Thickness
+  opacity?: number; // 0-1
+  cornerRadius?: number; // For rectangles
+  arrowHead?: boolean; // For arrows
+  // For line/arrow types: relative end point (from start)
+  endX?: number;
+  endY?: number;
   // Поддержка текста для заметок
   text?: string;
   fontSize?: number;
@@ -52,19 +67,74 @@ export type ShapeNodeData = {
   onChangeFontFamily?: (id: string, fontFamily: string) => void;
   onChangeBold?: (id: string, isBold: boolean) => void;
   onChangeItalic?: (id: string, isItalic: boolean) => void;
+  // Callbacks для изменения стилей фигур
+  onChangeFill?: (id: string, fill: string) => void;
+  onChangeStroke?: (id: string, stroke: string) => void;
+  onChangeStrokeWidth?: (id: string, strokeWidth: number) => void;
+  onChangeOpacity?: (id: string, opacity: number) => void;
+  onChangeCornerRadius?: (id: string, cornerRadius: number) => void;
+  onChangeArrowHead?: (id: string, arrowHead: boolean) => void;
+  // Callbacks для изменения текста в фигурах (как в TextNode)
+  onChangeFormat?: (
+    id: string,
+    patch: Partial<{
+      text: string;
+      richContent: string;
+      fontSize: number;
+      fontFamily: string;
+      color: string;
+      textAlign: 'left' | 'center' | 'right';
+    }>,
+  ) => void;
+  // Параметры текста для фигур
+  richContentHtml?: string | null;
+  textAlign?: 'left' | 'center' | 'right';
 };
 
 export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   const {
     shapeType = 'rectangle',
-    shapeColor = '#BFDBFE',
+    shapeColor, // Legacy
     shapeLabel = 'Фигура',
+    fill,
+    stroke,
+    strokeWidth,
+    opacity,
+    cornerRadius,
+    arrowHead,
+    endX,
+    endY,
+    // Параметры текста (для заметок и для текста внутри фигур)
     text,
-    fontSize = 48,
-    fontFamily = 'Inter, sans-serif',
+    fontSize: dataFontSize,
+    fontFamily: dataFontFamily,
     isBold = false,
     isItalic = false,
+    richContentHtml,
+    textAlign = 'center',
+    color: textColor,
   } = data ?? {};
+
+  // Проверяем, является ли это заметкой (есть текст или callbacks для заметок, но нет onChangeFormat)
+  // Заметки используют textarea, фигуры с текстом используют RichTextEditor (onChangeFormat)
+  // ВАЖНО: определяем isNote ДО использования в дефолтных значениях fontSize, fontFamily, color
+  const isNote = Boolean((text !== undefined || data?.onChangeText) && !data?.onChangeFormat);
+
+  // Дефолтные значения для текста в фигурах (отличаются от заметок)
+  const fontSize = dataFontSize ?? (isNote ? 48 : 16);
+  const fontFamily = dataFontFamily ?? (isNote ? 'Inter, sans-serif' : 'Noto Sans, sans-serif');
+  const color = textColor ?? (isNote ? '#0f172a' : '#0f172a');
+
+  // Default styles (Miro-like)
+  const finalFill = fill ?? shapeColor ?? 'transparent';
+  const finalStroke = stroke ?? '#1f1f1f';
+  const finalStrokeWidth = strokeWidth ?? 2;
+  const finalOpacity = opacity ?? 1.0;
+  const finalCornerRadius = cornerRadius ?? (shapeType === 'round-rectangle' ? 8 : 0);
+  const finalArrowHead = arrowHead ?? (shapeType === 'arrow' ? true : undefined);
+
+  // Check if line/arrow type
+  const isLineType = shapeType === 'line' || shapeType === 'arrow';
 
   // Используем useNodeDimensions для получения актуальных размеров в реальном времени (как в референсе)
   // Это позволяет NodeResizer обновлять размеры плавно во время ресайза
@@ -74,11 +144,29 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   const finalWidth = nodeWidth > 0 ? nodeWidth : (data?.width ?? 160);
   const finalHeight = nodeHeight > 0 ? nodeHeight : (data?.height ?? 96);
 
-  // Проверяем, является ли это заметкой (есть текст или callbacks)
-  const isNote = Boolean(text !== undefined || data?.onChangeText);
-
   // Refs для textarea (если это заметка)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Refs для RichTextEditor (для текста в фигурах)
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const hasAutoFocusedRef = useRef(false);
+  const currentTextRef = useRef<string>(text || '');
+
+  // Инициализация контента для RichTextEditor
+  const initialHtml = useMemo(() => {
+    if (richContentHtml) {
+      const trimmed = richContentHtml.trim();
+      if (trimmed === '<p></p>' || trimmed === '<p><br></p>') {
+        return '<p><br></p>';
+      }
+      return richContentHtml;
+    }
+    if (text) {
+      const escaped = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return escaped ? `<p>${escaped}</p>` : '<p><br></p>';
+    }
+    return '<p><br></p>';
+  }, [richContentHtml, text]);
 
   // Состояние для отслеживания перетаскивания фигур
   const [isDragging, setIsDragging] = useState(false);
@@ -121,9 +209,31 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   }, [data, id, isItalic]);
 
   // Учитываем strokeWidth при расчете внутренних размеров (как в React Flow Pro)
-  const strokeWidth = 2;
-  const innerWidth = useMemo(() => finalWidth - 2 * strokeWidth, [finalWidth]);
-  const innerHeight = useMemo(() => finalHeight - 2 * strokeWidth, [finalHeight]);
+  // Для line/arrow используем размеры как есть (width/height = bounding box)
+  const innerWidth = useMemo(
+    () => (isLineType ? finalWidth : finalWidth - 2 * finalStrokeWidth),
+    [finalWidth, finalStrokeWidth, isLineType],
+  );
+  const innerHeight = useMemo(
+    () => (isLineType ? finalHeight : finalHeight - 2 * finalStrokeWidth),
+    [finalHeight, finalStrokeWidth, isLineType],
+  );
+
+  // Для line/arrow вычисляем точки начала и конца
+  const lineStart = useMemo(
+    () => ({
+      x: isLineType && endX !== undefined ? 0 : finalStrokeWidth,
+      y: isLineType && endY !== undefined ? 0 : finalStrokeWidth,
+    }),
+    [isLineType, endX, endY, finalStrokeWidth],
+  );
+  const lineEnd = useMemo(
+    () => ({
+      x: isLineType && endX !== undefined ? endX : innerWidth,
+      y: isLineType && endY !== undefined ? endY : innerHeight,
+    }),
+    [isLineType, endX, endY, innerWidth, innerHeight],
+  );
 
   // Обработчики для перетаскивания фигур
   const handleShapeMouseDown = useCallback(
@@ -147,6 +257,38 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
       setIsDragging(false);
     }
   }, [isNote]);
+
+  // Автофокус для текста в фигурах (как в TextNode)
+  useEffect(() => {
+    const isActuallyEmpty = currentTextRef.current.trim() === '';
+    const hasTextSupport = !isNote && data?.onChangeFormat;
+
+    if (
+      selected &&
+      hasTextSupport &&
+      isActuallyEmpty &&
+      !hasAutoFocusedRef.current &&
+      editorRef.current
+    ) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (editorRef.current) {
+            editorRef.current.focus();
+            hasAutoFocusedRef.current = true;
+          }
+        });
+      });
+    }
+
+    if (!selected || !isActuallyEmpty || !hasTextSupport) {
+      hasAutoFocusedRef.current = false;
+    }
+  }, [selected, isNote, data]);
+
+  // Инициализируем currentTextRef при монтировании
+  useEffect(() => {
+    currentTextRef.current = text || '';
+  }, [text]);
 
   return (
     <div className="workyy-shape-node relative" style={{ width: finalWidth, height: finalHeight }}>
@@ -189,6 +331,35 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
           onColorChange={handleColorChange}
         />
       )}
+      {!isNote && selected && (
+        <ShapeToolbar
+          shapeType={shapeType}
+          fill={finalFill}
+          stroke={finalStroke}
+          strokeWidth={finalStrokeWidth}
+          opacity={finalOpacity}
+          cornerRadius={finalCornerRadius}
+          arrowHead={finalArrowHead}
+          onChangeFill={(newFill) => {
+            data?.onChangeFill?.(id, newFill);
+          }}
+          onChangeStroke={(newStroke) => {
+            data?.onChangeStroke?.(id, newStroke);
+          }}
+          onChangeStrokeWidth={(newStrokeWidth) => {
+            data?.onChangeStrokeWidth?.(id, newStrokeWidth);
+          }}
+          onChangeOpacity={(newOpacity) => {
+            data?.onChangeOpacity?.(id, newOpacity);
+          }}
+          onChangeCornerRadius={(newCornerRadius) => {
+            data?.onChangeCornerRadius?.(id, newCornerRadius);
+          }}
+          onChangeArrowHead={(newArrowHead) => {
+            data?.onChangeArrowHead?.(id, newArrowHead);
+          }}
+        />
+      )}
       {/* Прозрачный слой для перетаскивания фигур - поверх SVG, но не блокирует NodeResizer */}
       {!isNote && (
         <div
@@ -214,31 +385,71 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
         width={finalWidth}
         height={finalHeight}
         className="rounded-md overflow-visible"
-        style={{ pointerEvents: 'none' }}
+        style={{ pointerEvents: 'none', opacity: finalOpacity }}
       >
-        <g transform={`translate(${strokeWidth}, ${strokeWidth})`}>
+        <g
+          transform={
+            isLineType ? 'translate(0, 0)' : `translate(${finalStrokeWidth}, ${finalStrokeWidth})`
+          }
+        >
+          {/* Line and Arrow types */}
+          {(shapeType === 'line' || shapeType === 'arrow') && (
+            <>
+              <defs>
+                {shapeType === 'arrow' && finalArrowHead && (
+                  <marker
+                    id={`arrowhead-${id}`}
+                    markerWidth="10"
+                    markerHeight="10"
+                    refX="9"
+                    refY="3"
+                    orient="auto"
+                    markerUnits="strokeWidth"
+                  >
+                    <path d="M0,0 L0,6 L9,3 z" fill={finalStroke} />
+                  </marker>
+                )}
+              </defs>
+              <line
+                x1={lineStart.x}
+                y1={lineStart.y}
+                x2={lineEnd.x}
+                y2={lineEnd.y}
+                stroke={finalStroke}
+                strokeWidth={finalStrokeWidth}
+                fill="none"
+                strokeLinecap="round"
+                markerEnd={
+                  shapeType === 'arrow' && finalArrowHead ? `url(#arrowhead-${id})` : undefined
+                }
+              />
+            </>
+          )}
+          {/* Rectangle types */}
           {shapeType === 'rectangle' && (
             <rect
               x={0}
               y={0}
               width={innerWidth}
               height={innerHeight}
-              fill={shapeColor}
-              stroke={isNote ? 'none' : '#64748b'}
-              strokeWidth={isNote ? 0 : strokeWidth}
+              fill={isNote ? (shapeColor ?? finalFill) : finalFill}
+              stroke={isNote ? 'none' : finalStroke}
+              strokeWidth={isNote ? 0 : finalStrokeWidth}
+              rx={finalCornerRadius}
+              ry={finalCornerRadius}
             />
           )}
           {shapeType === 'round-rectangle' && (
             <rect
               x={0}
               y={0}
-              rx={Math.min(12, 0.2 * Math.min(innerWidth, innerHeight))}
-              ry={Math.min(12, 0.2 * Math.min(innerWidth, innerHeight))}
+              rx={Math.min(finalCornerRadius || 8, 0.2 * Math.min(innerWidth, innerHeight))}
+              ry={Math.min(finalCornerRadius || 8, 0.2 * Math.min(innerWidth, innerHeight))}
               width={innerWidth}
               height={innerHeight}
-              fill={shapeColor}
-              stroke="#64748b"
-              strokeWidth={strokeWidth}
+              fill={finalFill}
+              stroke={finalStroke}
+              strokeWidth={finalStrokeWidth}
             />
           )}
           {shapeType === 'circle' && (
@@ -247,9 +458,9 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
               cy={innerHeight / 2}
               rx={innerWidth / 2}
               ry={innerHeight / 2}
-              fill={shapeColor}
-              stroke="#64748b"
-              strokeWidth={strokeWidth}
+              fill={finalFill}
+              stroke={finalStroke}
+              strokeWidth={finalStrokeWidth}
             />
           )}
           {shapeType === 'diamond' && (
@@ -375,22 +586,82 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
               strokeWidth={strokeWidth}
             />
           )}
-          {!isNote && shapeLabel && (
-            <text
-              x={innerWidth / 2}
-              y={innerHeight / 2}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="#0f172a"
-              fontSize="13"
-              fontWeight="500"
-              style={{ pointerEvents: 'none' }}
-            >
-              {shapeLabel}
-            </text>
-          )}
         </g>
       </svg>
+      {/* Текстовое поле для фигур (не заметок) - используем RichTextEditor как в TextNode */}
+      {!isNote && data?.onChangeFormat && selected && (
+        <TextToolbar
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          activeColor={color}
+          activeBackgroundColor="transparent"
+          textAlign={textAlign}
+          editorRef={editorRef}
+          onFontSizeChange={(newFontSize) => {
+            data?.onChangeFormat?.(id, { fontSize: newFontSize });
+          }}
+          onFontFamilyChange={(newFontFamily) => {
+            data?.onChangeFormat?.(id, { fontFamily: newFontFamily });
+          }}
+          onColorChange={(newColor) => {
+            data?.onChangeFormat?.(id, { color: newColor });
+          }}
+          onTextAlignChange={(newTextAlign) => {
+            data?.onChangeFormat?.(id, { textAlign: newTextAlign });
+          }}
+          onInteractionStart={() => {
+            editorRef.current?.saveSelection();
+          }}
+          onInteractionEnd={() => {
+            editorRef.current?.restoreSelection();
+            requestAnimationFrame(() => {
+              editorRef.current?.focus();
+            });
+          }}
+        />
+      )}
+      {!isNote && data?.onChangeFormat && (
+        <div
+          className="absolute inset-0 flex items-center justify-center p-4 nodrag"
+          style={{
+            pointerEvents: selected ? 'auto' : 'none',
+            zIndex: 10,
+          }}
+          onMouseDown={(e) => {
+            // Разрешаем редактирование текста только при клике на текстовую область
+            if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.ProseMirror')) {
+              e.stopPropagation();
+            }
+          }}
+          onDoubleClick={(e) => {
+            // Двойной клик для начала редактирования
+            if (editorRef.current) {
+              editorRef.current.focus();
+            }
+            e.stopPropagation();
+          }}
+        >
+          <RichTextEditor
+            ref={editorRef}
+            value={initialHtml}
+            plainTextFallback={text}
+            color={color}
+            fontSize={fontSize}
+            fontFamily={fontFamily}
+            textAlign={textAlign}
+            onChange={(content) => {
+              currentTextRef.current = content.text || '';
+              data?.onChangeText?.(id, content.text);
+              data?.onChangeFormat?.(id, {
+                text: content.text,
+                richContent: content.html,
+              });
+            }}
+            showToolbar={false}
+            className="w-full"
+          />
+        </div>
+      )}
       {isNote && (
         <textarea
           ref={textareaRef}

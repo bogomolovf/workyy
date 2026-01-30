@@ -1,5 +1,5 @@
-import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
+import { FastifyInstance } from 'fastify';
 import { container } from '../container';
 import { sendProblem } from '../lib/problem';
 import {
@@ -24,7 +24,19 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
     const config = parse.data;
 
     try {
-      const result = await container.postgresService.testConnection(config);
+      // Route to appropriate service based on dbType
+      let result;
+      if (config.dbType === 'mysql') {
+        result = await container.mysqlService.testConnection(config);
+      } else if (config.dbType === 'oracle') {
+        result = await container.oracleService.testConnection(config);
+      } else if (config.dbType === 'sqlserver') {
+        result = await container.sqlserverService.testConnection(config);
+      } else if (config.dbType === 'clickhouse') {
+        result = await container.clickhouseService.testConnection(config);
+      } else {
+        result = await container.postgresService.testConnection(config);
+      }
       return reply.send(result);
     } catch (error) {
       request.log.error({ err: error }, 'Failed to test database connection');
@@ -77,6 +89,7 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
         data: {
           workspaceId: body.workspaceId,
           connectionName: body.connectionName,
+          dbType: body.dbType,
           host: body.host,
           port: body.port,
           database: body.database,
@@ -89,7 +102,11 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
       await container.auditService.record({
         type: 'database-connection.created',
         workspaceId: body.workspaceId,
-        payload: { connectionId: connection.id, connectionName: connection.connectionName },
+        payload: {
+          connectionId: connection.id,
+          connectionName: connection.connectionName,
+          dbType: connection.dbType,
+        },
       });
 
       return reply.code(201).send({
@@ -97,6 +114,7 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
         connectionId: connection.id,
         secretId: secret.id,
         connectionName: connection.connectionName,
+        dbType: connection.dbType,
         host: connection.host,
         port: connection.port,
         database: connection.database,
@@ -143,6 +161,7 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
       id: connection.id,
       connectionId: connection.id,
       connectionName: connection.connectionName,
+      dbType: connection.dbType,
       host: connection.host,
       port: connection.port,
       database: connection.database,
@@ -196,6 +215,7 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
         where: { id: connectionId },
         data: {
           connectionName: body.connectionName,
+          dbType: body.dbType,
           host: body.host,
           port: body.port,
           database: body.database,
@@ -211,9 +231,15 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
         body.database ||
         body.username ||
         body.password ||
-        body.ssl !== undefined
+        body.ssl !== undefined ||
+        body.dbType
       ) {
+        // Close pool from all services (only one will have the connection)
         await container.postgresService.closePool(connectionId);
+        await container.mysqlService.closePool(connectionId);
+        await container.oracleService.closePool(connectionId);
+        await container.sqlserverService.closePool(connectionId);
+        await container.clickhouseService.closePool(connectionId);
       }
 
       await container.auditService.record({
@@ -226,6 +252,7 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
         id: connection.id,
         connectionId: connection.id,
         connectionName: connection.connectionName,
+        dbType: connection.dbType,
         host: connection.host,
         port: connection.port,
         database: connection.database,
@@ -263,8 +290,12 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
     }
 
     try {
-      // Close pool before deletion
+      // Close pool before deletion (from all services)
       await container.postgresService.closePool(connectionId);
+      await container.mysqlService.closePool(connectionId);
+      await container.oracleService.closePool(connectionId);
+      await container.sqlserverService.closePool(connectionId);
+      await container.clickhouseService.closePool(connectionId);
 
       // Delete connection (cascade will delete secret)
       await container.prisma.databaseConnection.delete({
@@ -327,33 +358,68 @@ export async function databaseConnectionsRoutes(app: FastifyInstance) {
     }
 
     try {
-      const result = await container.postgresService.executeQuery(connectionId, query);
+      // Helper function to normalize values for consistent output format
+      const normalizeValue = (value: unknown): unknown => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+        if (typeof value === 'string') return value;
+        if (typeof value === 'boolean') return value ? 1 : 0;
+        if (typeof value === 'bigint') {
+          const asNumber = Number(value);
+          return Number.isNaN(asNumber) ? Number(value.toString()) : asNumber;
+        }
+        if (value instanceof Date) return value.toISOString();
+        return JSON.stringify(value);
+      };
 
-      // Convert pg result to our format
-      const columns = result.fields.map((field) => field.name);
-      const rows = result.rows.map((row) =>
-        columns.map((col) => {
-          const value = row[col];
-          // Normalize values similar to DuckDB client
-          if (value === null || value === undefined) return null;
-          if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-          if (typeof value === 'string') return value;
-          if (typeof value === 'boolean') return value ? 1 : 0;
-          if (typeof value === 'bigint') {
-            const asNumber = Number(value);
-            return Number.isNaN(asNumber) ? Number(value.toString()) : asNumber;
-          }
-          if (value instanceof Date) return value.toISOString();
-          return JSON.stringify(value);
-        }),
-      );
+      let columns: string[];
+      let rows: unknown[][];
+
+      if (connection.dbType === 'mysql') {
+        // Execute via MySQL
+        const result = await container.mysqlService.executeQuery(connectionId, query);
+        columns = result.fields.map((field) => field.name);
+        rows = result.rows.map((row) => columns.map((col) => normalizeValue(row[col])));
+      } else if (connection.dbType === 'oracle') {
+        // Execute via Oracle
+        const result = await container.oracleService.executeQuery(connectionId, query);
+        columns = result.metaData.map((meta) => meta.name);
+        rows = result.rows.map((row) => columns.map((col) => normalizeValue(row[col])));
+      } else if (connection.dbType === 'sqlserver') {
+        // Execute via SQL Server
+        const result = await container.sqlserverService.executeQuery(connectionId, query);
+        columns = result.columns ? Object.keys(result.columns) : [];
+        rows = result.rows.map((row: Record<string, unknown>) =>
+          columns.map((col) => normalizeValue(row[col])),
+        );
+      } else if (connection.dbType === 'clickhouse') {
+        // Execute via ClickHouse
+        const result = await container.clickhouseService.executeQuery(connectionId, query);
+        columns = result.columns;
+        rows = result.rows.map((row: Record<string, unknown>) =>
+          columns.map((col) => normalizeValue(row[col])),
+        );
+      } else {
+        // Execute via PostgreSQL (default)
+        const result = await container.postgresService.executeQuery(connectionId, query);
+        columns = result.fields.map((field) => field.name);
+        rows = result.rows.map((row) => columns.map((col) => normalizeValue(row[col])));
+      }
 
       return reply.send({
         columns,
         rows,
       });
     } catch (error) {
-      request.log.error({ err: error }, 'Failed to execute PostgreSQL query');
+      const dbTypeMap: Record<string, string> = {
+        mysql: 'MySQL',
+        oracle: 'Oracle',
+        postgresql: 'PostgreSQL',
+        sqlserver: 'SQL Server',
+        clickhouse: 'ClickHouse',
+      };
+      const dbType = dbTypeMap[connection.dbType] || 'PostgreSQL';
+      request.log.error({ err: error }, `Failed to execute ${dbType} query`);
       return sendProblem(reply, {
         title: 'Query execution failed',
         status: 500,

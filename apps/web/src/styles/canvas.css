@@ -235,6 +235,10 @@
   border: none !important;
   box-shadow: none !important;
   overflow: visible !important;
+  /* Добавляем плавный transition для размеров, чтобы избежать "подпрыгивания" */
+  transition:
+    width 0.15s ease-out,
+    height 0.15s ease-out;
 }
 
 /* TipTap editor styles */
@@ -245,9 +249,34 @@
   word-wrap: break-word;
 }
 
-.ProseMirror p {
+/* Text node editor - центрируем по вертикали и убираем скролл */
+/* Текст НЕ переносится - идет в одну строку, узел расширяется по ширине */
+.react-flow__node-textNode .ProseMirror {
+  word-wrap: normal; /* Не переносим слова */
+  word-break: keep-all; /* Не разбиваем слова */
+  white-space: pre-line; /* Сохраняем переносы строк через Enter, но не переносим слова автоматически */
+  overflow-wrap: normal; /* Не переносим длинные слова */
+  line-height: 1.2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%; /* Занимаем всю ширину контейнера */
+  height: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 0; /* Убираем padding из ProseMirror, так как padding уже есть в контейнере */
+  overflow: hidden; /* Предотвращаем появление скролла */
+}
+
+.react-flow__node-textNode .ProseMirror p {
   margin: 0;
   padding: 0;
+  word-break: keep-all; /* Не разбиваем слова */
+  overflow-wrap: normal; /* Не переносим длинные слова */
+  white-space: pre-line; /* Сохраняем переносы через Enter, но не переносим слова автоматически */
+  line-height: 1.2;
+  width: 100%;
 }
 
 .ProseMirror p.is-editor-empty:first-child::before {

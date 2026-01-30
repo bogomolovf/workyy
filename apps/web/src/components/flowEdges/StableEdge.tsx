@@ -35,13 +35,22 @@ export const StableEdge = memo(
       });
     }, [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, bend]);
     const mergedStyle = useMemo(
-      () => ({ stroke: '#111827', strokeWidth: 2, strokeLinecap: 'round', ...(style ?? {}) }),
+      () => ({
+        stroke: '#111827',
+        strokeWidth: 2,
+        strokeLinecap: 'round' as const,
+        ...(style ?? {}),
+      }),
       [style],
     );
-    const resolvedMarkerEnd = useMemo(
-      () => getMarkerEnd(markerEnd ?? { type: MarkerType.ArrowClosed, color: '#111827' }),
-      [markerEnd],
-    );
+    const resolvedMarkerEnd = useMemo(() => {
+      if (typeof markerEnd === 'string') return markerEnd;
+      if (markerEnd && typeof markerEnd === 'object') {
+        const marker = markerEnd as { type: MarkerType; color?: string };
+        return getMarkerEnd(marker.type, marker.color);
+      }
+      return getMarkerEnd(MarkerType.ArrowClosed, '#111827');
+    }, [markerEnd]);
 
     return <BaseEdge id={id} path={pathD} style={mergedStyle} markerEnd={resolvedMarkerEnd} />;
   },

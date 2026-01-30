@@ -7,7 +7,7 @@ import ReactFlow, {
   BackgroundVariant,
   Controls,
   Connection,
-  ConnectionStartParams,
+  OnConnectStartParams,
   Edge,
   EdgeChange,
   Handle,
@@ -23,14 +23,14 @@ import ReactFlow, {
   NodeResizer,
   useReactFlow,
   useViewport,
-  SelectionMode,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import type { ExecutionEntry, NodeStatus, ExecutionStoreState } from '../state/executionStore';
-import { useExecutionStore } from '../state/executionStore';
-import { InteractiveResultTable } from './InteractiveResultTable';
-import { PlotPreview } from './PlotPreview';
+import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
+import { type UploadedFile } from '../lib/api';
+import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
+import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
+import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
 import {
   getDefaultNodeWidth,
   useCanvasLayoutStore,
@@ -38,31 +38,36 @@ import {
   MAX_NODE_WIDTH,
   type CanvasLayoutState,
 } from '../state/canvasLayoutStore';
+import type { ExecutionEntry, NodeStatus, ExecutionStoreState } from '../state/executionStore';
+import { useExecutionStore } from '../state/executionStore';
 import { useAddNode } from '../state/useAddNode';
+import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
+import { BoardInspector } from './BoardInspector';
+import CollaborativeCursors from './CollaborativeCursors';
 import { ConnectionArrow } from './ConnectionArrow';
 import {
   resolveConnectionEndpoints,
   type ConnectionOrigin,
   findNearestHandleId,
 } from './connectionUtils';
-import { BoardInspector } from './BoardInspector';
-import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
-import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
-import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
+import { FileDropOverlay } from './FileDropOverlay';
+import CustomConnectionLine from './flowEdges/CustomConnectionLine';
+import { CsvNode } from './flowNodes/CsvNode';
+import { DatabaseNode } from './flowNodes/DatabaseNode';
+import { DocumentNode } from './flowNodes/DocumentNode';
+import { ImageNode } from './flowNodes/ImageNode';
+import { PlotNode } from './flowNodes/PlotNode';
+import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
+import { InteractiveResultTable } from './InteractiveResultTable';
+import { PlotPreview } from './PlotPreview';
 import { FreehandOverlay } from './pen/FreehandOverlay';
+import { ShapeDragOverlay } from './shape/ShapeDragOverlay';
 import { PenNode } from './pen/PenNode';
+import { TextNode } from './TextNode';
+import { VoiceNode } from './flowNodes/VoiceNode';
+import { VideoNode } from './flowNodes/VideoNode';
 import { PenToolbar } from './pen/PenToolbar';
 import { EraserOverlay } from './pen/EraserOverlay';
-// Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
-import { TextNode } from './TextNode';
-import { DatabaseNode } from './flowNodes/DatabaseNode';
-import { PlotNode } from './flowNodes/PlotNode';
-import { CsvNode } from './flowNodes/CsvNode';
-import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
-import CustomConnectionLine from './flowEdges/CustomConnectionLine';
-import CollaborativeCursors from './CollaborativeCursors';
-import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
-import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
   ssr: false,
@@ -82,9 +87,13 @@ type CanvasNodeType =
   | 'text'
   | 'shape'
   | 'image'
+  | 'video'
+  | 'document'
   | 'pen'
   | 'database'
-  | 'csv';
+  | 'csv'
+  | 'voice'
+  | 'draw';
 
 type BoardCanvasProps = {
   board: {
@@ -109,17 +118,17 @@ type BoardCanvasProps = {
   executionEntries: Record<string, ExecutionEntry | undefined>;
   onCodeChange: (nodeId: string, code: string) => void;
   onRunNode: (nodeId: string) => void;
-  onRunNodeFull?: (nodeId: string) => void; // Run without preview limit (load all data)
+  onRunNodeFull?: (nodeId: string) => void;
   onRunDownstream: (nodeId: string) => void;
   selectedNodeId?: string | null;
   onSelectNode?: (nodeId: string | null) => void;
   onNodesChange?: (nodes: BoardCanvasProps['nodes']) => void;
   onEdgesChange?: (edges: BoardCanvasProps['edges']) => void;
-  yjsOnNodesChange?: (changes: NodeChange[]) => void; // Direct Yjs handler for ReactFlow format
-  yjsOnEdgesChange?: (changes: EdgeChange[]) => void; // Direct Yjs handler for ReactFlow format
-  cursorsMap?: any; // YMap for cursors (from Yjs)
-  clientId?: string; // Client ID for cursor tracking
-  userInfo?: { userId?: string; userName?: string }; // User information for cursor display
+  // Collaborative editing props
+  yjsOnNodesChange?: (changes: import('reactflow').NodeChange[]) => void;
+  yjsOnEdgesChange?: (changes: import('reactflow').EdgeChange[]) => void;
+  cursorsMap?: import('yjs').Map<unknown>;
+  clientId?: string;
 };
 
 type NodeData = {
@@ -129,7 +138,6 @@ type NodeData = {
   execution?: ExecutionEntry;
   onCodeChange: (code: string) => void;
   onRun: () => void;
-  onRunFull?: () => void; // Load all data without preview limit
   onRunDownstream: () => void;
   width: number;
   isCodeCollapsed: boolean;
@@ -265,18 +273,18 @@ function StdoutBlock({
 }
 
 const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
-  // Fetch execution state directly from store
-  const execution = useExecutionStore((state: ExecutionStoreState) => state.entries[data.nodeId]);
+  const execution = data.execution;
   const status: NodeStatus = execution?.status ?? 'idle';
   const result = execution?.output?.kind === 'sql' ? execution.output.result : undefined;
   const code = execution?.code ?? '';
-  const error = execution?.error ?? null;
   const codeLines = code.split('\n').length;
   const expandedHeight = Math.max(240, codeLines * 18 + 60);
   const editorHeight = data.isCodeCollapsed ? Math.min(220, expandedHeight) : expandedHeight;
   return (
     <div
-      className={`group rounded-md border bg-white shadow-lg px-5 pb-5 pt-4 transition-all ${statusColors[status]}`}
+      className={`group rounded-md border bg-white shadow-lg px-5 pb-5 pt-4 transition-all ${
+        statusColors[status]
+      } ${selected ? 'ring-2 ring-indigo-400' : ''}`}
       style={{ width: data.width, minHeight: 320 }}
     >
       <NodeResizer
@@ -361,16 +369,10 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
         />
       </div>
 
-      {error && <ErrorMessage message={error} />}
+      {execution?.error && <ErrorMessage message={execution.error} />}
       {result && (
         <div className="mt-3">
-          <InteractiveResultTable 
-            result={result} 
-            compact
-            totalCount={result.totalCount}
-            isPreview={result.isPreview}
-            onLoadAll={data.onRunFull}
-          />
+          <InteractiveResultTable result={result} compact />
         </div>
       )}
     </div>
@@ -378,15 +380,10 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
 };
 
 const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
-  // Fetch execution state directly from store
-  const execution = useExecutionStore((state: ExecutionStoreState) => state.entries[data.nodeId]);
+  const execution = data.execution;
   const status: NodeStatus = execution?.status ?? 'idle';
   const output = execution?.output?.kind === 'python' ? execution.output.result : undefined;
   const code = execution?.code ?? '';
-  const hiddenOutputs = execution?.hiddenOutputs ?? { error: false, warnings: false };
-  const dismissError = useExecutionStore((state: ExecutionStoreState) => state.dismissError);
-  const dismissWarnings = useExecutionStore((state: ExecutionStoreState) => state.dismissWarnings);
-  
   const codeLines = code.split('\n').length;
   const expandedHeight = Math.max(240, codeLines * 18 + 60);
   const editorHeight = data.isCodeCollapsed ? Math.min(220, expandedHeight) : expandedHeight;
@@ -395,11 +392,16 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
     output?.stderr && output.stderr.trim().length > 0 ? output.stderr.trim() : '';
   const stderrTone = execution?.error ? 'stderr' : 'warning';
   const stderrTitle = execution?.error ? 'Stderr' : 'Warnings';
+  const dismissError = useExecutionStore((state: ExecutionStoreState) => state.dismissError);
+  const dismissWarnings = useExecutionStore((state: ExecutionStoreState) => state.dismissWarnings);
+  const hiddenOutputs = execution?.hiddenOutputs ?? { error: false, warnings: false };
   const shouldShowError = Boolean(execution?.error) && !hiddenOutputs.error;
   const shouldShowWarnings = Boolean(stderrContent) && !hiddenOutputs.warnings;
   return (
     <div
-      className={`group rounded-md border bg-white shadow-lg px-5 pb-5 pt-4 transition-all ${statusColors[status]}`}
+      className={`group rounded-md border bg-white shadow-lg px-5 pb-5 pt-4 transition-all ${
+        statusColors[status]
+      } ${selected ? 'ring-2 ring-indigo-400' : ''}`}
       style={{ width: data.width, minHeight: 320 }}
     >
       <NodeResizer
@@ -526,8 +528,6 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   );
 };
 
-// Define nodeTypes outside component to prevent React Flow warning
-// This is the recommended pattern from React Flow documentation
 const nodeTypes = {
   sqlNode: SqlNodeComponent,
   pythonNode: PythonNodeComponent,
@@ -535,8 +535,11 @@ const nodeTypes = {
   textNode: TextNode,
   databaseNode: DatabaseNode,
   plotNode: PlotNode,
-  csvNode: CsvNode,
   shapeNode: ShapeNode, // Заметки теперь тоже shape nodes
+  voiceNode: VoiceNode,
+  imageNode: ImageNode,
+  videoNode: VideoNode,
+  documentNode: DocumentNode,
 };
 
 type ConnectionArrowsOverlayProps = {
@@ -608,16 +611,11 @@ export function BoardCanvas({
   executionEntries,
   onCodeChange,
   onRunNode,
-  onRunNodeFull,
   onRunDownstream,
   selectedNodeId,
   onSelectNode,
   onNodesChange,
   onEdgesChange,
-  yjsOnNodesChange,
-  yjsOnEdgesChange,
-  cursorsMap,
-  clientId,
 }: BoardCanvasProps) {
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
   const inspectorEntry = selectedNode ? executionEntries[selectedNode.id] : undefined;
@@ -648,17 +646,11 @@ export function BoardCanvas({
           executionEntries={executionEntries}
           onCodeChange={onCodeChange}
           onRunNode={onRunNode}
-          onRunNodeFull={onRunNodeFull}
           onRunDownstream={onRunDownstream}
           selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          yjsOnNodesChange={yjsOnNodesChange}
-          yjsOnEdgesChange={yjsOnEdgesChange}
-          cursorsMap={cursorsMap}
-          clientId={clientId}
-          userInfo={board.userInfo}
         />
         {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
         <div
@@ -670,12 +662,13 @@ export function BoardCanvas({
           }}
         >
           {inspectorKind && selectedNode ? (
+            // @ts-expect-error - discriminated union type inference issue
             <BoardInspector
               nodeLabel={
                 (selectedNode.payload?.label as string | undefined) ??
                 `${inspectorKind === 'sql' ? 'SQL' : inspectorKind === 'python' ? 'Python' : 'Plot'} ${selectedNode.id.slice(0, 6)}`
               }
-              kind={inspectorKind}
+              kind={inspectorKind as 'sql' | 'python' | 'plot'}
               status={inspectorEntry?.status ?? 'idle'}
               error={inspectorEntry?.error}
               lastStartedAt={inspectorEntry?.startedAt}
@@ -734,17 +727,11 @@ function InnerBoardCanvas({
   executionEntries,
   onCodeChange,
   onRunNode,
-  onRunNodeFull,
   onRunDownstream,
   selectedNodeId,
   onSelectNode,
   onNodesChange,
   onEdgesChange,
-  yjsOnNodesChange,
-  yjsOnEdgesChange,
-  cursorsMap,
-  clientId,
-  userInfo,
 }: InnerProps) {
   const canvasRootRef = useRef<HTMLDivElement>(null);
   const viewport = useViewport();
@@ -763,49 +750,11 @@ function InnerBoardCanvas({
   const lastMousePositionRef = useRef<{ x: number; y: number } | null>(null);
   const mouseMoveCleanupRef = useRef<(() => void) | null>(null);
 
-  // Track if cursor is hovering over toolbars (Controls, MiniMap, BoardCommandBar, PenToolbar)
-  // When hovering toolbars, hide own cursor but keep updating position for other users
-  const [isHoveringToolbar, setIsHoveringToolbar] = useState(false);
-
-  // Tool state - defined early because it's needed for cursor visibility
-  const [tool, setTool] = useState<CanvasTool>('hand');
-
-  // Use cursor syncing hook (must be inside ReactFlowProvider)
-  // Hide own cursor when hovering toolbars (like Miro behavior)
-  // Also hide own cursor when using eraser (eraser has its own cursor indicator)
-  // Show own cursor normally, but hide it when hovering over toolbars or using eraser
-  const showOwnCursor = !isHoveringToolbar && tool !== 'eraser';
-  const [cursors, onMouseMove] = cursorsMap && clientId
-    ? useCursorStateSynced(cursorsMap, clientId, userInfo, { showOwnCursor })
-    : ([[], () => {}] as const);
-
-  // Debug logging for cursor synchronization
-  useEffect(() => {
-    if (cursorsMap && clientId && process.env.NODE_ENV === 'development') {
-      const allCursorsInMap = [...cursorsMap.values()];
-      console.log('[CursorSync] Initialized:', {
-        clientId,
-        cursorsCount: cursors.length,
-        cursorsMapSize: cursorsMap.size,
-        allCursorsInMap: allCursorsInMap.map((c) => ({
-          id: c.id,
-          hasUserName: !!c.userName,
-          timestamp: c.timestamp,
-        })),
-        showOwnCursor,
-        userInfo,
-      });
-    }
-  }, [cursorsMap, clientId, cursors.length, showOwnCursor, userInfo]);
-
   const [localNodes, setLocalNodes] = useState(nodes);
   const localNodesRef = useRef(localNodes);
   const [localEdges, setLocalEdges] = useState(edges);
   const textNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const shapeNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-
-  // Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
-  // Changes are automatically tracked through Yjs transactions with clientId origin
 
   useEffect(() => {
     setLocalNodes(nodes);
@@ -843,7 +792,7 @@ function InnerBoardCanvas({
         y: Number.isFinite(Number((n as any).position?.y)) ? Number((n as any).position?.y) : 0,
       };
       const type = (
-        n.type === 'sticky' ? ('note' as const) : (n.type as any)
+        (n.type as string) === 'sticky' ? ('note' as const) : (n.type as any)
       ) as BoardCanvasProps['nodes'][number]['type'];
       const basePayload = (n.payload && typeof n.payload === 'object' ? n.payload : {}) as Record<
         string,
@@ -881,70 +830,19 @@ function InnerBoardCanvas({
         metadata: e.metadata ?? {},
       }));
   }, []);
-
   const emitNodesChange = useCallback(
-    (next: BoardCanvasProps['nodes'], shouldSaveToHistory = false) => {
+    (next: BoardCanvasProps['nodes']) => {
       if (!onNodesChange) return;
       const sanitized = sanitizeExternalNodes(next);
       const signature = JSON.stringify(sanitized);
       if (signature === lastEmittedRef.current) return;
       lastEmittedRef.current = signature;
-
       queueMicrotask(() => {
         onNodesChange(sanitized);
       });
     },
     [onNodesChange, sanitizeExternalNodes],
   );
-
-  // Helper function to sync node payload changes through Yjs for real-time collaboration
-  // This ensures that changes to node content (text, formatting, etc.) are synchronized
-  // between all clients immediately, not just on auto-save
-  const syncNodePayloadChange = useCallback(
-    (nodeId: string, payloadUpdate: (prevPayload: Record<string, unknown>) => Record<string, unknown>) => {
-      // Update local state and sync through Yjs
-      setLocalNodes((prev) => {
-        const currentNode = prev.find((n) => n.id === nodeId);
-        if (!currentNode) return prev;
-
-        const updatedPayload = payloadUpdate(currentNode.payload ?? {});
-        const next = prev.map((n) =>
-          n.id === nodeId
-            ? {
-                ...n,
-                payload: updatedPayload,
-              }
-            : n,
-        );
-
-        const updatedNode = next.find((n) => n.id === nodeId);
-        if (!updatedNode) return next;
-
-        // Sync through Yjs for real-time collaboration
-        // Convert to ReactFlow format and sync immediately
-        if (yjsOnNodesChange) {
-          const reactFlowNode = canvasNodeToReactFlowNode(updatedNode);
-          // Use 'add' type to update existing node (Yjs will merge changes automatically)
-          yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-        }
-
-        // Also emit through onNodesChange for compatibility and auto-save
-        // Use queueMicrotask to avoid potential issues with state updates
-        queueMicrotask(() => {
-          emitNodesChange(next);
-        });
-
-        return next;
-      });
-    },
-    [yjsOnNodesChange, emitNodesChange],
-  );
-
-  // Ref для edges чтобы иметь актуальное значение в callback
-  const localEdgesRef = useRef(localEdges);
-  useEffect(() => {
-    localEdgesRef.current = localEdges;
-  }, [localEdges]);
   const lastEdgesEmittedRef = useRef<string>('');
   const emitEdgesChange = useCallback(
     (next: BoardCanvasProps['edges']) => {
@@ -962,14 +860,13 @@ function InnerBoardCanvas({
     setLocalEdges(edges);
   }, [edges]);
 
+  const [tool, setTool] = useState<CanvasTool>('select');
   const [selectedShape, setSelectedShape] = useState<ShapeType | null>('rectangle');
-  const isHandMode = tool === 'hand';
   const isStickyMode = tool === 'note';
   const isPenMode = tool === 'pen';
-  const isEraserMode = tool === 'eraser';
   const isTextMode = tool === 'text';
   const isShapeMode = tool === 'shape';
-  const isSelectMode = tool === 'select';
+  const isVoiceMode = tool === 'voice';
 
   // Автоматически выбираем rectangle при переключении на режим shape
   useEffect(() => {
@@ -977,196 +874,6 @@ function InnerBoardCanvas({
       setSelectedShape('rectangle');
     }
   }, [tool, selectedShape]);
-
-  // CRITICAL FIX for Bug 2: Force hide system cursor on all ReactFlow elements
-  // This prevents the hand icon from appearing simultaneously with collaborative cursors
-  // Works in ALL modes, not just pen mode, because the bug can occur in any mode
-  // CRITICAL: Do NOT hide cursor on body - only hide it inside ReactFlow container
-  // This allows standard browser cursor to show outside the canvas area (header, buttons, etc.)
-  useEffect(() => {
-    const forceHideCursor = () => {
-      const reactFlowContainer = document.querySelector('.react-flow');
-      const reactFlowPane = document.querySelector('.react-flow__pane');
-      const reactFlowNodes = document.querySelectorAll('.react-flow__node');
-      const reactFlowViewport = document.querySelector('.react-flow__viewport');
-      const reactFlowRenderer = document.querySelector('.react-flow__renderer');
-      
-      // Force hide cursor ONLY on ReactFlow elements, NOT on body
-      // This allows standard cursor to show outside the canvas area
-      if (reactFlowContainer) {
-        (reactFlowContainer as HTMLElement).style.setProperty('cursor', 'none', 'important');
-      }
-      if (reactFlowPane) {
-        (reactFlowPane as HTMLElement).style.setProperty('cursor', 'none', 'important');
-      }
-      if (reactFlowViewport) {
-        (reactFlowViewport as HTMLElement).style.setProperty('cursor', 'none', 'important');
-      }
-      if (reactFlowRenderer) {
-        (reactFlowRenderer as HTMLElement).style.setProperty('cursor', 'none', 'important');
-      }
-      reactFlowNodes.forEach((node) => {
-        (node as HTMLElement).style.setProperty('cursor', 'none', 'important');
-        // Also hide cursor on all children of nodes
-        const children = node.querySelectorAll('*');
-        children.forEach((child) => {
-          (child as HTMLElement).style.setProperty('cursor', 'none', 'important');
-        });
-      });
-      
-      // Restore standard cursor for Controls and MiniMap (like toolbar)
-      const controls = document.querySelector('.react-flow__controls');
-      const minimap = document.querySelector('.react-flow__minimap');
-      const penToolbar = document.querySelector('[data-pen-toolbar]');
-      const commandBar = document.querySelector('[data-board-command-bar]');
-      
-      if (controls) {
-        (controls as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
-        const controlButtons = controls.querySelectorAll('button');
-        controlButtons.forEach((button) => {
-          button.style.setProperty('cursor', 'pointer', 'important');
-        });
-      }
-      if (minimap) {
-        (minimap as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
-        const minimapElements = minimap.querySelectorAll('*');
-        minimapElements.forEach((el) => {
-          (el as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
-        });
-      }
-      
-      // Restore standard cursor for PenToolbar (pen settings palette)
-      if (penToolbar) {
-        (penToolbar as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
-        const penToolbarElements = penToolbar.querySelectorAll('*');
-        penToolbarElements.forEach((el) => {
-          (el as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
-        });
-      }
-      
-      // Restore standard cursor for BoardCommandBar
-      if (commandBar) {
-        (commandBar as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
-        const commandBarElements = commandBar.querySelectorAll('*');
-        commandBarElements.forEach((el) => {
-          (el as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
-        });
-      }
-    };
-
-    // Initial hide
-    forceHideCursor();
-
-    // Use MutationObserver to watch for ReactFlow class changes on body
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-          // ReactFlow adds rf-hand-cursor or rf-select-cursor classes to body
-          // Force hide cursor whenever these classes change
-          forceHideCursor();
-        }
-      });
-    });
-
-    // Observe body for class changes
-    const body = document.body;
-    if (body) {
-      observer.observe(body, {
-        attributes: true,
-        attributeFilter: ['class'],
-      });
-    }
-
-    // Also periodically force hide cursor to catch any dynamic changes
-    // Reduced interval to 50ms for more aggressive hiding
-    const interval = setInterval(() => {
-      forceHideCursor();
-    }, 50);
-
-    return () => {
-      observer.disconnect();
-      clearInterval(interval);
-      // No need to restore cursor on body since we don't set it anymore
-    };
-  }, []); // Remove isPenMode dependency - work in all modes
-
-  // CRITICAL FIX: Hide own cursor when hovering over toolbars (Controls, MiniMap, BoardCommandBar, PenToolbar)
-  // This matches Miro behavior - cursor disappears for the user but stays visible for others
-  // The cursor position continues to update in Yjs, so other users see it at the last canvas position
-  useEffect(() => {
-    const handleToolbarMouseEnter = () => {
-      setIsHoveringToolbar(true);
-    };
-
-    const handleToolbarMouseLeave = () => {
-      setIsHoveringToolbar(false);
-    };
-
-    const attachListeners = () => {
-      // Find toolbar elements
-      const controls = document.querySelector('.react-flow__controls');
-      const minimap = document.querySelector('.react-flow__minimap');
-      const commandBar = document.querySelector('[data-board-command-bar]');
-      const penToolbar = document.querySelector('[data-pen-toolbar]');
-
-      // Add event listeners to Controls
-      if (controls && !controls.hasAttribute('data-cursor-listener')) {
-        controls.setAttribute('data-cursor-listener', 'true');
-        controls.addEventListener('mouseenter', handleToolbarMouseEnter);
-        controls.addEventListener('mouseleave', handleToolbarMouseLeave);
-      }
-
-      // Add event listeners to MiniMap
-      if (minimap && !minimap.hasAttribute('data-cursor-listener')) {
-        minimap.setAttribute('data-cursor-listener', 'true');
-        minimap.addEventListener('mouseenter', handleToolbarMouseEnter);
-        minimap.addEventListener('mouseleave', handleToolbarMouseLeave);
-      }
-
-      // Add event listeners to BoardCommandBar
-      if (commandBar && !commandBar.hasAttribute('data-cursor-listener')) {
-        commandBar.setAttribute('data-cursor-listener', 'true');
-        commandBar.addEventListener('mouseenter', handleToolbarMouseEnter);
-        commandBar.addEventListener('mouseleave', handleToolbarMouseLeave);
-      }
-
-      // Add event listeners to PenToolbar
-      if (penToolbar && !penToolbar.hasAttribute('data-cursor-listener')) {
-        penToolbar.setAttribute('data-cursor-listener', 'true');
-        penToolbar.addEventListener('mouseenter', handleToolbarMouseEnter);
-        penToolbar.addEventListener('mouseleave', handleToolbarMouseLeave);
-      }
-    };
-
-    // Initial attachment
-    attachListeners();
-
-    // Use MutationObserver to catch dynamically rendered toolbars (especially BoardCommandBar via portal)
-    const observer = new MutationObserver(() => {
-      attachListeners();
-    });
-
-    // Observe document body for dynamically added toolbars
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-
-    // Also periodically check (fallback for edge cases)
-    const intervalId = setInterval(attachListeners, 500);
-
-    return () => {
-      observer.disconnect();
-      clearInterval(intervalId);
-      
-      // Remove all listeners
-      document.querySelectorAll('[data-cursor-listener]').forEach((el) => {
-        el.removeEventListener('mouseenter', handleToolbarMouseEnter);
-        el.removeEventListener('mouseleave', handleToolbarMouseLeave);
-      });
-    };
-  }, []);
-
 
   const selectedDataNode = useMemo(() => {
     if (!selectedNodeId) return null;
@@ -1198,38 +905,6 @@ function InnerBoardCanvas({
     onRunDownstream(selectedDataNodeId);
   }, [selectedDataNodeId, onRunDownstream]);
 
-  // Undo/Redo removed - now handled at page level via Yjs UndoManager (per-user undo)
-
-  // Eraser handler - удаляем узлы и синхронизируем через Yjs
-  const handleDeleteNodes = useCallback(
-    (nodeIds: string[]) => {
-      if (!nodeIds || nodeIds.length === 0) return;
-
-      console.log('🧹 Erasing nodes:', nodeIds);
-
-      // Sync deletion through Yjs to ensure real-time collaboration
-      if (yjsOnNodesChange && nodeIds.length > 0) {
-        const removeNodeChanges = nodeIds.map((id) => ({
-          type: 'remove' as const,
-          id,
-        }));
-        yjsOnNodesChange(removeNodeChanges);
-      }
-
-      setLocalNodes((prev) => {
-        const next = prev.filter((n) => !nodeIds.includes(n.id));
-
-        // Уведомляем родителя (history is tracked automatically via Yjs UndoManager)
-        queueMicrotask(() => {
-          emitNodesChange(next);
-        });
-
-        return next;
-      });
-    },
-    [emitNodesChange, localEdges, yjsOnNodesChange],
-  );
-
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false;
@@ -1243,24 +918,7 @@ function InnerBoardCanvas({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Проверяем, не в поле ввода
-      if (isEditableTarget(event.target)) {
-        // Для undo/redo всегда разрешаем (Ctrl+Z, Cmd+Z)
-        if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key === 'z') {
-          // Разрешаем стандартное поведение для полей ввода
-          return;
-        }
-        if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'z') {
-          // Разрешаем стандартное поведение для полей ввода
-          return;
-        }
-        return;
-      }
-
       if (event.defaultPrevented) return;
-
-      // Undo/Redo keyboard shortcuts now handled at page level via useYjsUndoManager
-
       if (isEditableTarget(event.target)) return;
 
       const key = event.key.toLowerCase();
@@ -1279,12 +937,12 @@ function InnerBoardCanvas({
             setTool((prev) => (prev === 'pen' ? 'select' : 'pen'));
             return;
           }
-          if (key === 'e') {
-            setTool((prev) => (prev === 'eraser' ? 'select' : 'eraser'));
-            return;
-          }
           if (key === 't') {
             setTool((prev) => (prev === 'text' ? 'select' : 'text'));
+            return;
+          }
+          if (key === 'm') {
+            setTool((prev) => (prev === 'voice' ? 'select' : 'voice'));
             return;
           }
         }
@@ -1321,6 +979,19 @@ function InnerBoardCanvas({
   ]);
 
   const mapNodes = useCallback(() => {
+    const penNodes = localNodes.filter((n) => n.type === 'pen');
+    if (penNodes.length > 0) {
+      console.log(
+        'mapNodes: Found pen nodes in localNodes:',
+        penNodes.length,
+        penNodes.map((n) => ({
+          id: n.id,
+          hasPayload: !!n.payload,
+          hasPoints: !!(n.payload as any)?.points,
+          hasInitialSize: !!(n.payload as any)?.initialSize,
+        })),
+      );
+    }
     return (
       localNodes
         .filter((node) => node.type !== 'draw') // draw nodes не отображаются в React Flow (legacy)
@@ -1329,11 +1000,14 @@ function InnerBoardCanvas({
           const isPython = node.type === 'python';
           const isDatabase = node.type === 'database';
           const isPlot = node.type === 'plot';
-          const isCsv = node.type === 'csv';
           const isPen = node.type === 'pen';
           const isText = node.type === 'text';
           const isShape = node.type === 'shape';
           const isNote = node.type === 'note'; // Заметки теперь тоже shape nodes
+          const isVoice = node.type === 'voice';
+          const isImage = node.type === 'image';
+          const isVideo = node.type === 'video';
+          const isDocument = node.type === 'document';
           const type = isSql
             ? 'sqlNode'
             : isPython
@@ -1342,21 +1016,36 @@ function InnerBoardCanvas({
                 ? 'databaseNode'
                 : isPlot
                   ? 'plotNode'
-                  : isCsv
-                    ? 'csvNode'
-                    : isPen
-                      ? 'pen'
-                      : isText
-                        ? 'textNode'
-                        : isShape || isNote
-                          ? 'shapeNode'
-                          : 'default';
+                  : isPen
+                    ? 'pen'
+                    : isText
+                      ? 'textNode'
+                      : isVoice
+                        ? 'voiceNode'
+                        : isImage
+                          ? 'imageNode'
+                          : isVideo
+                            ? 'videoNode'
+                            : isDocument
+                              ? 'documentNode'
+                              : isShape || isNote
+                                ? 'shapeNode'
+                                : 'default';
 
           // Определяем тип слоя для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
-          const isDataNode = isSql || isPython || isDatabase || isPlot || isCsv;
-          const isCanvasNode = isPen || isText || isShape || isNote;
+          const isDataNode = isSql || isPython || isDatabase || isPlot;
+          const isCanvasNode =
+            isPen || isText || isShape || isNote || isVoice || isImage || isVideo || isDocument;
 
-          // NOTE: executionEntries removed - SqlNode/PythonNode fetch their own state via useExecutionStore
+          if (isPen) {
+            console.log('mapNodes: Mapping pen node', {
+              id: node.id,
+              payload: node.payload,
+              points: (node.payload as any)?.points?.length,
+              initialSize: (node.payload as any)?.initialSize,
+            });
+          }
+          const entry = executionEntries[node.id];
           const storedWidth = nodeSizes[node.id]?.width ?? getDefaultNodeWidth();
           const isCodeCollapsed = codeCollapsedMap[node.id] ?? false;
 
@@ -1380,23 +1069,55 @@ function InnerBoardCanvas({
                       border: 'none',
                       boxShadow: 'none',
                     }
-                  : isShape || isNote
+                  : isVoice
                     ? {
-                        width: isNote
-                          ? ((node.payload as any)?.ui?.width ?? 280)
-                          : ((node.payload as any)?.width ?? 160),
-                        height: isNote
-                          ? ((node.payload as any)?.ui?.height ?? 280)
-                          : ((node.payload as any)?.height ?? 96),
+                        width: (node.payload as any)?.ui?.width ?? 280,
+                        height: (node.payload as any)?.ui?.height ?? 60,
                         background: 'transparent',
                         border: 'none',
                         boxShadow: 'none',
                       }
-                    : {
-                        width: storedWidth,
-                        minWidth: MIN_NODE_WIDTH,
-                        maxWidth: MAX_NODE_WIDTH,
-                      };
+                    : isImage
+                      ? {
+                          width: (node.payload as any)?.width ?? 300,
+                          height: (node.payload as any)?.height ?? 300,
+                          background: 'transparent',
+                          border: 'none',
+                          boxShadow: 'none',
+                        }
+                      : isVideo
+                        ? {
+                            width: (node.payload as any)?.width ?? 400,
+                            height: (node.payload as any)?.height ?? 300,
+                            background: 'transparent',
+                            border: 'none',
+                            boxShadow: 'none',
+                          }
+                        : isDocument
+                          ? {
+                              width: (node.payload as any)?.width ?? 400,
+                              height: (node.payload as any)?.height ?? 500,
+                              background: 'transparent',
+                              border: 'none',
+                              boxShadow: 'none',
+                            }
+                          : isShape || isNote
+                            ? {
+                                width: isNote
+                                  ? ((node.payload as any)?.ui?.width ?? 280)
+                                  : ((node.payload as any)?.width ?? 160),
+                                height: isNote
+                                  ? ((node.payload as any)?.ui?.height ?? 280)
+                                  : ((node.payload as any)?.height ?? 96),
+                                background: 'transparent',
+                                border: 'none',
+                                boxShadow: 'none',
+                              }
+                            : {
+                                width: storedWidth,
+                                minWidth: MIN_NODE_WIDTH,
+                                maxWidth: MAX_NODE_WIDTH,
+                              };
 
           return {
             id: node.id,
@@ -1409,12 +1130,6 @@ function InnerBoardCanvas({
                     width: 100,
                     height: 100,
                   }) as { width: number; height: number },
-                  // Передаем все настройки из payload
-                  color: (node.payload as any)?.color,
-                  strokeWidth: (node.payload as any)?.strokeWidth,
-                  opacity: (node.payload as any)?.opacity,
-                  smoothing: (node.payload as any)?.smoothing,
-                  thinning: (node.payload as any)?.thinning,
                 }
               : isText
                 ? (() => {
@@ -1423,6 +1138,7 @@ function InnerBoardCanvas({
                     const fontSize = payload.fontSize ?? 18;
                     const fontFamily = payload.fontFamily ?? 'Inter, sans-serif';
                     const color = payload.color ?? '#0f172a';
+                    const backgroundColor = payload.backgroundColor ?? 'transparent';
                     const textAlign = payload.textAlign ?? 'left';
                     const richContent = payload.richContent ?? payload.richTextHtml ?? null;
 
@@ -1433,14 +1149,26 @@ function InnerBoardCanvas({
                       fontSize,
                       fontFamily,
                       color,
+                      backgroundColor,
                       textAlign,
                       richContentHtml: richContent,
                       onChangeText: (id: string, newText: string) => {
-                        syncNodePayloadChange(id, (prevPayload) => ({
-                          ...prevPayload,
-                          text: newText,
-                          textContent: newText,
-                        }));
+                        setLocalNodes((prev) => {
+                          const next = prev.map((n) =>
+                            n.id === id && n.type === 'text'
+                              ? {
+                                  ...n,
+                                  payload: {
+                                    ...(n.payload ?? {}),
+                                    text: newText,
+                                    textContent: newText,
+                                  },
+                                }
+                              : n,
+                          );
+                          emitNodesChange(next);
+                          return next;
+                        });
                       },
                       onChangeFormat: (
                         id: string,
@@ -1449,129 +1177,506 @@ function InnerBoardCanvas({
                           fontSize: number;
                           fontFamily: string;
                           color: string;
+                          backgroundColor?: string;
                           textAlign: 'left' | 'center' | 'right';
                           richContent: string;
+                          ui?: { width: number; height: number };
                         }>,
                       ) => {
-                        syncNodePayloadChange(id, (prevPayload) => ({
-                          ...prevPayload,
-                          ...patch,
-                        }));
+                        setLocalNodes((prev) => {
+                          const next = prev.map((n) =>
+                            n.id === id && n.type === 'text'
+                              ? {
+                                  ...n,
+                                  payload: {
+                                    ...(n.payload ?? {}),
+                                    ...(patch.ui
+                                      ? {
+                                          ...(n.payload ?? {}),
+                                          ui: {
+                                            ...((n.payload as any)?.ui ?? {}),
+                                            ...patch.ui,
+                                          },
+                                        }
+                                      : {}),
+                                    ...Object.fromEntries(
+                                      Object.entries(patch).filter(([key]) => key !== 'ui'),
+                                    ),
+                                  },
+                                }
+                              : n,
+                          );
+                          emitNodesChange(next);
+                          return next;
+                        });
+                      },
+                      onDeleteNode: (nodeId: string) => {
+                        // Удаляем узел из localNodes
+                        setLocalNodes((prev) => {
+                          const next = prev.filter((n) => n.id !== nodeId);
+                          emitNodesChange(next);
+                          return next;
+                        });
+                        // Удаляем из flowNodes
+                        setFlowNodes((prev) => prev.filter((n) => n.id !== nodeId));
+                        // Снимаем выделение если удаляемый узел был selected
+                        if (selectedNodeId === nodeId) {
+                          onSelectNode?.(null);
+                        }
                       },
                     };
                   })()
-                : isShape || isNote
+                : isImage
                   ? (() => {
-                      if (isNote) {
-                        // Заметки - это shape nodes с типом rectangle и текстом
-                        const text =
-                          (node.payload as any)?.text ?? (node.payload as any)?.noteContent ?? '';
-                        const color = (node.payload as any)?.color ?? '#FFFFBA';
-                        const fontSize = (node.payload as any)?.fontSize ?? 48;
-                        const fontFamily = (node.payload as any)?.fontFamily ?? 'Inter, sans-serif';
-                        const isBold = (node.payload as any)?.isBold ?? false;
-                        const isItalic = (node.payload as any)?.isItalic ?? false;
-
-                        return {
-                          shapeType: 'rectangle' as const,
-                          shapeColor: color,
-                          text,
-                          fontSize,
-                          fontFamily,
-                          isBold,
-                          isItalic,
-                          width: (node.payload as any)?.ui?.width ?? 280,
-                          height: (node.payload as any)?.ui?.height ?? 280,
-                          onChangeText: (nid: string, newText: string) => {
-                            syncNodePayloadChange(nid, (prevPayload) => ({
-                              ...prevPayload,
-                              text: newText,
-                              noteContent: newText,
-                            }));
-                          },
-                          onChangeColor: (nid: string, newColor: string) => {
-                            syncNodePayloadChange(nid, (prevPayload) => ({
-                              ...prevPayload,
-                              color: newColor,
-                            }));
-                          },
-                          onChangeFontSize: (nid: string, newFontSize: number) => {
-                            syncNodePayloadChange(nid, (prevPayload) => ({
-                              ...prevPayload,
-                              fontSize: newFontSize,
-                            }));
-                          },
-                          onChangeFontFamily: (nid: string, newFontFamily: string) => {
-                            syncNodePayloadChange(nid, (prevPayload) => ({
-                              ...prevPayload,
-                              fontFamily: newFontFamily,
-                            }));
-                          },
-                          onChangeBold: (nid: string, newIsBold: boolean) => {
-                            syncNodePayloadChange(nid, (prevPayload) => ({
-                              ...prevPayload,
-                              isBold: newIsBold,
-                            }));
-                          },
-                          onChangeItalic: (nid: string, newIsItalic: boolean) => {
-                            syncNodePayloadChange(nid, (prevPayload) => ({
-                              ...prevPayload,
-                              isItalic: newIsItalic,
-                            }));
-                          },
-                        };
-                      } else {
-                        // Обычные shape nodes
-                        return {
-                          shapeType: ((node.payload as any)?.shapeType ?? 'rectangle') as any,
-                          shapeColor: (node.payload as any)?.shapeColor ?? '#BFDBFE',
-                          shapeLabel: (node.payload as any)?.shapeLabel ?? 'Фигура',
-                          width: (node.payload as any)?.width ?? 160,
-                          height: (node.payload as any)?.height ?? 96,
-                        };
-                      }
-                    })()
-                  : isDatabase
-                    ? {
-                        nodeId: node.id,
-                        workspaceId: board.workspaceId,
-                        onUpdatePayload: (nodeId: string, payload: Record<string, unknown>) => {
-                          syncNodePayloadChange(nodeId, (prevPayload) => ({
-                            ...prevPayload,
-                            ...payload,
-                          }));
-                        },
-                        payload: node.payload,
-                      }
-                    : isPlot
-                      ? {
-                          nodeId: node.id,
-                          payload: node.payload,
-                          edges: localEdges,
-                          width: storedWidth,
-                        }
-                      : isCsv
-                        ? {
-                            nodeId: node.id,
-                            payload: node.payload,
-                            width: storedWidth,
-                            onResize: (nodeId: string, width: number, _height: number) => {
-                              setNodeWidth(nodeId, width);
-                            },
+                      const payload = (node.payload ?? {}) as any;
+                      return {
+                        url: payload.url ?? '',
+                        originalName: payload.originalName ?? '',
+                        fileId: payload.fileId ?? '',
+                        caption: payload.caption ?? '',
+                        width: payload.width ?? 300,
+                        height: payload.height ?? 300,
+                        onDelete: (nid: string) => {
+                          setLocalNodes((prev) => {
+                            const next = prev.filter((n) => n.id !== nid);
+                            emitNodesChange(next);
+                            return next;
+                          });
+                          setFlowNodes((prev) => prev.filter((n) => n.id !== nid));
+                          if (selectedNodeId === nid) {
+                            onSelectNode?.(null);
                           }
-                        : {
-                          nodeId: node.id,
-                          nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
-                          // NOTE: execution removed - SqlNode/PythonNode fetch their own state via useExecutionStore
-                          onCodeChange: (code: string) => onCodeChange(node.id, code),
-                          onRun: () => onRunNode(node.id),
-                          onRunFull: isSql && onRunNodeFull ? () => onRunNodeFull(node.id) : undefined,
-                          onRunDownstream: () => onRunDownstream(node.id),
-                          onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
-                          width: storedWidth,
-                          isCodeCollapsed,
-                          nodeKind: node.type,
                         },
+                      };
+                    })()
+                  : isVideo
+                    ? (() => {
+                        const payload = (node.payload ?? {}) as any;
+                        return {
+                          url: payload.url ?? '',
+                          originalName: payload.originalName ?? '',
+                          fileId: payload.fileId ?? '',
+                          width: payload.width ?? 400,
+                          height: payload.height ?? 300,
+                          onDelete: (nid: string) => {
+                            setLocalNodes((prev) => {
+                              const next = prev.filter((n) => n.id !== nid);
+                              emitNodesChange(next);
+                              return next;
+                            });
+                            setFlowNodes((prev) => prev.filter((n) => n.id !== nid));
+                            if (selectedNodeId === nid) {
+                              onSelectNode?.(null);
+                            }
+                          },
+                        };
+                      })()
+                    : isDocument
+                      ? (() => {
+                          const payload = (node.payload ?? {}) as any;
+                          return {
+                            url: payload.url ?? '',
+                            originalName: payload.originalName ?? '',
+                            fileId: payload.fileId ?? '',
+                            mimeType: payload.mimeType ?? '',
+                            width: payload.width ?? 400,
+                            height: payload.height ?? 500,
+                            onDelete: (nid: string) => {
+                              setLocalNodes((prev) => {
+                                const next = prev.filter((n) => n.id !== nid);
+                                emitNodesChange(next);
+                                return next;
+                              });
+                              setFlowNodes((prev) => prev.filter((n) => n.id !== nid));
+                              if (selectedNodeId === nid) {
+                                onSelectNode?.(null);
+                              }
+                            },
+                          };
+                        })()
+                      : isShape || isNote
+                        ? (() => {
+                            if (isNote) {
+                              // Заметки - это shape nodes с типом rectangle и текстом
+                              const text =
+                                (node.payload as any)?.text ??
+                                (node.payload as any)?.noteContent ??
+                                '';
+                              const color = (node.payload as any)?.color ?? '#FFFFBA';
+                              const fontSize = (node.payload as any)?.fontSize ?? 48;
+                              const fontFamily =
+                                (node.payload as any)?.fontFamily ?? 'Inter, sans-serif';
+                              const isBold = (node.payload as any)?.isBold ?? false;
+                              const isItalic = (node.payload as any)?.isItalic ?? false;
+
+                              return {
+                                shapeType: 'rectangle' as const,
+                                shapeColor: color,
+                                text,
+                                fontSize,
+                                fontFamily,
+                                isBold,
+                                isItalic,
+                                width: (node.payload as any)?.ui?.width ?? 280,
+                                height: (node.payload as any)?.ui?.height ?? 280,
+                                onChangeText: (nid: string, newText: string) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'note'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              text: newText,
+                                              noteContent: newText,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeColor: (nid: string, newColor: string) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'note'
+                                        ? {
+                                            ...n,
+                                            payload: { ...(n.payload ?? {}), color: newColor },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeFontSize: (nid: string, newFontSize: number) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'note'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              fontSize: newFontSize,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeFontFamily: (nid: string, newFontFamily: string) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'note'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              fontFamily: newFontFamily,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeBold: (nid: string, newIsBold: boolean) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'note'
+                                        ? {
+                                            ...n,
+                                            payload: { ...(n.payload ?? {}), isBold: newIsBold },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeItalic: (nid: string, newIsItalic: boolean) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'note'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              isItalic: newIsItalic,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                              };
+                            } else {
+                              // Обычные shape nodes (не заметки)
+                              const payload = node.payload as any;
+                              return {
+                                shapeType: (payload?.shapeType ?? 'rectangle') as any,
+                                shapeColor: payload?.shapeColor ?? '#BFDBFE', // Legacy
+                                shapeLabel: payload?.shapeLabel ?? 'Фигура',
+                                width: payload?.width ?? 160,
+                                height: payload?.height ?? 96,
+                                // New style properties
+                                fill: payload?.fill ?? 'transparent',
+                                stroke: payload?.stroke ?? '#1f1f1f',
+                                strokeWidth: payload?.strokeWidth ?? 2,
+                                opacity: payload?.opacity ?? 1.0,
+                                cornerRadius: payload?.cornerRadius ?? 0,
+                                arrowHead: payload?.arrowHead,
+                                // For line/arrow types
+                                endX: payload?.endX,
+                                endY: payload?.endY,
+                                // Text properties for shapes
+                                text: payload?.text,
+                                richContentHtml: payload?.richContentHtml,
+                                fontSize: payload?.fontSize,
+                                fontFamily: payload?.fontFamily,
+                                color: payload?.color,
+                                textAlign: payload?.textAlign ?? 'center',
+                                // Callback for text changes (as in TextNode)
+                                onChangeText: (nid: string, newText: string) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: { ...(n.payload ?? {}), text: newText },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeFormat: (
+                                  nid: string,
+                                  patch: Partial<{
+                                    text: string;
+                                    richContent: string;
+                                    fontSize: number;
+                                    fontFamily: string;
+                                    color: string;
+                                    textAlign: 'left' | 'center' | 'right';
+                                  }>,
+                                ) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              ...(patch.text !== undefined && { text: patch.text }),
+                                              ...(patch.richContent !== undefined && {
+                                                richContentHtml: patch.richContent,
+                                              }),
+                                              ...(patch.fontSize !== undefined && {
+                                                fontSize: patch.fontSize,
+                                              }),
+                                              ...(patch.fontFamily !== undefined && {
+                                                fontFamily: patch.fontFamily,
+                                              }),
+                                              ...(patch.color !== undefined && {
+                                                color: patch.color,
+                                              }),
+                                              ...(patch.textAlign !== undefined && {
+                                                textAlign: patch.textAlign,
+                                              }),
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                // Callbacks для обновления стилей
+                                onChangeFill: (nid: string, newFill: string) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: { ...(n.payload ?? {}), fill: newFill },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeStroke: (nid: string, newStroke: string) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: { ...(n.payload ?? {}), stroke: newStroke },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeStrokeWidth: (nid: string, newStrokeWidth: number) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              strokeWidth: newStrokeWidth,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeOpacity: (nid: string, newOpacity: number) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: { ...(n.payload ?? {}), opacity: newOpacity },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeCornerRadius: (nid: string, newCornerRadius: number) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              cornerRadius: newCornerRadius,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeArrowHead: (nid: string, newArrowHead: boolean) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              arrowHead: newArrowHead,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                              };
+                            }
+                          })()
+                        : isVoice
+                          ? (() => {
+                              const payload = (node.payload ?? {}) as any;
+                              return {
+                                audioData: payload.audioData ?? null,
+                                duration: payload.duration ?? 0,
+                                mimeType: payload.mimeType ?? 'audio/webm',
+                                onChangeAudio: (
+                                  nid: string,
+                                  audioPayload: {
+                                    audioData: string;
+                                    duration: number;
+                                    mimeType: string;
+                                  },
+                                ) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'voice'
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              audioData: audioPayload.audioData,
+                                              duration: audioPayload.duration,
+                                              mimeType: audioPayload.mimeType,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                              };
+                            })()
+                          : isDatabase
+                            ? {
+                                nodeId: node.id,
+                                workspaceId: board.workspaceId,
+                                onUpdatePayload: (
+                                  nodeId: string,
+                                  payload: Record<string, unknown>,
+                                ) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nodeId
+                                        ? {
+                                            ...n,
+                                            payload: {
+                                              ...(n.payload ?? {}),
+                                              ...payload,
+                                            },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                payload: node.payload,
+                              }
+                            : isPlot
+                              ? {
+                                  nodeId: node.id,
+                                  payload: node.payload,
+                                  edges: localEdges,
+                                  width: storedWidth,
+                                }
+                              : {
+                                  nodeId: node.id,
+                                  nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
+                                  execution: entry,
+                                  onCodeChange: (code: string) => onCodeChange(node.id, code),
+                                  onRun: () => onRunNode(node.id),
+                                  onRunDownstream: () => onRunDownstream(node.id),
+                                  onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
+                                  width: storedWidth,
+                                  isCodeCollapsed,
+                                  nodeKind: node.type,
+                                },
             // Для shape nodes (включая заметки) передаем width и height как пропсы, чтобы NodeResizer мог обновлять их в реальном времени
             ...(isShape || isNote
               ? {
@@ -1585,8 +1690,20 @@ function InnerBoardCanvas({
               : {}),
             style: {
               ...baseStyle,
-              // Явный zIndex: дата-клетки = 1, элементы канвы pen = 10, shape = 12, text = 15, заметки = 20
-              zIndex: isDataNode ? 1 : isPen ? 10 : isShape ? 12 : isText ? 15 : isNote ? 20 : 1,
+              // Явный zIndex: дата-клетки = 1, элементы канвы pen = 10, shape = 12, text = 15, voice = 18, заметки = 20
+              zIndex: isDataNode
+                ? 1
+                : isPen
+                  ? 10
+                  : isShape
+                    ? 12
+                    : isText
+                      ? 15
+                      : isVoice
+                        ? 18
+                        : isNote
+                          ? 20
+                          : 1,
             },
             // Pen nodes draggable только когда не в режиме pen
             // Text nodes draggable только когда не в режиме text (в режиме select можно перетаскивать)
@@ -1596,16 +1713,20 @@ function InnerBoardCanvas({
               ? !isPenMode
               : isText
                 ? !isTextMode
-                : isShape || isNote
-                  ? !isPenMode && !isTextMode && !isShapeMode
-                  : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode,
+                : isVoice
+                  ? !isVoiceMode
+                  : isShape || isNote
+                    ? !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                    : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
             selectable: isPen
               ? !isPenMode
               : isText
                 ? !isTextMode
-                : isShape || isNote
-                  ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode
-                  : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode,
+                : isVoice
+                  ? !isVoiceMode
+                  : isShape || isNote
+                    ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                    : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
             // Служебное поле для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
             _sortOrder: isDataNode ? 0 : isCanvasNode ? 1 : 0,
           } as Node & { _sortOrder: number };
@@ -1614,17 +1735,17 @@ function InnerBoardCanvas({
         .sort((a, b) => a._sortOrder - b._sortOrder)
     );
   }, [
-    // NOTE: executionEntries removed - causes constant re-renders, SqlNode/PythonNode fetch their own state
+    executionEntries,
     localNodes,
     nodeSizes,
     codeCollapsedMap,
     onCodeChange,
     onRunNode,
-    onRunNodeFull,
     onRunDownstream,
     toggleCodeCollapsed,
     isPenMode,
     isTextMode,
+    isVoiceMode,
     emitNodesChange,
     setLocalNodes,
     board.workspaceId,
@@ -1660,23 +1781,23 @@ function InnerBoardCanvas({
     });
   }, [selectedNodeId]);
 
-  // Use useMemo to prevent infinite loops - only recalculate when dependencies change
-  // CRITICAL FIX: Include localNodes in dependencies because mapNodes uses localNodes internally
-  // When localNodes updates (e.g., from Yjs deletion), mappedNodes must recalculate
-  const mappedNodes = useMemo(() => {
-    return mapNodes();
-  }, [
-    mapNodes, // Include the callback itself
-    localNodes, // CRITICAL: mapNodes uses localNodes, so we must recalculate when localNodes changes
-  ]);
-
   useEffect(() => {
-    const mapped = mappedNodes;
+    const mapped = mapNodes();
+    const penNodesInMapped = mapped.filter((n) => n.type === 'pen');
+    console.log(
+      'useEffect mapNodes: mapped nodes:',
+      mapped.length,
+      'pen nodes:',
+      penNodesInMapped.length,
+    );
 
     setFlowNodes((prev) => {
       // Объединяем mapped nodes с существующими, чтобы сохранить позиции и состояние
       const mappedById = new Map(mapped.map((n) => [n.id, n]));
       const existingById = new Map(prev.map((n) => [n.id, n]));
+
+      const existingPenNodes = Array.from(existingById.values()).filter((n) => n.type === 'pen');
+      console.log('useEffect mapNodes: existing pen nodes:', existingPenNodes.length);
 
       // Создаем новый массив: сначала mapped nodes, потом существующие, которых нет в mapped
       const result = mapped.map((node) => {
@@ -1717,10 +1838,30 @@ function InnerBoardCanvas({
         };
       });
 
-      // CRITICAL FIX: Don't preserve nodes that are not in mappedNodes
-      // If a node is deleted through Yjs, it should be removed from flowNodes immediately
-      // The previous logic preserved pen nodes even when deleted, which caused deletion sync issues
-      // Now we only use nodes from mappedNodes, which is the source of truth from Yjs
+      // Добавляем существующие nodes, которых нет в mapped
+      // Это важно для pen nodes, которые могут быть добавлены напрямую в flowNodes
+      // до того, как они попадут в localNodes и будут обработаны mapNodes
+      for (const [id, existing] of existingById) {
+        if (!mappedById.has(id)) {
+          // Сохраняем pen nodes даже если их еще нет в mapped
+          // Они появятся в следующем обновлении когда localNodes обновится
+          const isPenNode = existing.type === 'pen';
+          if (isPenNode && existing.data && (existing.data as any).points) {
+            console.log('useEffect mapNodes: Preserving pen node from existing:', id);
+            result.push({
+              ...existing,
+              // Обновляем selected для синхронизации с selectedNodeId
+              selected: id === selectedNodeId,
+              // Убеждаемся, что pen node сохраняет правильный zIndex
+              style: {
+                ...existing.style,
+                zIndex: existing.style?.zIndex ?? 10, // Pen nodes должны быть выше дата-клеток
+              } as any,
+              _sortOrder: 1, // Canvas nodes (pen) have higher sort order
+            } as any);
+          }
+        }
+      }
 
       // Убеждаемся, что результат отсортирован по слоям: сначала data nodes, потом canvas nodes
       const sortedResult = result.sort((a, b) => {
@@ -1729,9 +1870,25 @@ function InnerBoardCanvas({
         return aOrder - bOrder;
       });
 
+      const finalPenNodes = sortedResult.filter((n) => n.type === 'pen');
+      console.log('useEffect mapNodes: Final result pen nodes:', finalPenNodes.length);
+      if (finalPenNodes.length > 0) {
+        console.log(
+          'useEffect mapNodes: Final pen nodes details:',
+          finalPenNodes.map((n) => ({
+            id: n.id,
+            width: n.width,
+            height: n.height,
+            position: n.position,
+            hasData: !!n.data,
+            hasPoints: !!(n.data as any)?.points,
+          })),
+        );
+      }
+
       return sortedResult;
     });
-  }, [mappedNodes, selectedNodeId]);
+  }, [mapNodes]);
 
   const didInitialFitRef = useRef(false);
   useEffect(() => {
@@ -1785,42 +1942,14 @@ function InnerBoardCanvas({
               : (((flowNode.data as NodeData | undefined)?.nodeKind ??
                   previous?.type ??
                   'sql') as BoardCanvasProps['nodes'][number]['type']);
-        // Для pen nodes сохраняем points, initialSize И ВСЕ НАСТРОЙКИ из data
+        // Для pen nodes сохраняем points и initialSize из data
         // Для shape nodes сохраняем размеры из flowNode (width/height) и остальной payload
         // Для заметок сохраняем размеры в ui, а текст и форматирование в payload
         const payload = isPenNode
-          ? (() => {
-              // Сохраняем все из data, включая настройки
-              // Приоритет: flowNode.data > previous.payload > defaults
-              const penPayload = {
-                points: (flowNode.data as any).points ?? (previous?.payload as any)?.points ?? [],
-                initialSize: (flowNode.data as any).initialSize ??
-                  (previous?.payload as any)?.initialSize ?? { width: 100, height: 100 },
-                // ВАЖНО: Сохраняем все настройки из data или из previous payload
-                color:
-                  (flowNode.data as any).color ?? (previous?.payload as any)?.color ?? '#ef4444',
-                strokeWidth:
-                  (flowNode.data as any).strokeWidth ??
-                  (previous?.payload as any)?.strokeWidth ??
-                  7,
-                opacity: (flowNode.data as any).opacity ?? (previous?.payload as any)?.opacity ?? 1,
-                smoothing:
-                  (flowNode.data as any).smoothing ?? (previous?.payload as any)?.smoothing ?? 0.5,
-                thinning:
-                  (flowNode.data as any).thinning ?? (previous?.payload as any)?.thinning ?? 0.5,
-              };
-
-              // Логируем если настройки потерялись
-              if (previous?.payload && (previous.payload as any).color && !penPayload.color) {
-                console.warn('Pen node lost color during commit:', {
-                  nodeId: flowNode.id,
-                  previousColor: (previous.payload as any).color,
-                  flowNodeDataColor: (flowNode.data as any).color,
-                });
-              }
-
-              return penPayload;
-            })()
+          ? {
+              points: (flowNode.data as any).points,
+              initialSize: (flowNode.data as any).initialSize,
+            }
           : isShapeNode && isNoteNode
             ? {
                 ...(previous?.payload ?? {}),
@@ -1882,23 +2011,10 @@ function InnerBoardCanvas({
           payload,
         };
       });
-      // CRITICAL FIX: Only preserve nodes that are still in the nodes prop (from Yjs)
-      // If a node was deleted through Yjs, it won't be in the nodes prop, so we shouldn't preserve it
-      // This fixes the issue where deleted pen nodes reappear after deletion
+      // preserve sticky notes and pen nodes that are not part of nextFlowNodes
       const nextIds = new Set(nextFlowNodes.map((n) => n.id));
-      const nodesPropIds = new Set(nodes.map((n) => n.id));
-      
-      // Only preserve notes that are still in nodes prop (not deleted through Yjs)
-      const preservedNotes = prev.filter(
-        (n) => n.type === 'note' && !nextIds.has(n.id) && nodesPropIds.has(n.id),
-      );
-      
-      // CRITICAL FIX: Don't preserve pen nodes that were deleted through Yjs
-      // If a pen node is not in nodes prop, it was deleted through Yjs and should not be preserved
-      const preservedPen = prev.filter(
-        (n) => n.type === 'pen' && !nextIds.has(n.id) && nodesPropIds.has(n.id),
-      );
-      
+      const preservedNotes = prev.filter((n) => n.type === 'note' && !nextIds.has(n.id));
+      const preservedPen = prev.filter((n) => n.type === 'pen' && !nextIds.has(n.id));
       const nextLocal = [...nextLocalCore, ...preservedNotes, ...preservedPen];
 
       if (mutated) {
@@ -1908,7 +2024,7 @@ function InnerBoardCanvas({
         }
       }
     },
-    [emitNodesChange, nodes], // CRITICAL: Include nodes to check if pen nodes were deleted through Yjs
+    [emitNodesChange],
   );
 
   // Заметки теперь обрабатываются как shape nodes, отдельная логика не нужна
@@ -1921,25 +2037,14 @@ function InnerBoardCanvas({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      // If Yjs handlers are provided, use them directly for real-time sync
-      if (yjsOnNodesChange) {
-        yjsOnNodesChange(changes);
-        // Still update local state for compatibility with existing code
-        // but Yjs will be the source of truth
-      }
-
       // Все изменения обрабатываются как flowChanges (заметки теперь shape nodes)
       const flowChanges: NodeChange[] = changes;
       if (flowChanges.length) {
-        // Определяем, завершен ли жест (drag или resize)
         const shouldCommit = flowChanges.some(
           (change) => change.type === 'position' && change.dragging !== true,
         );
         setFlowNodes((current) => {
           const next = applyNodeChanges(flowChanges, current);
-          // Создаем Map для быстрого доступа к предыдущим узлам
-          const currentById = new Map(current.map((n) => [n.id, n]));
-
           // Убеждаемся, что zIndex сохраняется после изменений и сортировка по слоям
           // Также обновляем selected для синхронизации с selectedNodeId
           const nextWithZIndex = next
@@ -1949,11 +2054,7 @@ function InnerBoardCanvas({
               const isShape = node.type === 'shapeNode';
               const isDataNode = node.type === 'sqlNode' || node.type === 'pythonNode';
 
-              // Получаем предыдущий узел для восстановления данных
-              const previousNode = currentById.get(node.id);
-
               // Для data nodes обновляем data.width из node.width (который React Flow обновляет через dimensions)
-              // Для pen nodes ВАЖНО сохранить все настройки из data или из предыдущего узла
               // Важно: используем node.width напрямую из applyNodeChanges, который уже содержит обновленные размеры и position
               const updatedData =
                 isDataNode && node.width
@@ -1961,27 +2062,7 @@ function InnerBoardCanvas({
                       ...(node.data as any),
                       width: node.width,
                     }
-                  : isPen
-                    ? {
-                        // Для pen узлов сохраняем ВСЕ данные из node.data или из previousNode.data
-                        // applyNodeChanges может не сохранить все поля, поэтому восстанавливаем из предыдущего состояния
-                        points:
-                          (node.data as any)?.points ?? (previousNode?.data as any)?.points ?? [],
-                        initialSize: (node.data as any)?.initialSize ??
-                          (previousNode?.data as any)?.initialSize ?? { width: 100, height: 100 },
-                        // ВАЖНО: Сохраняем настройки из node.data или из previousNode.data
-                        color: (node.data as any)?.color ?? (previousNode?.data as any)?.color,
-                        strokeWidth:
-                          (node.data as any)?.strokeWidth ??
-                          (previousNode?.data as any)?.strokeWidth,
-                        opacity:
-                          (node.data as any)?.opacity ?? (previousNode?.data as any)?.opacity,
-                        smoothing:
-                          (node.data as any)?.smoothing ?? (previousNode?.data as any)?.smoothing,
-                        thinning:
-                          (node.data as any)?.thinning ?? (previousNode?.data as any)?.thinning,
-                      }
-                    : node.data;
+                  : node.data;
 
               return {
                 ...node,
@@ -2017,7 +2098,6 @@ function InnerBoardCanvas({
             .sort((a, b) => (a._sortOrder ?? 0) - (b._sortOrder ?? 0));
           if (shouldCommit) {
             commitFlowNodesToLocal(nextWithZIndex, true);
-            // История сохранится автоматически через emitNodesChange
           }
           return nextWithZIndex;
         });
@@ -2041,33 +2121,47 @@ function InnerBoardCanvas({
             const node = localNodes.find((n) => n.id === change.id);
 
             // Для text nodes используем debounce, чтобы избежать дергания при ресайзе
-            if (node?.type === 'text' && width && height) {
+            // Miro-like поведение: сохраняем только width (userWidth), height вычисляется автоматически
+            if (node?.type === 'text' && width) {
               // Очищаем предыдущий таймер для этого узла
               const existingTimer = textNodeResizeTimerRef.current.get(change.id);
               if (existingTimer) {
                 clearTimeout(existingTimer);
               }
 
-              // Устанавливаем новый таймер для debounce (200ms после последнего изменения)
+              // Устанавливаем новый таймер для debounce (150ms после последнего изменения)
+              // Синхронизирован с debounce в RichTextEditor для плавных обновлений
               const timer = setTimeout(() => {
-                // Sync size changes through Yjs for real-time collaboration
-                const nodeId = change.id;
-                const finalWidth =
-                  typeof width === 'number' ? width : parseFloat(String(width)) || 240;
-                const finalHeight =
-                  typeof height === 'number' ? height : parseFloat(String(height)) || 80;
+                setLocalNodes((prev) => {
+                  const currentNode = prev.find((n) => n.id === change.id && n.type === 'text');
+                  if (!currentNode) return prev;
 
-                syncNodePayloadChange(nodeId, (prevPayload) => ({
-                  ...prevPayload,
-                  ui: {
-                    ...((prevPayload as any)?.ui ?? {}),
-                    width: finalWidth,
-                    height: finalHeight,
-                  },
-                }));
-
+                  const next = prev.map((n) =>
+                    n.id === change.id && n.type === 'text'
+                      ? {
+                          ...n,
+                          payload: {
+                            ...(n.payload ?? {}),
+                            ui: {
+                              ...((n.payload as any)?.ui ?? {}),
+                              // Сохраняем только width (userWidth) - задается пользователем через resize
+                              width:
+                                typeof width === 'number'
+                                  ? width
+                                  : parseFloat(String(width)) || 240,
+                              // height не сохраняем здесь - он вычисляется автоматически в TextNode (autoHeight)
+                              // Если height есть в существующих данных, сохраняем его временно (будет пересчитан)
+                              height: ((n.payload as any)?.ui?.height as number) || 80,
+                            },
+                          },
+                        }
+                      : n,
+                  );
+                  emitNodesChange(next);
+                  return next;
+                });
                 textNodeResizeTimerRef.current.delete(change.id);
-              }, 200);
+              }, 150); // Уменьшено с 200ms до 150ms для синхронизации с RichTextEditor
 
               textNodeResizeTimerRef.current.set(change.id, timer);
             } else if (
@@ -2105,24 +2199,42 @@ function InnerBoardCanvas({
                         ? height
                         : parseFloat(String(height)) || defaultHeight;
 
-                  // Sync size changes through Yjs for real-time collaboration
-                  const nodeId = change.id;
-                  if (node?.type === 'shape') {
-                    syncNodePayloadChange(nodeId, (prevPayload) => ({
-                      ...prevPayload,
-                      width: finalWidth,
-                      height: finalHeight,
-                    }));
-                  } else if (node?.type === 'note') {
-                    syncNodePayloadChange(nodeId, (prevPayload) => ({
-                      ...prevPayload,
-                      ui: {
-                        ...((prevPayload as any)?.ui ?? {}),
-                        width: finalWidth,
-                        height: finalHeight,
-                      },
-                    }));
-                  }
+                  setLocalNodes((prev) => {
+                    const currentNode = prev.find(
+                      (n) => n.id === change.id && (n.type === 'shape' || n.type === 'note'),
+                    );
+                    if (!currentNode) return prev;
+
+                    const next = prev.map((n) => {
+                      if (n.id === change.id && n.type === 'shape') {
+                        return {
+                          ...n,
+                          position: currentFlowNode?.position ?? n.position,
+                          payload: {
+                            ...(n.payload ?? {}),
+                            width: finalWidth,
+                            height: finalHeight,
+                          },
+                        };
+                      } else if (n.id === change.id && n.type === 'note') {
+                        return {
+                          ...n,
+                          position: currentFlowNode?.position ?? n.position,
+                          payload: {
+                            ...(n.payload ?? {}),
+                            ui: {
+                              ...((n.payload as any)?.ui ?? {}),
+                              width: finalWidth,
+                              height: finalHeight,
+                            },
+                          },
+                        };
+                      }
+                      return n;
+                    });
+                    emitNodesChange(next);
+                    return next;
+                  });
 
                   return currentFlowNodes;
                 });
@@ -2196,28 +2308,15 @@ function InnerBoardCanvas({
     registerNode({
       id: template.id,
       type: 'sql',
-      position: template.position,
       payload: template.payload,
     });
-
-    // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
-    // Following the same pattern as text/shape/pen nodes
-    const reactFlowNode = canvasNodeToReactFlowNode(template);
-    if (yjsOnNodesChange) {
-      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-    }
-
-    // Also update localNodes and trigger auto-save through onNodesChange
     setLocalNodes((prev) => {
       const next = [...prev, template];
-      if (onNodesChange) {
-        const sanitized = sanitizeExternalNodes(next);
-        onNodesChange(sanitized);
-      }
+      emitNodesChange(next);
       return next;
     });
     onSelectNode?.(template.id);
-  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
+  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
 
   const handleAddPythonNode = useCallback(() => {
     // Получаем центр viewport пользователя и преобразуем в координаты flow
@@ -2233,28 +2332,15 @@ function InnerBoardCanvas({
     registerNode({
       id: template.id,
       type: 'python',
-      position: template.position,
       payload: template.payload,
     });
-
-    // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
-    // Following the same pattern as text/shape/pen nodes
-    const reactFlowNode = canvasNodeToReactFlowNode(template);
-    if (yjsOnNodesChange) {
-      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-    }
-
-    // Also update localNodes and trigger auto-save through onNodesChange
     setLocalNodes((prev) => {
       const next = [...prev, template];
-      if (onNodesChange) {
-        const sanitized = sanitizeExternalNodes(next);
-        onNodesChange(sanitized);
-      }
+      emitNodesChange(next);
       return next;
     });
     onSelectNode?.(template.id);
-  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
+  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
 
   const handleAddDatabaseNode = useCallback(() => {
     // Получаем центр viewport пользователя и преобразуем в координаты flow
@@ -2269,28 +2355,15 @@ function InnerBoardCanvas({
     registerNode({
       id: template.id,
       type: 'database',
-      position: template.position,
       payload: template.payload,
     });
-
-    // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
-    // Following the same pattern as text/shape/pen nodes
-    const reactFlowNode = canvasNodeToReactFlowNode(template);
-    if (yjsOnNodesChange) {
-      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-    }
-
-    // Also update localNodes and trigger auto-save through onNodesChange
     setLocalNodes((prev) => {
       const next = [...prev, template];
-      if (onNodesChange) {
-        const sanitized = sanitizeExternalNodes(next);
-        onNodesChange(sanitized);
-      }
+      emitNodesChange(next);
       return next;
     });
     onSelectNode?.(template.id);
-  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
+  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
 
   const handleAddPlotNode = useCallback(() => {
     // Получаем центр viewport пользователя и преобразуем в координаты flow
@@ -2303,106 +2376,40 @@ function InnerBoardCanvas({
     registerNode({
       id: template.id,
       type: 'plot',
-      position: template.position,
       payload: template.payload,
     });
-
-    // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
-    // Following the same pattern as text/shape/pen nodes
-    const reactFlowNode = canvasNodeToReactFlowNode(template);
-    if (yjsOnNodesChange) {
-      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-    }
-
-    // Also update localNodes and trigger auto-save through onNodesChange
     setLocalNodes((prev) => {
       const next = [...prev, template];
-      if (onNodesChange) {
-        const sanitized = sanitizeExternalNodes(next);
-        onNodesChange(sanitized);
-      }
+      emitNodesChange(next);
       return next;
     });
     onSelectNode?.(template.id);
-  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
+  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
 
-  const handleUploadSpreadsheet = useCallback(
-    async (file: File) => {
-      const result = await parseSpreadsheetFile(file);
+  const handleAddVoiceNode = useCallback(() => {
+    // Получаем центр viewport пользователя и преобразуем в координаты flow
+    const viewportCenterX = window.innerWidth / 2;
+    const viewportCenterY = window.innerHeight / 2;
+    const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
 
-      if (!result.success) {
-        alert(`Error: ${result.error}`);
-        return;
-      }
+    const template = addNodeHelpers.createVoiceNode(position) as BoardCanvasProps['nodes'][number];
 
-      // Register the dataset in DuckDB so SQL nodes can query it
-      let tableName = '';
-      let normalizedColumns: string[] = [];
-      try {
-        const duckDbResult = await registerDatasetFromCsvNode(
-          result.filename,
-          result.data,
-          board.id,
-        );
-        tableName = duckDbResult.tableName;
-        normalizedColumns = duckDbResult.normalizedColumns;
-        console.log(
-          `Registered table "${tableName}" with ${duckDbResult.rows} rows in DuckDB`,
-        );
-      } catch (err) {
-        console.error('Failed to register dataset in DuckDB:', err);
-        // Fallback table name
-        tableName = result.filename
-          .replace(/\.[^/.]+$/, '')
-          .toLowerCase()
-          .replace(/[^a-zA-Z0-9_]/g, '_');
-      }
-
-      // Получаем центр viewport пользователя и преобразуем в координаты flow
-      const viewportCenterX = window.innerWidth / 2;
-      const viewportCenterY = window.innerHeight / 2;
-      const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
-
-      const nodeId = crypto.randomUUID();
-      // Create data with normalized column names for display
-      const displayData = normalizedColumns.length > 0
-        ? { ...result.data, columns: normalizedColumns }
-        : result.data;
-
-      const csvNode: BoardCanvasProps['nodes'][number] = {
-        id: nodeId,
-        type: 'csv',
-        position,
-        payload: {
-          filename: result.filename,
-          tableName, // Store the DuckDB table name
-          data: displayData, // Use normalized column names
-          originalColumns: result.data.columns, // Keep original for reference
-          uploadedAt: new Date().toISOString(),
-          fileType: result.fileType,
-        },
-      };
-
-      // Register in executionStore with data ready
-      registerNode({
-        id: nodeId,
-        type: 'csv' as 'sql' | 'python' | 'table' | 'plot',
-        position,
-        payload: csvNode.payload,
-      });
-
-      setLocalNodes((prev) => {
-        const next = [...prev, csvNode];
-        emitNodesChange(next);
-        return next;
-      });
-      onSelectNode?.(nodeId);
-    },
-    [rf, emitNodesChange, onSelectNode, registerNode, board.id],
-  );
+    registerNode({
+      id: template.id,
+      type: 'voice',
+      payload: template.payload,
+    });
+    setLocalNodes((prev) => {
+      const next = [...prev, template];
+      emitNodesChange(next);
+      return next;
+    });
+    onSelectNode?.(template.id);
+    setTool('select'); // Переключаемся на select после создания voice узла
+  }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode, setTool]);
 
   const handleConnectStart = useCallback(
-    (_event: React.MouseEvent | React.TouchEvent, params: ConnectionStartParams) => {
+    (_event: React.MouseEvent | React.TouchEvent, params: OnConnectStartParams) => {
       connectOriginRef.current = {
         nodeId: params?.nodeId ?? null,
         handleType: params?.handleType ?? null,
@@ -2654,7 +2661,7 @@ function InnerBoardCanvas({
             sourceId,
             targetId,
             metadata: {
-              ...(connection.metadata ?? {}),
+              ...((connection as any).metadata ?? {}),
               sourceHandleId: sourceHandle ?? connection.sourceHandle ?? undefined,
               targetHandleId: targetHandle ?? connection.targetHandle ?? undefined,
             },
@@ -2669,13 +2676,6 @@ function InnerBoardCanvas({
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      // If Yjs handlers are provided, use them directly for real-time sync
-      if (yjsOnEdgesChange) {
-        yjsOnEdgesChange(changes);
-        // Still update local state for compatibility with existing code
-        // but Yjs will be the source of truth
-      }
-
       const removedIds = changes
         .filter((change) => change.type === 'remove')
         .map((change) => change.id);
@@ -2690,7 +2690,7 @@ function InnerBoardCanvas({
         return next;
       });
     },
-    [emitEdgesChange, yjsOnEdgesChange],
+    [emitEdgesChange],
   );
 
   // Deletion handler for selected nodes/edges
@@ -2710,37 +2710,6 @@ function InnerBoardCanvas({
       'edges:',
       Array.from(selectedEdgeIds),
     );
-
-    // CRITICAL FIX: Sync deletion through Yjs first to ensure real-time collaboration
-    // This ensures deleted elements are removed from Yjs map and don't reappear
-    if (yjsOnNodesChange && selectedNodeIds.size > 0) {
-      const removeNodeChanges = Array.from(selectedNodeIds).map((id) => ({
-        type: 'remove' as const,
-        id,
-      }));
-      yjsOnNodesChange(removeNodeChanges);
-      console.log('handleDeleteSelection: Synced node deletions through Yjs:', removeNodeChanges.length);
-    }
-
-    // Also remove edges incident to removed nodes (they should be deleted automatically by Yjs,
-    // but we'll also sync them explicitly for safety)
-    const edgesToRemove = new Set(selectedEdgeIds);
-    // Find edges connected to deleted nodes
-    const currentEdges = rf.getEdges?.() ?? [];
-    for (const edge of currentEdges) {
-      if (selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target)) {
-        edgesToRemove.add(edge.id);
-      }
-    }
-
-    if (yjsOnEdgesChange && edgesToRemove.size > 0) {
-      const removeEdgeChanges = Array.from(edgesToRemove).map((id) => ({
-        type: 'remove' as const,
-        id,
-      }));
-      yjsOnEdgesChange(removeEdgeChanges);
-      console.log('handleDeleteSelection: Synced edge deletions through Yjs:', removeEdgeChanges.length);
-    }
 
     // remove from localNodes (regular + mirrored notes + pen nodes)
     setLocalNodes((prev) => {
@@ -2780,7 +2749,7 @@ function InnerBoardCanvas({
     });
 
     onSelectNode?.(null);
-  }, [rf, emitNodesChange, emitEdgesChange, onSelectNode, yjsOnNodesChange, yjsOnEdgesChange]);
+  }, [rf, emitNodesChange, emitEdgesChange, onSelectNode]);
 
   // Keyboard bindings for Delete / Backspace
   useEffect(() => {
@@ -2843,9 +2812,8 @@ function InnerBoardCanvas({
   const uuidv4 = useCallback(() => {
     try {
       // Most environments
-      // eslint-disable-next-line no-undef
+
       if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
-        // eslint-disable-next-line no-undef
         return (crypto as any).randomUUID() as string;
       }
     } catch {}
@@ -2902,300 +2870,314 @@ function InnerBoardCanvas({
     return [...(localNodesRef.current ?? []), ...stickyExternal];
   }, []);
 
+  // File drop handling
+  const getDropPosition = useCallback(
+    (clientX: number, clientY: number) => {
+      return rf.screenToFlowPosition({ x: clientX, y: clientY });
+    },
+    [rf],
+  );
+
+  const handleFilesUploaded = useCallback(
+    (
+      uploadedFiles: Array<{
+        file: UploadedFile;
+        nodeType: 'image' | 'video' | 'document';
+        dropPosition?: { x: number; y: number };
+      }>,
+    ) => {
+      const newNodes: BoardCanvasProps['nodes'] = [];
+
+      for (const { file, nodeType, dropPosition } of uploadedFiles) {
+        const position =
+          dropPosition ??
+          rf.screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          });
+
+        let newNode: BoardCanvasProps['nodes'][number] | null = null;
+
+        if (nodeType === 'image') {
+          const created = addNodeHelpers.createImageNode(position, {
+            url: file.url,
+            originalName: file.originalName,
+            fileId: file.id,
+          });
+          newNode = created as BoardCanvasProps['nodes'][number];
+        } else if (nodeType === 'video') {
+          const created = addNodeHelpers.createVideoNode(position, {
+            url: file.url,
+            originalName: file.originalName,
+            fileId: file.id,
+          });
+          newNode = created as BoardCanvasProps['nodes'][number];
+        } else if (nodeType === 'document') {
+          const created = addNodeHelpers.createDocumentNode(position, {
+            url: file.url,
+            originalName: file.originalName,
+            fileId: file.id,
+            mimeType: file.mimeType,
+          });
+          newNode = created as BoardCanvasProps['nodes'][number];
+        }
+
+        if (newNode) {
+          newNodes.push(newNode);
+        }
+      }
+
+      if (newNodes.length > 0) {
+        setLocalNodes((prev) => {
+          const next = [...prev, ...newNodes];
+          emitNodesChange(next);
+          return next;
+        });
+        // Select the first uploaded node
+        onSelectNode?.(newNodes[0].id);
+      }
+    },
+    [rf, addNodeHelpers, emitNodesChange, onSelectNode],
+  );
+
   return (
-    <div
-      ref={canvasRootRef}
-      className="board-canvas-root relative flex h-full min-h-0 w-full flex-1 overflow-hidden"
-      style={{ position: 'relative' }}
+    <FileDropOverlay
+      boardId={board.id}
+      onFilesUploaded={handleFilesUploaded}
+      getDropPosition={getDropPosition}
+      disabled={isPenMode || isShapeMode}
     >
-      <div className="relative h-full w-full overflow-hidden">
-        <div className="relative h-full w-full">
-          <ReactFlow
-            nodes={flowNodes}
-            edges={flowEdges}
-            fitView
-            fitViewOptions={{ padding: 0.2, duration: 0 }}
-            // Tool-based interaction modes
-            panOnDrag={
-              isHandMode
-                ? true // В режиме hand - панорамирование при drag (как в Miro)
-                : isSelectMode
-                  ? false // В режиме select - pan отключен для drag, используем Space+drag
-                  : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isEraserMode
-            }
-            panOnScroll={true} // Pan через scroll/trackpad
-            panActivationKeyCode="Space" // Pan через Space+drag
-            zoomOnScroll
-            selectionOnDrag={isSelectMode} // В режиме select - marquee selection без Shift
-            selectionMode={SelectionMode.Partial} // Выделять при частичном пересечении
-            nodesDraggable={
-              !isHandMode && !isPenMode && !isTextMode && !isShapeMode && !isEraserMode
-            }
-            nodesConnectable={
-              !isHandMode &&
-              !isStickyMode &&
-              !isPenMode &&
-              !isTextMode &&
-              !isShapeMode &&
-              !isEraserMode
-            }
-            elementsSelectable={
-              !isHandMode &&
-              (isSelectMode ||
-                (!isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isEraserMode))
-            }
-            proOptions={{ hideAttribution: true }}
-            className={`h-full bg-white ${isHandMode ? 'rf-hand-mode' : isSelectMode ? 'rf-select-cursor' : 'rf-cursor-hidden'}`}
-            style={{ width: '100%', height: '100%' }}
-            onInit={(instance) => setFlowInstance(instance)}
-            selectNodesOnDrag={false}
-            onNodesChange={handleNodesChange}
-            onEdgesChange={handleEdgesChange}
-            onConnect={handleConnect}
-            onConnectStart={handleConnectStart}
-            onConnectEnd={handleConnectEnd}
-            connectionLineComponent={CustomConnectionLine}
-            connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 4 }}
-            onNodeClick={handleNodeClick}
-            onPointerMove={(e) => {
-              onMouseMove(e);
-            }}
-            // NOTE: onNodeDataChange is not a valid ReactFlow prop - removed
-            // Node data changes are handled through callbacks in node.data (onChangeText, etc.)
-            onPaneClick={(e) => {
-              // Всегда снимаем выделение при клике на свободную область
-              handlePaneClick();
-
-              const xy = getClientXY(e);
-              if (!xy) return;
-              const p = rf.screenToFlowPosition({ x: xy.x, y: xy.y });
-
-              // Создаем новый текст-ноду в режиме text
-              if (isTextMode) {
-                const textNode = addNodeHelpers.createTextNode(p);
-                // Convert to ReactFlow node for direct Yjs sync
-                const reactFlowNode = canvasNodeToReactFlowNode(textNode);
-                // Use direct Yjs sync for immediate real-time synchronization
-                if (yjsOnNodesChange) {
-                  yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-                }
-                // Also update localNodes for auto-save
-                setLocalNodes((prev) => {
-                  const next = [...prev, textNode];
-                  if (onNodesChange) {
-                    const sanitized = sanitizeExternalNodes(next);
-                    onNodesChange(sanitized);
-                  }
-                  return next;
-                });
-                return;
+      <div
+        ref={canvasRootRef}
+        className="board-canvas-root relative flex h-full min-h-0 w-full flex-1 overflow-hidden"
+        style={{ position: 'relative' }}
+      >
+        <div className="relative h-full w-full overflow-hidden">
+          <div className="relative h-full w-full">
+            <ReactFlow
+              nodes={flowNodes}
+              edges={flowEdges}
+              fitView
+              fitViewOptions={{ padding: 0.2, duration: 0 }}
+              panOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
+              panOnScroll={false}
+              zoomOnScroll
+              selectionOnDrag={
+                !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
               }
-
-              // Создаем новую фигуру в режиме shape
-              if (isShapeMode && selectedShape) {
-                const shapeNode = addNodeHelpers.createShapeNode(
-                  p,
-                ) as BoardCanvasProps['nodes'][number];
-                // Обновляем payload с выбранной формой
-                shapeNode.payload = {
-                  ...shapeNode.payload,
-                  shapeType: selectedShape,
-                };
-                // Convert to ReactFlow node for direct Yjs sync
-                const reactFlowNode = canvasNodeToReactFlowNode(shapeNode);
-                // Use direct Yjs sync for immediate real-time synchronization
-                if (yjsOnNodesChange) {
-                  yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-                }
-                // Also update localNodes for auto-save
-                setLocalNodes((prev) => {
-                  const next = [...prev, shapeNode];
-                  if (onNodesChange) {
-                    const sanitized = sanitizeExternalNodes(next);
-                    onNodesChange(sanitized);
-                  }
-                  return next;
-                });
-                onSelectNode?.(shapeNode.id);
-                return;
+              nodesDraggable={!isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
+              nodesConnectable={
+                !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
               }
-
-              // Создаем новую заметку в режиме стикеров (как shape node с типом rectangle и текстом)
-              if (!isStickyMode) return;
-              const noteNode = addNodeHelpers.createNoteNode(
-                p,
-              ) as BoardCanvasProps['nodes'][number];
-              
-              // CRITICAL FIX: Use direct Yjs sync for immediate real-time synchronization
-              // Following the same pattern as text/shape/pen/SQL/Python/Database/Plot nodes
-              const reactFlowNode = canvasNodeToReactFlowNode(noteNode);
-              if (yjsOnNodesChange) {
-                yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+              elementsSelectable={
+                !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
               }
-              
-              // Also update localNodes and trigger auto-save through onNodesChange
-              setLocalNodes((prev) => {
-                const next = [...prev, noteNode];
-                if (onNodesChange) {
-                  const sanitized = sanitizeExternalNodes(next);
-                  onNodesChange(sanitized);
-                }
-                return next;
-              });
-              onSelectNode?.(noteNode.id);
-            }}
-            onSelectionChange={handleSelectionChange}
-            minZoom={0.2}
-            nodeTypes={nodeTypes}
-          >
-            <Background variant={BackgroundVariant.Dots} gap={18} size={1.8} color="#cbd5e1" />
-            <MiniMap
-              nodeColor={(node) => {
-                const nodeType = node.type;
-                const nodeData = node.data as any;
+              proOptions={{ hideAttribution: true }}
+              className="h-full bg-white"
+              style={{ width: '100%', height: '100%' }}
+              onInit={(instance) => setFlowInstance(instance)}
+              selectNodesOnDrag={false}
+              onNodesChange={handleNodesChange}
+              onEdgesChange={handleEdgesChange}
+              onConnect={handleConnect}
+              onConnectStart={handleConnectStart}
+              onConnectEnd={handleConnectEnd}
+              connectionLineComponent={CustomConnectionLine}
+              connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 4 }}
+              onNodeClick={handleNodeClick}
+              onPaneClick={(e) => {
+                // Всегда снимаем выделение при клике на свободную область
+                handlePaneClick();
 
-                // Проверяем, является ли узел pen-узлом по всем возможным признакам
-                const isPenNode =
-                  nodeType === 'pen' ||
-                  (nodeData?.initialSize &&
-                    typeof nodeData.initialSize === 'object' &&
-                    !nodeData?.nodeId) ||
-                  (nodeData?.points && Array.isArray(nodeData.points) && !nodeData?.nodeId);
+                const xy = getClientXY(e);
+                if (!xy) return;
+                const p = rf.screenToFlowPosition({ x: xy.x, y: xy.y });
 
-                // Исключаем pen узлы - возвращаем null, чтобы они не отображались
-                if (isPenNode) {
-                  return null;
-                }
-
-                // Для остальных узлов возвращаем цвет через стандартную функцию
-                return getNodeColor((nodeData as any)?.nodeKind ?? 'sql');
-              }}
-              nodeFilter={(node) => {
-                const nodeType = node.type;
-                const nodeData = node.data as any;
-
-                // Проверяем, является ли узел pen-узлом по всем возможным признакам
-                const isPenNode =
-                  nodeType === 'pen' ||
-                  (nodeData?.initialSize &&
-                    typeof nodeData.initialSize === 'object' &&
-                    !nodeData?.nodeId) ||
-                  (nodeData?.points && Array.isArray(nodeData.points) && !nodeData?.nodeId);
-
-                // Исключаем pen узлы
-                if (isPenNode) {
-                  return false;
-                }
-
-                // Показываем только заметки (shape nodes с текстом) и дата-клетки
-                // Явно разрешаем только эти типы узлов
-                const isNote =
-                  nodeType === 'shapeNode' &&
-                  ((nodeData as any)?.text !== undefined || (nodeData as any)?.onChangeText);
-                return isNote || nodeType === 'sqlNode' || nodeType === 'pythonNode';
-              }}
-              zoomable
-              pannable
-              style={{ right: 0, bottom: 0 }}
-            />
-            <Controls
-              position="bottom-left"
-              showInteractive={false}
-              style={{ left: 0, bottom: 0, zIndex: 1100 }}
-            />
-            <ConnectionArrowsOverlay edges={flowEdges} />
-            {isPenMode && <PenToolbar />}
-            {isPenMode && (
-              <FreehandOverlay
-                yjsOnNodesChange={yjsOnNodesChange}
-                onCursorMove={onMouseMove}
-                onAddPenNode={(node) => {
-                  console.log('✏️ New pen stroke (finalized):', node.id);
-
-                  // Node is already synced through Yjs in FreehandOverlay
-                  // Just update localNodes and trigger auto-save with enhanced pen settings
-                  const externalNode = {
-                    id: node.id,
-                    type: 'pen' as const,
-                    position: node.position,
-                    payload: {
-                      points: node.data.points,
-                      initialSize: node.data.initialSize,
-                      color: node.data.color ?? '#ef4444',
-                      strokeWidth: node.data.strokeWidth ?? 7,
-                      opacity: node.data.opacity ?? 1,
-                      smoothing: node.data.smoothing ?? 0.5,
-                      thinning: node.data.thinning ?? 0.5,
-                    },
-                  };
-
+                // Создаем новый текст-ноду в режиме text
+                if (isTextMode) {
+                  const textNode = addNodeHelpers.createTextNode(p);
                   setLocalNodes((prev) => {
-                    const next = [...prev, externalNode];
-                    
-                    // Notify parent (history is tracked automatically via Yjs UndoManager)
-                    queueMicrotask(() => {
-                      emitNodesChange(next, false);
-                    });
-                    
+                    const next = [...prev, textNode];
+                    emitNodesChange(next);
                     return next;
                   });
+                  // Автоматически выделяем созданный узел и сбрасываем tool в select (как в Miro)
+                  onSelectNode?.(textNode.id);
+                  setTool('select');
+                  return;
+                }
 
-                  // Немедленно добавляем в flowNodes для отображения
-                  setFlowNodes((prev) => {
-                    if (prev.some((n) => n.id === node.id)) {
-                      console.log('Node already exists in flowNodes:', node.id);
-                      return prev;
-                    }
-                    // Add with enhanced pen settings
-                    return [
-                      ...prev,
-                      {
-                        id: node.id,
-                        type: 'pen',
-                        position: node.position,
-                        data: node.data,
-                        width: node.width,
-                        height: node.height,
-                      },
-                    ];
+                // Создаем новый voice-ноду в режиме voice
+                if (isVoiceMode) {
+                  const voiceNode = addNodeHelpers.createVoiceNode(p);
+                  setLocalNodes((prev) => {
+                    const next = [...prev, voiceNode];
+                    emitNodesChange(next);
+                    return next;
                   });
+                  // Автоматически выделяем созданный узел и сбрасываем tool в select
+                  onSelectNode?.(voiceNode.id);
+                  setTool('select');
+                  return;
+                }
 
-                  // Trigger auto-save through onNodesChange
-                  if (onNodesChange) {
-                    const sanitized = sanitizeExternalNodes([...localNodesRef.current, externalNode]);
-                    onNodesChange(sanitized);
-                    console.log('Pen node finalized and change emitted for auto-save:', externalNode.id);
+                // Создание фигур теперь через drag-to-create (ShapeDragOverlay)
+                // Убираем создание по клику, оставляем только drag
+                // if (isShapeMode && selectedShape) { ... }
+
+                // Создаем новую заметку в режиме стикеров (как shape node с типом rectangle и текстом)
+                if (!isStickyMode) return;
+                const noteNode = addNodeHelpers.createNoteNode(
+                  p,
+                ) as BoardCanvasProps['nodes'][number];
+                setLocalNodes((prev) => {
+                  const next = [...prev, noteNode];
+                  emitNodesChange(next);
+                  return next;
+                });
+                // Автоматически выделяем созданный узел и сбрасываем tool в select (как в Miro)
+                onSelectNode?.(noteNode.id);
+                setTool('select');
+              }}
+              onSelectionChange={handleSelectionChange}
+              minZoom={0.2}
+              nodeTypes={nodeTypes}
+            >
+              <Background variant={BackgroundVariant.Dots} gap={18} size={1.8} color="#cbd5e1" />
+              <MiniMap
+                nodeColor={(node) => {
+                  const nodeType = node.type;
+                  const nodeData = node.data as any;
+
+                  // Проверяем, является ли узел pen-узлом по всем возможным признакам
+                  const isPenNode =
+                    nodeType === 'pen' ||
+                    (nodeData?.initialSize &&
+                      typeof nodeData.initialSize === 'object' &&
+                      !nodeData?.nodeId) ||
+                    (nodeData?.points && Array.isArray(nodeData.points) && !nodeData?.nodeId);
+
+                  // Исключаем pen узлы - возвращаем transparent, чтобы они не отображались
+                  if (isPenNode) {
+                    return 'transparent';
                   }
+
+                  // Для остальных узлов возвращаем цвет через стандартную функцию
+                  return getNodeColor((nodeData as any)?.nodeKind ?? 'sql');
                 }}
+                zoomable
+                pannable
+                style={{ right: 0, bottom: 0 }}
               />
-            )}
-            {cursors && cursors.length > 0 && <CollaborativeCursors cursors={cursors} />}
-          </ReactFlow>
-          {/* EraserOverlay внутри ReactFlow контейнера для правильного позиционирования */}
-          {isEraserMode && <EraserOverlay onDeleteNodes={handleDeleteNodes} eraserSize={20} onCursorMove={onMouseMove} />}
+              <Controls
+                position="bottom-left"
+                showInteractive={false}
+                style={{ left: 0, bottom: 0 }}
+              />
+              <ConnectionArrowsOverlay edges={flowEdges} />
+              {isShapeMode && selectedShape && (
+                <ShapeDragOverlay
+                  selectedShape={selectedShape}
+                  onAddShapeNode={(node) => {
+                    console.log('onAddShapeNode called with:', node);
+                    // Создаем shape node через useAddNode с новыми параметрами
+                    const shapeNode = addNodeHelpers.createShapeNode(
+                      node.position,
+                      node.width,
+                      node.height,
+                      node.payload,
+                    ) as BoardCanvasProps['nodes'][number];
+                    setLocalNodes((prev) => {
+                      const next = [...prev, shapeNode];
+                      queueMicrotask(() => {
+                        emitNodesChange(next);
+                      });
+                      return next;
+                    });
+                    // Автоматически выделяем созданный узел и сбрасываем tool в select (как в Miro)
+                    onSelectNode?.(shapeNode.id);
+                    setTool('select');
+                  }}
+                />
+              )}
+              {isPenMode && (
+                <FreehandOverlay
+                  onAddPenNode={(node) => {
+                    console.log('onAddPenNode called with:', node);
+                    // Добавляем pen node в localNodes
+                    const externalNode = {
+                      id: node.id,
+                      type: 'pen' as const,
+                      position: node.position,
+                      payload: {
+                        points: node.data.points,
+                        initialSize: node.data.initialSize,
+                      },
+                    };
+                    console.log('Adding to localNodes:', externalNode);
+                    setLocalNodes((prev) => {
+                      const next = [...prev, externalNode];
+                      console.log(
+                        'localNodes updated, new length:',
+                        next.length,
+                        'pen nodes:',
+                        next.filter((n) => n.type === 'pen').length,
+                      );
+                      // Вызываем emitNodesChange для сохранения изменений
+                      queueMicrotask(() => {
+                        emitNodesChange(next);
+                      });
+                      return next;
+                    });
+                    // Немедленно добавляем в flowNodes для отображения
+                    // useEffect который зависит от mapNodes обновит его позже с правильными данными из localNodes
+                    setFlowNodes((prev) => {
+                      if (prev.some((n) => n.id === node.id)) {
+                        console.log('Node already exists in flowNodes:', node.id);
+                        return prev;
+                      }
+                      // Добавляем node с правильной структурой для React Flow
+                      const flowNode: Node = {
+                        ...node,
+                        selected: node.id === selectedNodeId,
+                        // Убеждаемся, что pen node получает правильный zIndex
+                        style: {
+                          ...node.style,
+                          zIndex: node.style?.zIndex ?? 10, // Pen nodes должны быть выше дата-клеток
+                        },
+                      };
+                      console.log('Adding to flowNodes:', flowNode);
+                      return [...prev, flowNode];
+                    });
+                  }}
+                />
+              )}
+            </ReactFlow>
+          </div>
         </div>
+        <BoardCommandBar
+          currentTool={tool}
+          onChangeTool={setTool}
+          portalRoot={canvasRootRef.current}
+          selectedNodeType={selectedDataNodeType}
+          selectedNodeStatus={selectedDataNodeStatus}
+          onRunSelectedNode={canRunSelectedNode ? handleRunSelectedNode : undefined}
+          onRunDownstreamSelectedNode={
+            canRunDownstream ? handleRunDownstreamSelectedNode : undefined
+          }
+          canRunSelectedNode={canRunSelectedNode}
+          canRunDownstream={canRunDownstream}
+          onAddSqlNode={handleAddSqlNode}
+          onAddPythonNode={handleAddPythonNode}
+          onAddDatabaseNode={handleAddDatabaseNode}
+          onAddPlotNode={handleAddPlotNode}
+          onAddVoiceNode={handleAddVoiceNode}
+          selectedShape={selectedShape}
+          onSelectShape={setSelectedShape}
+          onDeleteSelection={handleDeleteSelection}
+          hasSelection={hasSelection}
+        />
       </div>
-      <BoardCommandBar
-        currentTool={tool}
-        onChangeTool={setTool}
-        portalRoot={canvasRootRef.current}
-        selectedNodeType={selectedDataNodeType}
-        selectedNodeStatus={selectedDataNodeStatus}
-        onRunSelectedNode={canRunSelectedNode ? handleRunSelectedNode : undefined}
-        onRunDownstreamSelectedNode={canRunDownstream ? handleRunDownstreamSelectedNode : undefined}
-        canRunSelectedNode={canRunSelectedNode}
-        canRunDownstream={canRunDownstream}
-        onAddSqlNode={handleAddSqlNode}
-        onAddPythonNode={handleAddPythonNode}
-        onAddDatabaseNode={handleAddDatabaseNode}
-        onAddPlotNode={handleAddPlotNode}
-        onUploadSpreadsheet={handleUploadSpreadsheet}
-        selectedShape={selectedShape}
-        onSelectShape={setSelectedShape}
-        onDeleteSelection={handleDeleteSelection}
-        hasSelection={hasSelection}
-        // Undo/Redo moved to UndoRedoControls in board header (per-user undo via Yjs)
-      />
-    </div>
+    </FileDropOverlay>
   );
 }

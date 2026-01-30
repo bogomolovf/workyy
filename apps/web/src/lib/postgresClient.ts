@@ -1,4 +1,5 @@
 import type { SqlResult } from '../state/executionStore';
+import type { DatabaseType } from './databaseNodeTypes';
 
 const API_URL =
   typeof window === 'undefined'
@@ -6,6 +7,7 @@ const API_URL =
     : (process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? 'http://localhost:4000');
 
 export type ConnectionConfig = {
+  dbType: DatabaseType;
   host: string;
   port: number;
   database: string;
@@ -18,6 +20,7 @@ export type DatabaseConnection = {
   id: string;
   connectionId: string;
   connectionName: string;
+  dbType: DatabaseType;
   host: string;
   port: number;
   database: string;
@@ -28,7 +31,10 @@ export type DatabaseConnection = {
   updatedAt?: string;
 };
 
-export async function executePostgresSql(connectionId: string, query: string): Promise<SqlResult> {
+/**
+ * Execute SQL query on a database connection (PostgreSQL, MySQL, or Oracle)
+ */
+export async function executeDatabaseSql(connectionId: string, query: string): Promise<SqlResult> {
   const res = await fetch(`${API_URL}/api/database-connections/${connectionId}/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -37,7 +43,7 @@ export async function executePostgresSql(connectionId: string, query: string): P
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || error.message || 'PostgreSQL query failed');
+    throw new Error(error.detail || error.message || 'Database query failed');
   }
 
   const data = await res.json();
@@ -46,6 +52,11 @@ export async function executePostgresSql(connectionId: string, query: string): P
     rows: data.rows,
   };
 }
+
+/**
+ * @deprecated Use executeDatabaseSql instead
+ */
+export const executePostgresSql = executeDatabaseSql;
 
 export async function testDatabaseConnection(
   config: ConnectionConfig,
@@ -70,6 +81,7 @@ export async function testDatabaseConnection(
 export async function createDatabaseConnection(body: {
   workspaceId: string;
   connectionName: string;
+  dbType: DatabaseType;
   host: string;
   port: number;
   database: string;
@@ -95,6 +107,7 @@ export async function updateDatabaseConnection(
   id: string,
   body: Partial<{
     connectionName: string;
+    dbType: DatabaseType;
     host: string;
     port: number;
     database: string;

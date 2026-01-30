@@ -124,13 +124,13 @@ export type ExecutionStoreState = {
   initFromNodes: (
     nodes: Array<{
       id: string;
-      type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
+      type: 'sql' | 'python' | 'table' | 'plot' | 'csv' | 'database' | 'voice';
       payload?: Record<string, unknown>;
     }>,
   ) => void;
   registerNode: (node: {
     id: string;
-    type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
+    type: 'sql' | 'python' | 'table' | 'plot' | 'csv' | 'database' | 'voice';
     payload?: Record<string, unknown>;
   }) => void;
   setCode: (nodeId: string, code: string) => void;

@@ -1,10 +1,11 @@
 import 'dotenv/config';
-import Fastify from 'fastify';
-import websocket from '@fastify/websocket';
-import rateLimit from '@fastify/rate-limit';
-import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
+import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
+import websocket from '@fastify/websocket';
+import Fastify from 'fastify';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { createServer } from './server';
 
@@ -24,8 +25,9 @@ async function bootstrap() {
       serializers: {
         req(request) {
           const url = request.url || '';
-          const isNodesUpdate = url.includes('/boards/') && url.includes('/nodes') && request.method === 'PUT';
-          
+          const isNodesUpdate =
+            url.includes('/boards/') && url.includes('/nodes') && request.method === 'PUT';
+
           // For PUT /boards/:boardId/nodes - never log body to avoid CSV data in logs
           if (isNodesUpdate) {
             return {
@@ -35,7 +37,7 @@ async function bootstrap() {
               remoteAddress: request.ip,
             };
           }
-          
+
           return {
             method: request.method,
             url: request.url,
@@ -100,6 +102,14 @@ async function bootstrap() {
   });
 
   await fastify.register(websocket);
+
+  // Multipart plugin for file uploads
+  await fastify.register(multipart, {
+    limits: {
+      fileSize: 50 * 1024 * 1024, // 50MB max file size
+      files: 10, // Max 10 files per request
+    },
+  });
 
   await createServer(fastify);
 

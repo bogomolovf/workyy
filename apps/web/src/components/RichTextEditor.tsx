@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import TextStyle from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import TextAlign from '@tiptap/extension-text-align';
+import TextStyle from '@tiptap/extension-text-style';
 import Underline from '@tiptap/extension-underline';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { useCallback, useEffect, useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
 
 type RichTextEditorProps = {
   value?: string; // HTML или plain text (для инициализации)
@@ -37,15 +37,27 @@ function getInitialContent(value?: string, plainTextFallback?: string): string {
   if (value) {
     // Если value похоже на HTML (содержит теги), используем как есть
     if (value.includes('<') && value.includes('>')) {
+      // Проверяем, что HTML валидный для TipTap (не содержит пустых текстовых узлов)
+      // Если это пустой параграф, заменяем на <p><br></p>
+      const trimmed = value.trim();
+      if (trimmed === '<p></p>' || trimmed === '<p><br></p>') {
+        return '<p><br></p>';
+      }
       return value;
     }
     // Иначе оборачиваем plain text в параграф
-    return `<p>${escapeHtml(value)}</p>`;
+    const escaped = escapeHtml(value);
+    // Если текст пустой, используем <br> вместо пустого параграфа
+    return escaped ? `<p>${escaped}</p>` : '<p><br></p>';
   }
   if (plainTextFallback) {
-    return `<p>${escapeHtml(plainTextFallback)}</p>`;
+    const escaped = escapeHtml(plainTextFallback);
+    // Если текст пустой, используем <br> вместо пустого параграфа
+    return escaped ? `<p>${escaped}</p>` : '<p><br></p>';
   }
-  return '<p></p>';
+  // Для пустого редактора используем <br> вместо пустого параграфа
+  // Это предотвращает ошибку "Empty text nodes are not allowed"
+  return '<p><br></p>';
 }
 
 const fontSizes = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48];
@@ -61,9 +73,21 @@ export type RichTextEditorRef = {
   toggleBold: () => void;
   toggleItalic: () => void;
   toggleUnderline: () => void;
+  toggleBulletList: () => void;
+  toggleOrderedList: () => void;
+  toggleLink: (url?: string) => void;
+  toggleHighlight: () => void;
   isBold: () => boolean;
   isItalic: () => boolean;
   isUnderline: () => boolean;
+  isBulletList: () => boolean;
+  isOrderedList: () => boolean;
+  isLink: () => boolean;
+  isHighlight: () => boolean;
+  saveSelection: () => void;
+  restoreSelection: () => void;
+  focus: () => void;
+  getEditor: () => ReturnType<typeof useEditor> | null;
 };
 
 export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>(
@@ -90,6 +114,8 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
   ) {
     const onChangeRef = useRef(onChange);
     const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const savedSelectionRef = useRef<{ from: number; to: number } | null>(null);
+    const editorInstanceRef = useRef<ReturnType<typeof useEditor> | null>(null);
 
     // Обновляем ref при изменении onChange
     useEffect(() => {
@@ -97,13 +123,14 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
     }, [onChange]);
 
     // Debounced onChange для производительности
+    // Синхронизирован с debounce в BoardCanvas (150ms для плавности)
     const debouncedOnChange = useCallback((html: string, text: string) => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
       debounceTimerRef.current = setTimeout(() => {
         onChangeRef.current({ html, text });
-      }, 300);
+      }, 150); // Уменьшено с 300ms до 150ms для синхронизации с BoardCanvas
     }, []);
 
     const initialContent = useMemo(
@@ -133,11 +160,52 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
       editorProps: {
         attributes: {
           class: 'prose prose-sm max-w-none focus:outline-none nodrag',
-          style: `font-size: ${fontSize}px; font-family: ${fontFamily}; color: ${color}; text-align: ${textAlign};`,
-          'data-placeholder': 'Enter text...',
+          style: `font-size: ${fontSize}px; font-family: ${fontFamily}; color: ${color}; text-align: ${textAlign}; word-break: keep-all; overflow-wrap: normal; white-space: pre-line; line-height: 1.2;`,
+          'data-placeholder': 'Type something',
+        },
+        handleDOMEvents: {
+          // При фокусе на пустом редакторе устанавливаем курсор в начало
+          focus: (view) => {
+            try {
+              const editor = view.state.doc;
+              const isEmpty = editor.textContent.trim() === '';
+
+              // Если редактор пустой, устанавливаем курсор в начало
+              if (isEmpty) {
+                // Используем requestAnimationFrame для установки курсора после того, как TipTap обработает фокус
+                requestAnimationFrame(() => {
+                  try {
+                    // Устанавливаем курсор в начало первого параграфа
+                    const { tr } = view.state;
+                    // Используем существующий метод для установки курсора в начало
+                    const startPos = 1; // Позиция после открывающего тега <p>
+                    // Проверяем, что позиция валидна
+                    if (startPos <= view.state.doc.content.size) {
+                      tr.setSelection(
+                        view.state.schema.text('').createAndFill()?.create() ||
+                          view.state.selection,
+                      );
+                      // Проще: используем команду focus() вместо прямой установки selection
+                      view.focus();
+                    }
+                  } catch (error) {
+                    console.warn('Failed to set cursor position in TipTap editor:', error);
+                  }
+                });
+              }
+            } catch (error) {
+              console.warn('Error in TipTap focus handler:', error);
+            }
+            return false; // Позволяем TipTap обработать событие дальше
+          },
         },
       },
     });
+
+    // Сохраняем ссылку на editor instance
+    useEffect(() => {
+      editorInstanceRef.current = editor;
+    }, [editor]);
 
     // Применяем цвет/размер/шрифт/выравнивание при изменении пропсов
     useEffect(() => {
@@ -166,6 +234,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
         editorElement.style.fontFamily = fontFamily;
         editorElement.style.color = color;
         editorElement.style.textAlign = textAlign;
+        editorElement.style.lineHeight = '1.2';
       }
     }, [editor, color, fontSize, fontFamily, textAlign]);
 
@@ -180,7 +249,14 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
       const newText = plainTextFallback?.trim() || '';
       // Обновляем только если value изменился извне (не от пользователя)
       if (value && value !== currentContent && currentText !== newText) {
-        editor.commands.setContent(newContent);
+        // Используем try-catch для предотвращения ошибок при установке контента
+        try {
+          editor.commands.setContent(newContent);
+        } catch (error) {
+          console.warn('Failed to set content in TipTap editor:', error);
+          // Fallback: используем безопасный контент
+          editor.commands.setContent('<p><br></p>');
+        }
       }
     }, [editor, value, plainTextFallback]);
 
@@ -229,6 +305,129 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
       onUnderlineToggle?.();
     }, [editor, onUnderlineToggle]);
 
+    const handleBulletListToggle = useCallback(() => {
+      if (!editor) return;
+      editor.chain().focus().toggleBulletList().run();
+    }, [editor]);
+
+    const handleOrderedListToggle = useCallback(() => {
+      if (!editor) return;
+      editor.chain().focus().toggleOrderedList().run();
+    }, [editor]);
+
+    const handleLinkToggle = useCallback(
+      (url?: string) => {
+        if (!editor) return;
+        // Link не входит в StarterKit, используем workaround через HTML
+        // Если нужно полноценное Link расширение, нужно установить @tiptap/extension-link
+        // Пока используем простой prompt для ввода URL
+        const linkUrl = url || window.prompt('Enter URL:');
+        if (linkUrl) {
+          // Применяем ссылку через команду setMark или напрямую через HTML
+          // Для простоты используем execCommand (deprecated, но работает)
+          const selection = window.getSelection();
+          if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const link = document.createElement('a');
+            link.href = linkUrl;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            try {
+              range.surroundContents(link);
+            } catch (e) {
+              // Если не удалось обернуть, вставляем ссылку как новый элемент
+              link.textContent = linkUrl;
+              range.insertNode(link);
+            }
+            editor.commands.focus();
+          }
+        }
+      },
+      [editor],
+    );
+
+    const handleHighlightToggle = useCallback(() => {
+      if (!editor) return;
+      // Используем backgroundColor через TextStyle для подсветки
+      // Это работает без дополнительных расширений
+      const currentBg = editor.getAttributes('textStyle').backgroundColor;
+      if (currentBg === '#fef08a' || currentBg === 'rgb(254, 240, 138)') {
+        editor.chain().focus().unsetMark('textStyle').run();
+      } else {
+        editor.chain().focus().setMark('textStyle', { backgroundColor: '#fef08a' }).run();
+      }
+    }, [editor]);
+
+    const saveSelection = useCallback(() => {
+      if (!editor) return;
+      try {
+        const { from, to } = editor.state.selection;
+        savedSelectionRef.current = { from, to };
+      } catch (error) {
+        // Если не удалось сохранить выделение, игнорируем ошибку
+        console.debug('Failed to save selection:', error);
+      }
+    }, [editor]);
+
+    const restoreSelection = useCallback(() => {
+      if (!editor || !savedSelectionRef.current) return;
+      const { from, to } = savedSelectionRef.current;
+
+      // Используем более надежную стратегию восстановления с несколькими попытками
+      const attemptRestore = (attempt = 0) => {
+        if (!editor || !savedSelectionRef.current || attempt > 3) {
+          // Если не удалось восстановить после нескольких попыток, просто фокусируем
+          if (editor) {
+            editor.commands.focus();
+          }
+          return;
+        }
+
+        try {
+          const { from, to } = savedSelectionRef.current;
+          // Проверяем, что индексы в допустимых пределах
+          const docSize = editor.state.doc.content.size;
+          const safeFrom = Math.max(0, Math.min(from, docSize));
+          const safeTo = Math.max(safeFrom, Math.min(to, docSize));
+
+          // Сначала фокусируем редактор
+          editor.commands.focus();
+
+          // Затем восстанавливаем выделение с небольшой задержкой
+          requestAnimationFrame(() => {
+            if (editor && savedSelectionRef.current) {
+              try {
+                editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
+                // Проверяем что выделение восстановилось
+                const currentSelection = editor.state.selection;
+                if (currentSelection.from !== safeFrom || currentSelection.to !== safeTo) {
+                  // Если не восстановилось, пробуем еще раз
+                  setTimeout(() => attemptRestore(attempt + 1), 50);
+                }
+              } catch (error) {
+                // Если ошибка, пробуем еще раз
+                console.debug('Failed to restore selection, retrying:', error);
+                setTimeout(() => attemptRestore(attempt + 1), 50);
+              }
+            }
+          });
+        } catch (error) {
+          console.debug('Failed to restore selection:', error);
+          setTimeout(() => attemptRestore(attempt + 1), 50);
+        }
+      };
+
+      // Начинаем восстановление
+      requestAnimationFrame(() => {
+        attemptRestore();
+      });
+    }, [editor]);
+
+    const focusEditor = useCallback(() => {
+      if (!editor) return;
+      editor.commands.focus();
+    }, [editor]);
+
     // Экспортируем функции через ref для использования в TextToolbar
     useImperativeHandle(
       ref,
@@ -236,11 +435,50 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
         toggleBold: handleBoldToggle,
         toggleItalic: handleItalicToggle,
         toggleUnderline: handleUnderlineToggle,
+        toggleBulletList: handleBulletListToggle,
+        toggleOrderedList: handleOrderedListToggle,
+        toggleLink: handleLinkToggle,
+        toggleHighlight: handleHighlightToggle,
         isBold: () => editor?.isActive('bold') ?? false,
         isItalic: () => editor?.isActive('italic') ?? false,
         isUnderline: () => editor?.isActive('underline') ?? false,
+        isBulletList: () => editor?.isActive('bulletList') ?? false,
+        isOrderedList: () => editor?.isActive('orderedList') ?? false,
+        isLink: () => {
+          if (!editor) return false;
+          // Проверяем, находится ли курсор внутри ссылки
+          const { from, to } = editor.state.selection;
+          let isInLink = false;
+          editor.state.doc.nodesBetween(from, to, (node) => {
+            if (node.type.name === 'link') {
+              isInLink = true;
+            }
+          });
+          return isInLink;
+        },
+        isHighlight: () => {
+          if (!editor) return false;
+          const bg = editor.getAttributes('textStyle').backgroundColor;
+          return bg === '#fef08a' || bg === 'rgb(254, 240, 138)';
+        },
+        saveSelection,
+        restoreSelection,
+        focus: focusEditor,
+        getEditor: () => editorInstanceRef.current,
       }),
-      [editor, handleBoldToggle, handleItalicToggle, handleUnderlineToggle],
+      [
+        editor,
+        handleBoldToggle,
+        handleItalicToggle,
+        handleUnderlineToggle,
+        handleBulletListToggle,
+        handleOrderedListToggle,
+        handleLinkToggle,
+        handleHighlightToggle,
+        saveSelection,
+        restoreSelection,
+        focusEditor,
+      ],
     );
 
     if (!editor) {

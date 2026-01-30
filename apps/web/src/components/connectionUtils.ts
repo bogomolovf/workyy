@@ -23,8 +23,8 @@ const DATA_NODE_HANDLE_POSITIONS = [
 function getHandlePosition(node: Node, handleId: 'left' | 'top' | 'right' | 'bottom'): XYPosition {
   const nodeX = node.positionAbsolute?.x ?? node.position.x ?? 0;
   const nodeY = node.positionAbsolute?.y ?? node.position.y ?? 0;
-  const nodeWidth = node.width ?? (node.measured?.width as number) ?? 280;
-  const nodeHeight = node.height ?? (node.measured?.height as number) ?? 320;
+  const nodeWidth = node.width ?? ((node as any).measured?.width as number) ?? 280;
+  const nodeHeight = node.height ?? ((node as any).measured?.height as number) ?? 320;
 
   switch (handleId) {
     case 'left':
@@ -118,7 +118,7 @@ export function resolveConnectionEndpoints(
     const possibleTargets = [connection.source, connection.target].filter(
       (candidate) => candidate && candidate !== sourceId,
     );
-    targetId = possibleTargets[0];
+    targetId = possibleTargets[0] ?? undefined;
     // Меняем местами handle'ы при развороте
     [sourceHandle, targetHandle] = [targetHandle, sourceHandle];
   } else {
