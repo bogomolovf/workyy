@@ -236,7 +236,9 @@
   box-shadow: none !important;
   overflow: visible !important;
   /* Добавляем плавный transition для размеров, чтобы избежать "подпрыгивания" */
-  transition: width 0.15s ease-out, height 0.15s ease-out;
+  transition:
+    width 0.15s ease-out,
+    height 0.15s ease-out;
 }
 
 /* TipTap editor styles */

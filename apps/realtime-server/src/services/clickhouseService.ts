@@ -57,10 +57,7 @@ export class ClickhouseService {
     return client;
   }
 
-  async executeQuery(
-    connectionId: string,
-    query: string,
-  ): Promise<ClickhouseQueryResult> {
+  async executeQuery(connectionId: string, query: string): Promise<ClickhouseQueryResult> {
     // Enforce SELECT-only for security
     const trimmedQuery = query.trim();
     const upperQuery = trimmedQuery.toUpperCase();

@@ -42,7 +42,10 @@ export default [
       ...nextPlugin.configs.recommended.rules,
       ...nextPlugin.configs['core-web-vitals'].rules,
       'react/react-in-jsx-scope': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-explicit-any': 'warn', // Downgrade to warning for existing code
       'no-unused-vars': 'off',
       'no-undef': 'off', // TypeScript handles this
