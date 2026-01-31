@@ -146,9 +146,6 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   const finalWidth = nodeWidth > 0 ? nodeWidth : (data?.width ?? 160);
   const finalHeight = nodeHeight > 0 ? nodeHeight : (data?.height ?? 96);
 
-  // Проверяем, является ли это заметкой (есть текст или callbacks)
-  const isNote = Boolean(text !== undefined || data?.onChangeText);
-
   // Use editing presence to show who is editing this note
   const {
     otherEditors,
