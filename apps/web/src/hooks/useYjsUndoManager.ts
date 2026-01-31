@@ -5,13 +5,13 @@ import { undoState } from '../lib/yjs/undoState';
 
 /**
  * Hook for per-user undo/redo using Yjs UndoManager
- * 
+ *
  * Key features:
  * - Only tracks changes made by the current user (via trackedOrigins)
  * - Changes from other users are NOT undone/redone by this user
  * - Deletions and additions sync across all users normally through Yjs
  * - Each user has their own undo/redo stack
- * 
+ *
  * IMPORTANT: UndoManager tracks ALL changes by default (when trackedOrigins is empty or contains null).
  * We track changes with clientId OR null origin to capture all local changes.
  */
@@ -19,20 +19,19 @@ export function useYjsUndoManager(
   ydoc: Doc | null,
   nodesMap: YMap<unknown> | null,
   edgesMap: YMap<unknown> | null,
-  clientId: string | null
+  clientId: string | null,
 ) {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  
+
   // Store UndoManager in ref to avoid recreation issues with React Strict Mode
   const undoManagerRef = useRef<UndoManager | null>(null);
   const initKeyRef = useRef<string | null>(null);
 
   // Create UndoManager that tracks only this user's changes
   // Use a stable key based on inputs to detect when we need to recreate
-  const currentKey = ydoc && nodesMap && edgesMap && clientId 
-    ? `${ydoc.clientID}-${clientId}` 
-    : null;
+  const currentKey =
+    ydoc && nodesMap && edgesMap && clientId ? `${ydoc.clientID}-${clientId}` : null;
 
   // Create or get UndoManager
   if (currentKey && currentKey !== initKeyRef.current) {
@@ -47,14 +46,14 @@ export function useYjsUndoManager(
     // - We DON'T include null to avoid tracking changes during undo/redo
     // - We don't add ydoc.clientID as it's used for WebSocket sync origins
     const trackedSet = new Set<string>([clientId]);
-    
+
     const manager = new UndoManager(
       [nodesMap as AbstractType<unknown>, edgesMap as AbstractType<unknown>],
       {
         trackedOrigins: trackedSet,
         // Capture timeout - group rapid changes together (300ms)
         captureTimeout: 300,
-      }
+      },
     );
 
     undoManagerRef.current = manager;
@@ -105,7 +104,9 @@ export function useYjsUndoManager(
     undoState.isUndoing = true;
     undoManager.undo();
     // Reset flag after a short delay to allow React to re-render
-    setTimeout(() => { undoState.isUndoing = false; }, 100);
+    setTimeout(() => {
+      undoState.isUndoing = false;
+    }, 100);
   }, [undoManager]);
 
   // Redo - only redoes this user's changes
@@ -117,7 +118,9 @@ export function useYjsUndoManager(
     undoState.isUndoing = true;
     undoManager.redo();
     // Reset flag after a short delay to allow React to re-render
-    setTimeout(() => { undoState.isUndoing = false; }, 100);
+    setTimeout(() => {
+      undoState.isUndoing = false;
+    }, 100);
   }, [undoManager]);
 
   // Stop capturing - call when you want to break the capture timeout
@@ -173,7 +176,7 @@ export function useYjsTransactionOrigin(ydoc: Doc | null, clientId: string | nul
       // Transaction with clientId as origin ensures UndoManager tracks this change
       ydoc.transact(fn, clientId);
     },
-    [ydoc, clientId]
+    [ydoc, clientId],
   );
 
   return { transact };

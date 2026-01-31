@@ -58,8 +58,14 @@ async function bootstrap() {
   const landingOrigin = process.env.LANDING_ORIGIN ?? 'http://localhost:5173';
   const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:3000';
 
+  // Support multiple localhost ports for development (3000, 3001, 3002)
+  const localhostPorts = ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'];
+  const allowedOrigins = [landingOrigin, appOrigin, ...localhostPorts].filter(
+    (origin, index, arr) => arr.indexOf(origin) === index // deduplicate
+  );
+
   await fastify.register(cors, {
-    origin: [landingOrigin, appOrigin],
+    origin: allowedOrigins,
     credentials: true,
   });
 

@@ -52,7 +52,7 @@ export function reactFlowNodeToCanvasNode(reactFlowNode: Node): CanvasNode {
   // For pen nodes, ensure points and initialSize are preserved in payload
   const data = reactFlowNode.data as any;
   const isPenNode = reactFlowNode.type === 'pen' || data?.points !== undefined;
-  
+
   if (isPenNode) {
     return {
       id: reactFlowNode.id,
@@ -102,4 +102,3 @@ export function reactFlowEdgeToCanvasEdge(reactFlowEdge: Edge): CanvasEdge {
     metadata: (reactFlowEdge.data as Record<string, unknown>) || {},
   };
 }
-

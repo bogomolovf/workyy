@@ -25,21 +25,50 @@ const COLORS = [
   '#ffffff',
 ];
 
-export function PenToolbar() {
+type PenToolbarProps = {
+  // Optional props for editing existing pen node
+  editingNodeId?: string | null;
+  onEditNodeColorChange?: (nodeId: string, color: string) => void;
+  onEditNodeOpacityChange?: (nodeId: string, opacity: number) => void;
+};
+
+export function PenToolbar({
+  editingNodeId,
+  onEditNodeColorChange,
+  onEditNodeOpacityChange,
+}: PenToolbarProps = {}) {
   const { color, strokeWidth, opacity, setColor, setStrokeWidth, setOpacity } =
     usePenSettingsStore();
+
+  const handleColorChange = (newColor: string) => {
+    // Always save to store (for future drawings)
+    setColor(newColor);
+    // Also apply to editing node if any
+    if (editingNodeId && onEditNodeColorChange) {
+      onEditNodeColorChange(editingNodeId, newColor);
+    }
+  };
+
+  const handleOpacityChange = (newOpacity: number) => {
+    // Always save to store
+    setOpacity(newOpacity);
+    // Also apply to editing node if any
+    if (editingNodeId && onEditNodeOpacityChange) {
+      onEditNodeOpacityChange(editingNodeId, newOpacity);
+    }
+  };
 
   return (
     <div className="absolute left-4 top-4 z-[1000] pointer-events-auto" data-pen-toolbar="true">
       <div className="bg-white rounded-lg border border-slate-200 shadow-lg p-2.5 w-[200px]">
-        {/* Color Palette - компактная сетка */}
+        {/* Color Palette */}
         <div className="mb-2.5">
           <div className="grid grid-cols-8 gap-1.5">
             {COLORS.map((c) => (
               <button
                 key={c}
                 type="button"
-                onClick={() => setColor(c)}
+                onClick={() => handleColorChange(c)}
                 className={`w-6 h-6 rounded border transition-all ${
                   color === c
                     ? 'border-indigo-600 ring-1 ring-indigo-200 scale-110'
@@ -55,7 +84,7 @@ export function PenToolbar() {
           </div>
         </div>
 
-        {/* Stroke Width - компактный слайдер */}
+        {/* Stroke Width */}
         <div className="mb-2">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] font-medium text-slate-600">Size</span>
@@ -71,7 +100,7 @@ export function PenToolbar() {
           />
         </div>
 
-        {/* Opacity - компактный слайдер */}
+        {/* Opacity */}
         <div>
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] font-medium text-slate-600">Opacity</span>
@@ -83,7 +112,7 @@ export function PenToolbar() {
             max="1"
             step="0.01"
             value={opacity}
-            onChange={(e) => setOpacity(Number(e.target.value))}
+            onChange={(e) => handleOpacityChange(Number(e.target.value))}
             className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
           />
         </div>

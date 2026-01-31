@@ -138,7 +138,10 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
         <div className="max-h-[calc(100vh-200px)] overflow-y-auto px-6 py-4">
           {/* Add member form */}
           {canManageMembers && (
-            <form onSubmit={handleAddMember} className="mb-6 rounded-lg border border-slate-200 p-4">
+            <form
+              onSubmit={handleAddMember}
+              className="mb-6 rounded-lg border border-slate-200 p-4"
+            >
               <h3 className="mb-3 text-sm font-medium text-slate-700">Добавить участника</h3>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <input
@@ -151,9 +154,7 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
                 />
                 <select
                   value={selectedRole}
-                  onChange={(e) =>
-                    setSelectedRole(e.target.value as 'owner' | 'editor' | 'viewer')
-                  }
+                  onChange={(e) => setSelectedRole(e.target.value as 'owner' | 'editor' | 'viewer')}
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                   disabled={addMemberMutation.isPending}
                 >
@@ -262,13 +263,12 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
         {/* Footer */}
         <div className="border-t border-slate-200 px-6 py-3">
           <p className="text-xs text-slate-500">
-            Участники workspace могут видеть и работать с досками в этом workspace. Для
-            тестирования коллаборации добавьте другого пользователя и откройте одну и ту же доску
-            в разных браузерах.
+            Участники workspace могут видеть и работать с досками в этом workspace. Для тестирования
+            коллаборации добавьте другого пользователя и откройте одну и ту же доску в разных
+            браузерах.
           </p>
         </div>
       </div>
     </div>
   );
 }
-

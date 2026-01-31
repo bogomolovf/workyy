@@ -81,7 +81,12 @@ export const Footer = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1 space-y-3">
-            <h3 className="text-xl font-bold text-wy-primary" style={{ letterSpacing: '-0.05em', textTransform: 'lowercase' }}>workyy</h3>
+            <h3
+              className="text-xl font-bold text-wy-primary"
+              style={{ letterSpacing: '-0.05em', textTransform: 'lowercase' }}
+            >
+              workyy
+            </h3>
             <p className="text-sm text-wy-muted">{copy.brandDescription}</p>
           </div>
 

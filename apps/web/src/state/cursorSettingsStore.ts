@@ -30,6 +30,6 @@ export const useCursorSettingsStore = create<CursorSettingsState>()(
     }),
     {
       name: 'workyy-cursor-settings',
-    }
-  )
+    },
+  ),
 );

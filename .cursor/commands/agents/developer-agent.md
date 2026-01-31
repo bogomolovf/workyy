@@ -141,7 +141,7 @@ export const NodeTypeSchema = z.enum(['sql', 'python', 'table', 'plot']);
 canvasNodeToReactFlowNode(canvasNode: CanvasNode): Node
 reactFlowNodeToCanvasNode(reactFlowNode: Node): CanvasNode
 
-// Конвертация между CanvasEdge и ReactFlow Edge  
+// Конвертация между CanvasEdge и ReactFlow Edge
 canvasEdgeToReactFlowEdge(canvasEdge: CanvasEdge): Edge
 reactFlowEdgeToCanvasEdge(reactFlowEdge: Edge): CanvasEdge
 ```
@@ -155,22 +155,36 @@ import { useExecutionStore } from '../state/executionStore';
 
 // Типы
 type NodeStatus = 'idle' | 'running' | 'success' | 'error';
-type SqlResult = { columns: string[]; rows: Array<Array<string | number | null>>; arrow?: Uint8Array };
-type PythonResult = { stdout: string; stderr?: string; table?: SqlResult | null; plotJson?: string | null };
-type PlotResult = { chartType: ChartType; config: PlotConfig; inputData: SqlResult; rendered?: { library: 'echarts'; spec: unknown } };
+type SqlResult = {
+  columns: string[];
+  rows: Array<Array<string | number | null>>;
+  arrow?: Uint8Array;
+};
+type PythonResult = {
+  stdout: string;
+  stderr?: string;
+  table?: SqlResult | null;
+  plotJson?: string | null;
+};
+type PlotResult = {
+  chartType: ChartType;
+  config: PlotConfig;
+  inputData: SqlResult;
+  rendered?: { library: 'echarts'; spec: unknown };
+};
 
 // Получить запись узла
 const entry = useExecutionStore.getState().entries[nodeId];
 
 // Основные методы
-registerNode(node)           // Зарегистрировать узел
-setCode(nodeId, code)        // Установить код узла
-setStatus(nodeId, 'running') // Установить статус (idle, running, success, error)
-setSuccess(nodeId, output)   // Сохранить успешный результат
-setError(nodeId, message)    // Сохранить ошибку
-reset(nodeId)                // Сбросить выполнение
-resetOutput(nodeId)          // Сбросить только output
-removeNode(nodeId)           // Удалить узел
+registerNode(node); // Зарегистрировать узел
+setCode(nodeId, code); // Установить код узла
+setStatus(nodeId, 'running'); // Установить статус (idle, running, success, error)
+setSuccess(nodeId, output); // Сохранить успешный результат
+setError(nodeId, message); // Сохранить ошибку
+reset(nodeId); // Сбросить выполнение
+resetOutput(nodeId); // Сбросить только output
+removeNode(nodeId); // Удалить узел
 ```
 
 **КРИТИЧЕСКИ ВАЖНО:**
@@ -212,7 +226,7 @@ const plotResult: PlotResult = {
   chartType: 'bar',
   config: plotConfig,
   inputData: upstreamSqlResult,
-  rendered: { library: 'echarts', spec: echartsOption }
+  rendered: { library: 'echarts', spec: echartsOption },
 };
 setSuccess(nodeId, { kind: 'plot', result: plotResult });
 ```

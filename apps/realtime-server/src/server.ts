@@ -20,7 +20,7 @@ export async function createServer(app: FastifyInstance) {
           url: request.url,
           params: request.params,
         },
-        'WebSocket route handler error'
+        'WebSocket route handler error',
       );
       // Don't close connection here - setupCollaborationWS handles it
     }

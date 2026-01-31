@@ -54,7 +54,11 @@ class EraserTrail {
   }
 }
 
-export function EraserOverlay({ eraserSize = 20, onDeleteNodes, onCursorMove }: EraserOverlayProps) {
+export function EraserOverlay({
+  eraserSize = 20,
+  onDeleteNodes,
+  onCursorMove,
+}: EraserOverlayProps) {
   const { screenToFlowPosition, getNodes, getViewport } = useReactFlow();
   const eraserTrailRef = useRef(new EraserTrail());
   const isErasingRef = useRef(false);

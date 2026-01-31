@@ -26,7 +26,7 @@ export function useCursorStateSynced(
   cursorsMap: YMapType<Cursor>,
   clientId: string,
   userInfo?: { userId?: string; userName?: string },
-  options?: { showOwnCursor?: boolean }
+  options?: { showOwnCursor?: boolean },
 ): [Cursor[], (event: React.PointerEvent<HTMLDivElement>) => void] {
   const [cursors, setCursors] = useState<Cursor[]>([]);
   const { screenToFlowPosition } = useReactFlow();
@@ -43,23 +43,23 @@ export function useCursorStateSynced(
   useEffect(() => {
     const now = Date.now();
     const staleThreshold = 5000; // 5 seconds
-    
+
     for (const [id, cursor] of cursorsMap) {
       // Remove cursor if:
       // 1. It has a different clientId AND
       // 2. It belongs to the same user (same userId or userName) OR it's stale (older than 5 seconds)
       if (id !== clientId) {
-        const isSameUser = 
+        const isSameUser =
           (userInfo?.userId && cursor.userId === userInfo.userId) ||
           (userInfo?.userName && cursor.userName === userInfo.userName);
         const isStale = now - cursor.timestamp > staleThreshold;
-        
+
         if (isSameUser || isStale) {
           cursorsMap.delete(id);
         }
       }
     }
-    
+
     // CRITICAL FIX: Remove old cursor entry when clientId changes (e.g., after page refresh)
     // This prevents duplicate cursors from appearing after page refresh
     if (previousClientIdRef.current !== null && previousClientIdRef.current !== clientId) {
@@ -96,7 +96,7 @@ export function useCursorStateSynced(
       }
 
       const now = Date.now();
-      
+
       // Optimized throttle: use requestAnimationFrame for smooth 60 FPS updates
       // This ensures updates are synchronized with browser rendering
       if (now - lastUpdateTimeRef.current < CURSOR_THROTTLE_MS) {
@@ -104,7 +104,7 @@ export function useCursorStateSynced(
         if (throttleTimerRef.current !== null) {
           window.cancelAnimationFrame(throttleTimerRef.current);
         }
-        
+
         // Schedule update for next animation frame (synchronized with browser rendering)
         throttleTimerRef.current = window.requestAnimationFrame(() => {
           const position = screenToFlowPosition({
@@ -138,7 +138,7 @@ export function useCursorStateSynced(
         if (throttleTimerRef.current !== null) {
           window.cancelAnimationFrame(throttleTimerRef.current);
         }
-        
+
         throttleTimerRef.current = window.requestAnimationFrame(() => {
           const position = screenToFlowPosition({
             x: event.clientX,
@@ -167,7 +167,7 @@ export function useCursorStateSynced(
         });
       }
     },
-    [screenToFlowPosition, cursorsMap, clientId, cursorColor, userInfo]
+    [screenToFlowPosition, cursorsMap, clientId, cursorColor, userInfo],
   );
 
   // Cleanup animation frame on unmount
@@ -193,7 +193,7 @@ export function useCursorStateSynced(
       if (observerRafRef.current !== null) {
         window.cancelAnimationFrame(observerRafRef.current);
       }
-      
+
       // Schedule update for next animation frame
       observerRafRef.current = window.requestAnimationFrame(() => {
         const allCursors = [...cursorsMap.values()];
@@ -235,13 +235,13 @@ export function useCursorStateSynced(
 
   const cursorsWithoutSelf = useMemo(
     () => cursors.filter(({ id }) => id !== clientId),
-    [cursors, clientId]
+    [cursors, clientId],
   );
 
   // Determine which cursors to show based on options
   const cursorsToShow = useMemo(
     () => (options?.showOwnCursor ? cursors : cursorsWithoutSelf),
-    [cursors, cursorsWithoutSelf, options?.showOwnCursor]
+    [cursors, cursorsWithoutSelf, options?.showOwnCursor],
   );
 
   // Debug logging in development
@@ -256,8 +256,14 @@ export function useCursorStateSynced(
         clientId,
       });
     }
-  }, [cursors.length, cursorsWithoutSelf.length, cursorsToShow.length, cursorsMap.size, options?.showOwnCursor, clientId]);
+  }, [
+    cursors.length,
+    cursorsWithoutSelf.length,
+    cursorsToShow.length,
+    cursorsMap.size,
+    options?.showOwnCursor,
+    clientId,
+  ]);
 
   return [cursorsToShow, onMouseMove];
 }
-

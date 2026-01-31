@@ -862,6 +862,8 @@ function InnerBoardCanvas({
 
   const [tool, setTool] = useState<CanvasTool>('select');
   const [selectedShape, setSelectedShape] = useState<ShapeType | null>('rectangle');
+  // State for editing pen node (click to edit color)
+  const [editingPenNodeId, setEditingPenNodeId] = useState<string | null>(null);
   const isStickyMode = tool === 'note';
   const isPenMode = tool === 'pen';
   const isTextMode = tool === 'text';
@@ -1130,6 +1132,12 @@ function InnerBoardCanvas({
                     width: 100,
                     height: 100,
                   }) as { width: number; height: number },
+                  // Pen style settings
+                  color: (node.payload as any)?.color,
+                  strokeWidth: (node.payload as any)?.strokeWidth,
+                  opacity: (node.payload as any)?.opacity,
+                  smoothing: (node.payload as any)?.smoothing,
+                  thinning: (node.payload as any)?.thinning,
                 }
               : isText
                 ? (() => {
@@ -2275,15 +2283,104 @@ function InnerBoardCanvas({
   );
 
   const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
+    (event: React.MouseEvent, node: Node) => {
       onSelectNode?.(node.id);
+      
+      // Open edit toolbar for pen nodes on click
+      if (node.type === 'pen') {
+        setEditingPenNodeId(node.id);
+      } else {
+        // Close pen edit toolbar when clicking other nodes
+        setEditingPenNodeId(null);
+      }
     },
     [onSelectNode],
   );
 
   const handlePaneClick = useCallback(() => {
     onSelectNode?.(null);
+    setEditingPenNodeId(null);
   }, [onSelectNode]);
+
+  // Update pen node color
+  const handlePenNodeColorChange = useCallback(
+    (nodeId: string, color: string) => {
+      setLocalNodes((prev) =>
+        prev.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                payload: {
+                  ...n.payload,
+                  color,
+                },
+              }
+            : n,
+        ),
+      );
+      setFlowNodes((prev) =>
+        prev.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  color,
+                },
+              }
+            : n,
+        ),
+      );
+      // Emit change for Yjs sync
+      setLocalNodes((current) => {
+        queueMicrotask(() => {
+          emitNodesChange(current);
+        });
+        return current;
+      });
+    },
+    [emitNodesChange],
+  );
+
+  // Update pen node opacity
+  const handlePenNodeOpacityChange = useCallback(
+    (nodeId: string, opacity: number) => {
+      setLocalNodes((prev) =>
+        prev.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                payload: {
+                  ...n.payload,
+                  opacity,
+                },
+              }
+            : n,
+        ),
+      );
+      setFlowNodes((prev) =>
+        prev.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  opacity,
+                },
+              }
+            : n,
+        ),
+      );
+      // Emit change for Yjs sync
+      setLocalNodes((current) => {
+        queueMicrotask(() => {
+          emitNodesChange(current);
+        });
+        return current;
+      });
+    },
+    [emitNodesChange],
+  );
 
   const handleSelectionChange = useCallback(
     (selected: { nodes?: Node[] }) => {
@@ -3100,6 +3197,14 @@ function InnerBoardCanvas({
                   }}
                 />
               )}
+              {/* PenToolbar - shown when drawing (isPenMode) or editing existing pen node */}
+              {(isPenMode || editingPenNodeId) && (
+                <PenToolbar
+                  editingNodeId={editingPenNodeId}
+                  onEditNodeColorChange={handlePenNodeColorChange}
+                  onEditNodeOpacityChange={handlePenNodeOpacityChange}
+                />
+              )}
               {isPenMode && (
                 <FreehandOverlay
                   onAddPenNode={(node) => {
@@ -3112,6 +3217,12 @@ function InnerBoardCanvas({
                       payload: {
                         points: node.data.points,
                         initialSize: node.data.initialSize,
+                        // Preserve pen style settings (color, stroke, opacity, etc.)
+                        color: node.data.color,
+                        strokeWidth: node.data.strokeWidth,
+                        opacity: node.data.opacity,
+                        smoothing: node.data.smoothing,
+                        thinning: node.data.thinning,
                       },
                     };
                     console.log('Adding to localNodes:', externalNode);

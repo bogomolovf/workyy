@@ -39,14 +39,14 @@ export function getBoardYdoc(boardId: string): Doc {
 export function getBoardProvider(boardId: string): WebsocketProvider {
   // Increment usage count
   boardUsageCount.set(boardId, (boardUsageCount.get(boardId) || 0) + 1);
-  
+
   if (!boardProviders.has(boardId)) {
     const doc = getBoardYdoc(boardId);
     const wsUrl = getWebSocketUrl();
     // CRITICAL FIX: WebsocketProvider adds roomName to the URL as a path segment
     // Final URL format: ws://host/collab/${roomName}
     // We pass boardId as roomName, so URL becomes: ws://host/collab/${boardId}
-    // 
+    //
     // IMPORTANT: Do NOT use params option - it adds query parameters (?boardId=...)
     // which can cause WebSocket connection failures if server doesn't handle them properly.
     // The roomName (boardId) is already in the path, which the server extracts via route parameter.
@@ -58,7 +58,7 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
         connect: true,
         // DO NOT add params here - it adds query parameters which can break WebSocket connection
         // Server extracts boardId from path parameter /collab/:boardId
-      }
+      },
     );
 
     // Log connection status for debugging
@@ -77,7 +77,9 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
           roomName: (provider as any).roomName || boardId,
           wsconnected: provider.wsconnected,
           docClientID: doc.clientID.toString(),
-          note: hasQueryParams ? 'WARNING: URL contains query params (should not)' : 'OK: URL format correct',
+          note: hasQueryParams
+            ? 'WARNING: URL contains query params (should not)'
+            : 'OK: URL format correct',
         });
       }
     });
@@ -111,7 +113,7 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
           originType: origin?.constructor?.name,
           isLocalChange: origin === null,
         });
-        
+
         // Also log cursorsMap size when update is received
         try {
           const cursorsMap = doc.getMap('cursors');
@@ -145,15 +147,17 @@ export function cleanupBoardYdoc(boardId: string): void {
   const currentCount = boardUsageCount.get(boardId) || 0;
   const newCount = Math.max(0, currentCount - 1);
   boardUsageCount.set(boardId, newCount);
-  
+
   // Only cleanup if no one is using this board anymore
   if (newCount > 0) {
     if (process.env.NODE_ENV === 'development') {
-      console.log(`[Yjs] Skipping cleanup for board ${boardId} - still in use (count: ${newCount})`);
+      console.log(
+        `[Yjs] Skipping cleanup for board ${boardId} - still in use (count: ${newCount})`,
+      );
     }
     return;
   }
-  
+
   // No one is using this board - safe to cleanup
   const provider = boardProviders.get(boardId);
   if (provider) {
@@ -174,12 +178,11 @@ export function cleanupBoardYdoc(boardId: string): void {
     }
     boardDocs.delete(boardId);
   }
-  
+
   // Clean up usage count
   boardUsageCount.delete(boardId);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log(`[Yjs] Cleaned up board ${boardId} - provider and doc destroyed`);
   }
 }
-

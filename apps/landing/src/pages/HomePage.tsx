@@ -22,7 +22,7 @@ const heroContent = {
     eyebrow: 'Интерактивные доски для работы с данными',
     headline: 'SQL, python и визуализации на одной доске',
     subheadline:
-    'Делайте SQL-выгрузки из баз данных, используйте python для обработки и стройте сложные визуализации с помощью встроенной BI-системы.',
+      'Делайте SQL-выгрузки из баз данных, используйте python для обработки и стройте сложные визуализации с помощью встроенной BI-системы.',
     ctas: {
       primary: 'Попробовать бесплатно',
       secondary: 'Посмотреть демо-доски',
@@ -62,15 +62,18 @@ const valueProps = {
   ru: [
     {
       title: 'Доски',
-      description: 'В основе продукта бесконечная доска для рисования со всем необходимым функицоналом .',
+      description:
+        'В основе продукта бесконечная доска для рисования со всем необходимым функицоналом .',
     },
     {
       title: 'SQL + Python клетки',
-      description: 'Загружайте данные, пишите код, визуализируйте и делайте выводы на основе данных.',
+      description:
+        'Загружайте данные, пишите код, визуализируйте и делайте выводы на основе данных.',
     },
     {
       title: 'Работа вместе',
-      description: 'Используйте доску как единое пространство для работы вместе с командой, ставьте задачи и выполняйте их прямо на доске',
+      description:
+        'Используйте доску как единое пространство для работы вместе с командой, ставьте задачи и выполняйте их прямо на доске',
     },
     {
       title: 'Визуализации',
@@ -338,7 +341,7 @@ const HomePage = () => {
   const personasList = personas[lang];
   const pricingPlansList = pricingPlans[lang];
   const faqsList = faqs[lang];
-  
+
   // Контент из других страниц
   const productContent = content.product;
   const pricingContent = content.pricing;
@@ -371,18 +374,13 @@ const HomePage = () => {
           </AnimatedSection>
 
           {/* Trusted by */}
-          <AnimatedSection
-            className="section social-proof-section py-12 md:py-16"
-            id="trusted"
-          >
+          <AnimatedSection className="section social-proof-section py-12 md:py-16" id="trusted">
             <div className="section-inner">
               <div className="text-center mb-8 md:mb-10">
                 <p className="text-xs md:text-sm text-wy-muted font-medium uppercase tracking-wider mb-3">
                   Кто уже внедрил workyy в свой рабочий процесс
                 </p>
-                <h3 className="text-base md:text-lg font-semibold text-wy-text">
-                  Наши клиенты:
-                </h3>
+                <h3 className="text-base md:text-lg font-semibold text-wy-text">Наши клиенты:</h3>
               </div>
               <div className="logo-marquee-wrapper">
                 <div className="logo-marquee-container">
@@ -416,15 +414,21 @@ const HomePage = () => {
               </div>
               <div className="cards-grid cards-grid-3">
                 <AnimatedCard delay={0} className="card">
-                  <h3 className="text-xl font-semibold text-wy-text mb-3">{productContent.canvas.title}</h3>
+                  <h3 className="text-xl font-semibold text-wy-text mb-3">
+                    {productContent.canvas.title}
+                  </h3>
                   <p className="text-wy-muted mb-4">{productContent.canvas.description}</p>
                 </AnimatedCard>
                 <AnimatedCard delay={60} className="card">
-                  <h3 className="text-xl font-semibold text-wy-text mb-3">{productContent.collaboration.title}</h3>
+                  <h3 className="text-xl font-semibold text-wy-text mb-3">
+                    {productContent.collaboration.title}
+                  </h3>
                   <p className="text-wy-muted mb-4">{productContent.collaboration.description}</p>
                 </AnimatedCard>
                 <AnimatedCard delay={120} className="card">
-                  <h3 className="text-xl font-semibold text-wy-text mb-3">{productContent.performance.title}</h3>
+                  <h3 className="text-xl font-semibold text-wy-text mb-3">
+                    {productContent.performance.title}
+                  </h3>
                   <p className="text-wy-muted mb-4">{productContent.performance.description}</p>
                 </AnimatedCard>
               </div>
@@ -452,14 +456,13 @@ const HomePage = () => {
           </AnimatedSection>
 
           {/* Use Cases / Personas */}
-          <AnimatedSection
-            className="section personas py-12 md:py-16"
-            id="personas"
-          >
+          <AnimatedSection className="section personas py-12 md:py-16" id="personas">
             <div className="section-inner">
               <div className="section-heading text-center mb-8 md:mb-10">
                 <p className="eyebrow text-wy-primary font-semibold">Создано для</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-wy-primary">Команд любого размера</h2>
+                <h2 className="text-3xl md:text-4xl font-bold text-wy-primary">
+                  Команд любого размера
+                </h2>
               </div>
               <div className="personas-grid">
                 {personasList.map((persona, index) => (
@@ -504,7 +507,11 @@ const HomePage = () => {
               </div>
               <div className="pricing-grid-container">
                 {pricingContent.plans.map((plan, index) => (
-                  <AnimatedCard key={plan.name} delay={index * 70} className={`card space-y-4 ${plan.highlight ? 'ring-2 ring-wy-primary' : ''}`}>
+                  <AnimatedCard
+                    key={plan.name}
+                    delay={index * 70}
+                    className={`card space-y-4 ${plan.highlight ? 'ring-2 ring-wy-primary' : ''}`}
+                  >
                     <div>
                       <h3 className="text-2xl font-bold text-wy-text mb-2">{plan.name}</h3>
                       <p className="text-lg font-semibold text-wy-primary mb-4">{plan.price}</p>
@@ -537,7 +544,6 @@ const HomePage = () => {
               </div>
             </div>
           </AnimatedSection>
-
         </main>
       </div>
     </>

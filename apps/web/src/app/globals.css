@@ -49,7 +49,10 @@
 }
 
 /* Hide cursor on ReactFlow children in non-hand modes, but exclude Controls and MiniMap */
-.rf-cursor-hidden *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(.react-flow__minimap *) {
+.rf-cursor-hidden
+  *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(
+    .react-flow__minimap *
+  ) {
   cursor: none !important;
 }
 
@@ -104,8 +107,8 @@
 /* Allow text selection only when editing (focused inputs/textareas/contenteditable) */
 .react-flow__node input:focus,
 .react-flow__node textarea:focus,
-.react-flow__node [contenteditable="true"]:focus,
-.react-flow__node [contenteditable="true"].ProseMirror-focused,
+.react-flow__node [contenteditable='true']:focus,
+.react-flow__node [contenteditable='true'].ProseMirror-focused,
 .react-flow__node .ProseMirror-focused,
 .react-flow__node .ProseMirror-focused * {
   user-select: text !important;

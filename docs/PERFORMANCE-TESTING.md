@@ -50,6 +50,7 @@ cd workyy-fullproject-stable/test-data
    - Memory usage should be stable
 
 **Expected Results:**
+
 - Preview shows "1000 of 100K rows" badge
 - Scrolling is smooth even with 100K rows in memory
 - No browser freezing or lag
@@ -69,6 +70,7 @@ cd workyy-fullproject-stable/test-data
    - Virtual scrolling still works
 
 **Expected Results:**
+
 - Initial query returns quickly (preview mode)
 - "Load All" loads complete dataset
 - UI remains responsive
@@ -83,6 +85,7 @@ cd workyy-fullproject-stable/test-data
 4. Note execution time
 
 **Expected Results:**
+
 - Second execution should be near-instant (from cache)
 - Cache hit/miss stats available in browser console
 
@@ -97,23 +100,25 @@ cd workyy-fullproject-stable/test-data
 5. Compare memory usage
 
 **Expected Results:**
+
 - Memory should stabilize
 - Old query results should be garbage collected
 - IndexedDB cache should have TTL expiration
 
 ## Performance Metrics to Track
 
-| Metric | Target | How to Measure |
-|--------|--------|----------------|
-| Time to First Render (TTFR) | < 500ms | DevTools Performance tab |
-| Scroll FPS | 60 fps | DevTools Performance tab |
-| Memory Peak | < 500MB for 100K rows | DevTools Memory tab |
-| Cache Hit Rate | > 80% for repeated queries | Console logs |
-| Preview Query Time | < 100ms | Console timing |
+| Metric                      | Target                     | How to Measure           |
+| --------------------------- | -------------------------- | ------------------------ |
+| Time to First Render (TTFR) | < 500ms                    | DevTools Performance tab |
+| Scroll FPS                  | 60 fps                     | DevTools Performance tab |
+| Memory Peak                 | < 500MB for 100K rows      | DevTools Memory tab      |
+| Cache Hit Rate              | > 80% for repeated queries | Console logs             |
+| Preview Query Time          | < 100ms                    | Console timing           |
 
 ## Browser DevTools Tips
 
 ### Performance Tab
+
 1. Open DevTools > Performance
 2. Click Record
 3. Perform action (scroll, query)
@@ -121,13 +126,16 @@ cd workyy-fullproject-stable/test-data
 5. Analyze frame rate and scripting time
 
 ### Memory Tab
+
 1. Open DevTools > Memory
 2. Take heap snapshot before/after operations
 3. Compare retained size
 4. Look for memory leaks
 
 ### Console Logging
+
 Enable query cache stats:
+
 ```javascript
 // In browser console
 import { getCacheStats } from '/apps/web/src/lib/queryCache';
@@ -144,14 +152,17 @@ console.log(getCacheStats());
 ## Troubleshooting
 
 ### Slow Initial Load
+
 - Check network tab for file download time
 - Consider using Parquet format for large files (better compression)
 
 ### Scroll Lag
+
 - Verify TanStack Virtual is enabled (check for `useVirtualizer`)
 - Check for expensive cell renderers
 
 ### Memory Issues
+
 - Enable cache eviction
 - Use preview mode instead of full load
 - Close unused boards

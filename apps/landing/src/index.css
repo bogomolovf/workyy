@@ -90,7 +90,6 @@ body {
   width: 100%;
 }
 
-
 .surface-panel {
   background-color: var(--color-bg-surface) !important;
   border-color: var(--color-border) !important;
@@ -472,7 +471,8 @@ section[id] {
 }
 
 @keyframes float {
-  0%, 100% {
+  0%,
+  100% {
     transform: translate(-50%, -50%) translateY(0px);
   }
   50% {
@@ -494,11 +494,11 @@ section[id] {
   .logo-item {
     padding: 0 2rem;
   }
-  
+
   .logo-text {
     font-size: 0.9rem;
   }
-  
+
   .logo-marquee {
     animation-duration: 25s;
   }
@@ -712,7 +712,6 @@ section[id] {
   padding: 2.5rem;
   background-color: transparent;
 }
-
 
 /* Footer */
 .footer-section .section-inner {

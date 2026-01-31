@@ -344,10 +344,10 @@ export async function deleteTable(
   connectionOverride?: duckdb.AsyncDuckDBConnection,
 ): Promise<void> {
   const connection = connectionOverride ?? (await getDuckDbContext()).connection;
-  
+
   // Delete table from DuckDB
   await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(tableName)};`);
-  
+
   // Delete metadata from localStorage
   if (typeof window !== 'undefined') {
     try {
@@ -457,9 +457,7 @@ export async function registerDatasetFromCsvNode(
     .map((col, idx) => `${quotedIdentifier(col)} ${columnTypes[idx]}`)
     .join(', ');
 
-  await connection.query(
-    `CREATE TABLE ${quotedIdentifier(tableName)} (${columnsDef});`,
-  );
+  await connection.query(`CREATE TABLE ${quotedIdentifier(tableName)} (${columnsDef});`);
 
   // Insert data in batches to avoid query size limits
   const BATCH_SIZE = 500;
@@ -482,9 +480,7 @@ export async function registerDatasetFromCsvNode(
       .join(', ');
 
     if (batch.length > 0) {
-      await connection.query(
-        `INSERT INTO ${quotedIdentifier(tableName)} VALUES ${rowsSql};`,
-      );
+      await connection.query(`INSERT INTO ${quotedIdentifier(tableName)} VALUES ${rowsSql};`);
     }
   }
 

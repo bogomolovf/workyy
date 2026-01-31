@@ -31,9 +31,9 @@ export function PenNode({ data, width, height, selected, dragging }: NodeProps<P
     [data.points, scaleX, scaleY],
   );
 
-  // Настройки из payload с дефолтными значениями (Excalidraw-optimized)
-  const color = data.color || '#ef4444';
-  const strokeWidth = data.strokeWidth || 7;
+  // Настройки из payload с дефолтными значениями (matching penSettingsStore defaults)
+  const color = data.color || '#000000';
+  const strokeWidth = data.strokeWidth || 8;
   const opacity = data.opacity ?? 1;
   const smoothing = data.smoothing ?? 0.5;
   const thinning = data.thinning ?? 0.6; // Excalidraw uses 0.6

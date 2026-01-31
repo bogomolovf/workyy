@@ -82,7 +82,12 @@ function processPoints(
   };
 }
 
-export function FreehandOverlay({ onAddPenNode, onUpdatePenNode, yjsOnNodesChange, onCursorMove }: FreehandOverlayProps = {}) {
+export function FreehandOverlay({
+  onAddPenNode,
+  onUpdatePenNode,
+  yjsOnNodesChange,
+  onCursorMove,
+}: FreehandOverlayProps = {}) {
   const { screenToFlowPosition, getViewport, setNodes } = useReactFlow<PenNodeType>();
   const overlayRef = useRef<HTMLDivElement>(null);
   const penSettings = usePenSettingsStore();
@@ -92,59 +97,65 @@ export function FreehandOverlay({ onAddPenNode, onUpdatePenNode, yjsOnNodesChang
   const isDrawingRef = useRef(false);
   const currentPenNodeIdRef = useRef<string | null>(null);
 
-  const handlePointerDown = useCallback((e: PointerEvent<HTMLDivElement>) => {
-    // Sync cursor position immediately when starting to draw
-    if (onCursorMove) {
-      onCursorMove(e);
-    }
-    
-    // Prevent default to avoid text selection and other browser behaviors
-    e.preventDefault();
-    e.stopPropagation();
+  const handlePointerDown = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      // Sync cursor position immediately when starting to draw
+      if (onCursorMove) {
+        onCursorMove(e);
+      }
 
-    (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
-    isDrawingRef.current = true;
+      // Prevent default to avoid text selection and other browser behaviors
+      e.preventDefault();
+      e.stopPropagation();
 
-    // Use pageX/pageY for consistent coordinates
-    const pressure = e.pressure > 0 ? e.pressure : 0.5;
-    const nextPoints: PenPoint[] = [[e.pageX, e.pageY, pressure]];
+      (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
+      isDrawingRef.current = true;
 
-    pointRef.current = nextPoints;
-    setPoints(nextPoints);
+      // Use pageX/pageY for consistent coordinates
+      const pressure = e.pressure > 0 ? e.pressure : 0.5;
+      const nextPoints: PenPoint[] = [[e.pageX, e.pageY, pressure]];
 
-    // Generate node ID for later use (will be synced only on pointerUp)
-    const nodeId = crypto.randomUUID();
-    currentPenNodeIdRef.current = nodeId;
+      pointRef.current = nextPoints;
+      setPoints(nextPoints);
 
-    // No synchronization here - line is visible only to the drawing user until pointerUp
-  }, [onCursorMove]);
+      // Generate node ID for later use (will be synced only on pointerUp)
+      const nodeId = crypto.randomUUID();
+      currentPenNodeIdRef.current = nodeId;
 
-  const handlePointerMove = useCallback((e: PointerEvent) => {
-    // Sync cursor position during drawing so other users can see where we're drawing
-    // This is called BEFORE stopPropagation to ensure cursor syncs even during drawing
-    if (onCursorMove) {
-      onCursorMove(e as unknown as React.PointerEvent<HTMLDivElement>);
-    }
-    
-    // Only process if we're drawing and left button is pressed
-    if (!isDrawingRef.current || e.buttons !== 1) return;
+      // No synchronization here - line is visible only to the drawing user until pointerUp
+    },
+    [onCursorMove],
+  );
 
-    e.preventDefault();
-    e.stopPropagation();
+  const handlePointerMove = useCallback(
+    (e: PointerEvent) => {
+      // Sync cursor position during drawing so other users can see where we're drawing
+      // This is called BEFORE stopPropagation to ensure cursor syncs even during drawing
+      if (onCursorMove) {
+        onCursorMove(e as unknown as React.PointerEvent<HTMLDivElement>);
+      }
 
-    const points = pointRef.current;
-    const pressure = e.pressure > 0 ? e.pressure : 0.5;
-    const newPoint: PenPoint = [e.pageX, e.pageY, pressure];
+      // Only process if we're drawing and left button is pressed
+      if (!isDrawingRef.current || e.buttons !== 1) return;
 
-    // Skip duplicate points (Excalidraw optimization)
-    if (!shouldAddPoint(points, newPoint, 1)) {
-      return;
-    }
+      e.preventDefault();
+      e.stopPropagation();
 
-    const nextPoints = [...points, newPoint];
-    pointRef.current = nextPoints;
-    setPoints(nextPoints); // Update local preview only - no synchronization until pointerUp
-  }, [onCursorMove]);
+      const points = pointRef.current;
+      const pressure = e.pressure > 0 ? e.pressure : 0.5;
+      const newPoint: PenPoint = [e.pageX, e.pageY, pressure];
+
+      // Skip duplicate points (Excalidraw optimization)
+      if (!shouldAddPoint(points, newPoint, 1)) {
+        return;
+      }
+
+      const nextPoints = [...points, newPoint];
+      pointRef.current = nextPoints;
+      setPoints(nextPoints); // Update local preview only - no synchronization until pointerUp
+    },
+    [onCursorMove],
+  );
 
   const handlePointerUp = useCallback(
     (e: PointerEvent) => {
@@ -225,7 +236,10 @@ export function FreehandOverlay({ onAddPenNode, onUpdatePenNode, yjsOnNodesChang
           },
         };
         yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
-        console.log('Pen node finalized and synced through Yjs (now visible to other users):', finalNode.id);
+        console.log(
+          'Pen node finalized and synced through Yjs (now visible to other users):',
+          finalNode.id,
+        );
       }
 
       // Also call onAddPenNode callback if provided

@@ -11,7 +11,7 @@ export type PenSettings = {
 
 // Optimized defaults based on Excalidraw's settings
 const DEFAULT_PEN_SETTINGS: PenSettings = {
-  color: '#1e1e1e', // Dark default for better visibility
+  color: '#000000', // Black default
   strokeWidth: 8, // Good default for visibility
   opacity: 1,
   smoothing: 0.5,

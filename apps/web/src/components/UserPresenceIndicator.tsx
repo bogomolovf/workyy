@@ -18,7 +18,7 @@ interface UserPresenceIndicatorProps {
  * Displays the number of users currently viewing the board.
  * Shows avatars for up to 3 users, with +N overflow indicator.
  * On hover, shows a dropdown with all users.
- * 
+ *
  * Inspired by Miro/Figma/tldraw collaboration indicators.
  */
 export const UserPresenceIndicator = memo(function UserPresenceIndicator({
@@ -106,9 +106,7 @@ export const UserPresenceIndicator = memo(function UserPresenceIndicator({
           )}
         </div>
         {/* Count label */}
-        <span className="text-sm font-medium text-emerald-700">
-          {totalCount} онлайн
-        </span>
+        <span className="text-sm font-medium text-emerald-700">{totalCount} онлайн</span>
       </div>
 
       {/* Hover dropdown with all users */}
@@ -139,9 +137,7 @@ export const UserPresenceIndicator = memo(function UserPresenceIndicator({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-700 truncate">
                     {user.name || 'Пользователь'}
-                    {isCurrent && (
-                      <span className="ml-1.5 text-xs text-slate-400">(вы)</span>
-                    )}
+                    {isCurrent && <span className="ml-1.5 text-xs text-slate-400">(вы)</span>}
                   </p>
                 </div>
                 {/* Online indicator dot */}

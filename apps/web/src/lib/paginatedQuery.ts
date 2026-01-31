@@ -126,11 +126,7 @@ export async function prefetchPages(
     const prevPage = currentPageIndex - i;
     const nextPage = currentPageIndex + i;
 
-    if (
-      prevPage >= 0 &&
-      !state.loadedPages.has(prevPage) &&
-      !state.loadingPages.has(prevPage)
-    ) {
+    if (prevPage >= 0 && !state.loadedPages.has(prevPage) && !state.loadingPages.has(prevPage)) {
       pagesToFetch.push(prevPage);
     }
 

@@ -142,75 +142,79 @@ export async function boardsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get('/boards/:boardId', { 
-    preValidation: [app.authenticate],
-    logLevel: 'silent', // Disable logging to avoid CSV data in response logs
-  }, async (request, reply) => {
-    const userId = request.user!.userId;
-    const parseParams = getBoardParamsSchema.safeParse(request.params);
-    if (!parseParams.success) {
-      return sendProblem(reply, {
-        title: 'Validation error',
-        status: 422,
-        detail: parseParams.error.message,
-        errors: parseParams.error.flatten(),
+  app.get(
+    '/boards/:boardId',
+    {
+      preValidation: [app.authenticate],
+      logLevel: 'silent', // Disable logging to avoid CSV data in response logs
+    },
+    async (request, reply) => {
+      const userId = request.user!.userId;
+      const parseParams = getBoardParamsSchema.safeParse(request.params);
+      if (!parseParams.success) {
+        return sendProblem(reply, {
+          title: 'Validation error',
+          status: 422,
+          detail: parseParams.error.message,
+          errors: parseParams.error.flatten(),
+        });
+      }
+
+      const boardId = parseParams.data.boardId;
+
+      // Check board access
+      const access = await ensureBoardAccess({ userId, boardId });
+      if (!access.ok) {
+        return sendProblem(reply, {
+          title: access.status === 404 ? 'Board not found' : 'Forbidden',
+          status: access.status,
+          detail: access.reason,
+        });
+      }
+
+      const board = await container.prisma.board.findUnique({
+        where: { id: boardId },
+        include: {
+          nodes: true,
+          edges: true,
+        },
       });
-    }
 
-    const boardId = parseParams.data.boardId;
+      if (!board) {
+        return sendProblem(reply, {
+          title: 'Board not found',
+          status: 404,
+          detail: `Board ${boardId} does not exist`,
+        });
+      }
 
-    // Check board access
-    const access = await ensureBoardAccess({ userId, boardId });
-    if (!access.ok) {
-      return sendProblem(reply, {
-        title: access.status === 404 ? 'Board not found' : 'Forbidden',
-        status: access.status,
-        detail: access.reason,
+      return reply.send({
+        board: {
+          id: board.id,
+          workspaceId: board.workspaceId,
+          title: board.title,
+          description: board.description,
+          createdAt: board.createdAt,
+          updatedAt: board.updatedAt,
+        },
+        nodes: board.nodes.map((node) => ({
+          id: node.id,
+          boardId: node.boardId,
+          type: node.type,
+          position: { x: node.positionX, y: node.positionY },
+          payload: node.payload,
+          createdAt: node.createdAt,
+          updatedAt: node.updatedAt,
+        })),
+        edges: board.edges.map((edge) => ({
+          id: edge.id,
+          sourceId: edge.sourceId,
+          targetId: edge.targetId,
+          metadata: edge.metadata,
+        })),
       });
-    }
-
-    const board = await container.prisma.board.findUnique({
-      where: { id: boardId },
-      include: {
-        nodes: true,
-        edges: true,
-      },
-    });
-
-    if (!board) {
-      return sendProblem(reply, {
-        title: 'Board not found',
-        status: 404,
-        detail: `Board ${boardId} does not exist`,
-      });
-    }
-
-    return reply.send({
-      board: {
-        id: board.id,
-        workspaceId: board.workspaceId,
-        title: board.title,
-        description: board.description,
-        createdAt: board.createdAt,
-        updatedAt: board.updatedAt,
-      },
-      nodes: board.nodes.map((node) => ({
-        id: node.id,
-        boardId: node.boardId,
-        type: node.type,
-        position: { x: node.positionX, y: node.positionY },
-        payload: node.payload,
-        createdAt: node.createdAt,
-        updatedAt: node.updatedAt,
-      })),
-      edges: board.edges.map((edge) => ({
-        id: edge.id,
-        sourceId: edge.sourceId,
-        targetId: edge.targetId,
-        metadata: edge.metadata,
-      })),
-    });
-  });
+    },
+  );
 
   app.patch('/boards/:boardId', { preValidation: [app.authenticate] }, async (request, reply) => {
     const userId = request.user!.userId;
@@ -296,7 +300,7 @@ export async function boardsRoutes(app: FastifyInstance) {
 
   app.put(
     '/boards/:boardId/nodes',
-    { 
+    {
       preValidation: [app.authenticate],
       logLevel: 'silent', // Disable logging for this route to avoid CSV data in logs
     },

@@ -34,10 +34,10 @@ export const CanvasDecorations = () => {
       const docHeight = Math.max(
         document.documentElement.scrollHeight,
         document.body.scrollHeight,
-        window.innerHeight
+        window.innerHeight,
       );
       const vw = window.innerWidth;
-      
+
       // Равномерно распределяем узлы по всей высоте документа
       // Узлы размещаем только в крайних зонах (0-15% слева, 85-100% справа), чтобы не перекрывать центральный контент
       // Уменьшенные размеры: горизонтальные прямоугольники (width > height)
@@ -45,7 +45,7 @@ export const CanvasDecorations = () => {
       const rightZoneMin = vw * 0.85; // Минимум 85% от ширины справа
       const maxWidth = 280; // Максимальная ширина узла
       const maxHeight = 100; // Максимальная высота узла
-      
+
       const nodes = [
         // SQL узлы - горизонтальные прямоугольники (слева, уменьшенные)
         {
@@ -55,7 +55,7 @@ export const CanvasDecorations = () => {
           y: docHeight * 0.12,
           width: Math.min(maxWidth, leftZoneMax - 20),
           height: 80,
-          code: 'SELECT u.id, u.name, u.email FROM users u WHERE u.age > 25 AND u.status = \'active\'',
+          code: "SELECT u.id, u.name, u.email FROM users u WHERE u.age > 25 AND u.status = 'active'",
           opacity: 0.7,
           zIndex: 1,
         },
@@ -112,7 +112,7 @@ export const CanvasDecorations = () => {
           y: docHeight * 0.5,
           width: Math.min(maxWidth, leftZoneMax - 20),
           height: 85,
-          code: 'SELECT DATE_TRUNC(\'month\', date) as month, COUNT(*) as transactions, SUM(amount) as total FROM transactions WHERE date > NOW() - INTERVAL \'1 year\' GROUP BY month ORDER BY month',
+          code: "SELECT DATE_TRUNC('month', date) as month, COUNT(*) as transactions, SUM(amount) as total FROM transactions WHERE date > NOW() - INTERVAL '1 year' GROUP BY month ORDER BY month",
           opacity: 0.7,
           zIndex: 1,
         },
@@ -152,7 +152,7 @@ export const CanvasDecorations = () => {
       return nodes;
       return nodes;
     };
-    
+
     const initialNodes = getViewportPositions();
 
     // Создаем связи между узлами (координаты в пикселях)
@@ -218,7 +218,7 @@ export const CanvasDecorations = () => {
 
     setNodes(initialNodes);
     setEdges(initialEdges);
-    
+
     // Обработчик изменения размера окна для пересчета позиций
     const handleResize = () => {
       // Небольшая задержка, чтобы document.documentElement.scrollHeight успел обновиться
@@ -284,7 +284,7 @@ export const CanvasDecorations = () => {
         setEdges(newEdges);
       }, 100);
     };
-    
+
     window.addEventListener('resize', handleResize);
     // Также пересчитываем при изменении высоты документа (например, при загрузке контента)
     const resizeObserver = new ResizeObserver(() => {
@@ -348,9 +348,9 @@ export const CanvasDecorations = () => {
       setNodes(newNodes);
       setEdges(newEdges);
     });
-    
+
     resizeObserver.observe(document.documentElement);
-    
+
     return () => {
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
@@ -394,55 +394,102 @@ export const CanvasDecorations = () => {
   const highlightSQL = (code: string) => {
     // Сначала экранируем HTML
     let highlighted = escapeHtml(code);
-    
+
     // Используем временные маркеры для защиты уже подсвеченных частей
     const markers: string[] = [];
     let markerIndex = 0;
-    
+
     // Функция для создания маркера
     const createMarker = (content: string) => {
       const marker = `__MARKER_${markerIndex++}__`;
       markers.push(content);
       return marker;
     };
-    
+
     // Сначала защищаем строки временными маркерами
     highlighted = highlighted.replace(/'([^']*)'/g, (match) => {
       return createMarker(`<span style="color: #059669;">${escapeHtml(match)}</span>`);
     });
-    
+
     // Затем защищаем числа
     highlighted = highlighted.replace(/\b(\d+)\b/g, (match) => {
       return createMarker(`<span style="color: #dc2626;">${match}</span>`);
     });
-    
+
     // Затем защищаем операторы
     highlighted = highlighted.replace(/(>=|<=|<>|!=|>|<|=)/g, (match) => {
       return createMarker(`<span style="color: #7c3aed;">${match}</span>`);
     });
-    
+
     // Теперь подсвечиваем ключевые слова (они не будут конфликтовать с уже защищенными частями)
     const keywords = [
-      'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS', 'NULL',
-      'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'TABLE', 'ALTER', 'DROP',
-      'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'ON', 'AS', 'GROUP', 'BY', 'ORDER', 'HAVING',
-      'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'DISTINCT', 'UNION', 'ALL', 'INTERSECT', 'EXCEPT',
-      'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'IF', 'EXISTS', 'DATE_TRUNC', 'NOW', 'INTERVAL'
+      'SELECT',
+      'FROM',
+      'WHERE',
+      'AND',
+      'OR',
+      'NOT',
+      'IN',
+      'LIKE',
+      'BETWEEN',
+      'IS',
+      'NULL',
+      'INSERT',
+      'INTO',
+      'VALUES',
+      'UPDATE',
+      'SET',
+      'DELETE',
+      'CREATE',
+      'TABLE',
+      'ALTER',
+      'DROP',
+      'JOIN',
+      'INNER',
+      'LEFT',
+      'RIGHT',
+      'FULL',
+      'ON',
+      'AS',
+      'GROUP',
+      'BY',
+      'ORDER',
+      'HAVING',
+      'COUNT',
+      'SUM',
+      'AVG',
+      'MAX',
+      'MIN',
+      'DISTINCT',
+      'UNION',
+      'ALL',
+      'INTERSECT',
+      'EXCEPT',
+      'CASE',
+      'WHEN',
+      'THEN',
+      'ELSE',
+      'END',
+      'IF',
+      'EXISTS',
+      'DATE_TRUNC',
+      'NOW',
+      'INTERVAL',
     ];
-    
+
     const sortedKeywords = keywords.sort((a, b) => b.length - a.length);
-    sortedKeywords.forEach(keyword => {
+    sortedKeywords.forEach((keyword) => {
       const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
       highlighted = highlighted.replace(regex, (match) => {
         return `<span style="color: #2563eb; font-weight: 600;">${match}</span>`;
       });
     });
-    
+
     // Восстанавливаем маркеры обратно в HTML
     markers.forEach((content, index) => {
       highlighted = highlighted.replace(`__MARKER_${index}__`, content);
     });
-    
+
     return highlighted;
   };
 
@@ -450,11 +497,11 @@ export const CanvasDecorations = () => {
   const highlightPython = (code: string) => {
     // Сначала экранируем HTML
     let highlighted = escapeHtml(code);
-    
+
     // Используем временные маркеры для защиты уже подсвеченных частей
     const markers: string[] = [];
     let markerIndex = 0;
-    
+
     // Функция для создания маркера
     const createMarker = (content: string) => {
       const marker = `__MARKER_${markerIndex}__`;
@@ -462,12 +509,12 @@ export const CanvasDecorations = () => {
       markerIndex++;
       return marker;
     };
-    
+
     // Сначала защищаем строки временными маркерами (важно - до других замен)
     highlighted = highlighted.replace(/(["'])(?:(?=(\\?))\2.)*?\1/g, (match) => {
       return createMarker(`<span style="color: #059669;">${match}</span>`);
     });
-    
+
     // Затем защищаем числа
     highlighted = highlighted.replace(/\b(\d+\.?\d*)\b/g, (match) => {
       // Проверяем, что это не часть уже защищенной строки
@@ -476,17 +523,46 @@ export const CanvasDecorations = () => {
       }
       return match;
     });
-    
+
     // Теперь подсвечиваем ключевые слова (они не будут конфликтовать с маркерами)
     const keywords = [
-      'import', 'from', 'as', 'def', 'class', 'return', 'if', 'elif', 'else', 'for', 'while',
-      'in', 'and', 'or', 'not', 'is', 'None', 'True', 'False', 'try', 'except', 'finally',
-      'with', 'pass', 'break', 'continue', 'lambda', 'yield', 'raise', 'assert',
-      'del', 'global', 'nonlocal'
+      'import',
+      'from',
+      'as',
+      'def',
+      'class',
+      'return',
+      'if',
+      'elif',
+      'else',
+      'for',
+      'while',
+      'in',
+      'and',
+      'or',
+      'not',
+      'is',
+      'None',
+      'True',
+      'False',
+      'try',
+      'except',
+      'finally',
+      'with',
+      'pass',
+      'break',
+      'continue',
+      'lambda',
+      'yield',
+      'raise',
+      'assert',
+      'del',
+      'global',
+      'nonlocal',
     ];
-    
+
     const sortedKeywords = keywords.sort((a, b) => b.length - a.length);
-    sortedKeywords.forEach(keyword => {
+    sortedKeywords.forEach((keyword) => {
       const regex = new RegExp(`\\b${keyword}\\b`, 'g');
       highlighted = highlighted.replace(regex, (match) => {
         // Проверяем, что это не часть маркера
@@ -496,7 +572,7 @@ export const CanvasDecorations = () => {
         return match;
       });
     });
-    
+
     // Подсвечиваем функции и методы (после ключевых слов, но до восстановления маркеров)
     highlighted = highlighted.replace(/(\w+)\(/g, (match, funcName) => {
       // Пропускаем если это ключевое слово или часть маркера
@@ -505,7 +581,7 @@ export const CanvasDecorations = () => {
       }
       return `<span style="color: #7c3aed;">${funcName}</span>(`;
     });
-    
+
     // Подсвечиваем атрибуты (после функций)
     highlighted = highlighted.replace(/\.(\w+)/g, (match, attrName) => {
       // Пропускаем если часть маркера или уже подсвечено
@@ -514,12 +590,12 @@ export const CanvasDecorations = () => {
       }
       return `.<span style="color: #ea580c;">${attrName}</span>`;
     });
-    
+
     // Восстанавливаем маркеры обратно в HTML (в обратном порядке, чтобы не конфликтовать)
     for (let i = markers.length - 1; i >= 0; i--) {
       highlighted = highlighted.replace(`__MARKER_${i}__`, markers[i]);
     }
-    
+
     return highlighted;
   };
 
@@ -549,18 +625,8 @@ export const CanvasDecorations = () => {
         }}
       >
         <defs>
-          <marker
-            id="arrowhead"
-            markerWidth="10"
-            markerHeight="10"
-            refX="9"
-            refY="3"
-            orient="auto"
-          >
-            <polygon
-              points="0 0, 10 3, 0 6"
-              fill="rgba(148, 163, 184, 0.3)"
-            />
+          <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <polygon points="0 0, 10 3, 0 6" fill="rgba(148, 163, 184, 0.3)" />
           </marker>
         </defs>
         {edges.map((edge) => (

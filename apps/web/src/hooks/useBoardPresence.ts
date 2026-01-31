@@ -9,7 +9,7 @@ import type { PresenceUser } from '../components/UserPresenceIndicator';
  */
 export function useBoardPresence(
   cursorsMap: YMapType<Cursor> | null,
-  currentClientId?: string
+  currentClientId?: string,
 ): PresenceUser[] {
   const [users, setUsers] = useState<PresenceUser[]>([]);
 

@@ -12,7 +12,7 @@ type UndoRedoControlsProps = {
 
 /**
  * Undo/Redo controls for the board header
- * 
+ *
  * Key features:
  * - Per-user undo/redo (only undoes your own changes)
  * - Positioned in the top area of the board

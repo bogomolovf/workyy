@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { type Node, type Edge, type OnNodesChange, applyNodeChanges, getConnectedEdges } from 'reactflow';
+import {
+  type Node,
+  type Edge,
+  type OnNodesChange,
+  applyNodeChanges,
+  getConnectedEdges,
+} from 'reactflow';
 import type { Map as YMapType, Doc } from 'yjs';
 import { undoState } from '../lib/yjs/undoState';
 
@@ -14,14 +20,14 @@ export type CanvasNode = {
 /**
  * Hook for syncing nodes state through Yjs YMap
  * Based on collaborative-11-pro-example pattern
- * 
+ *
  * Updated to use transactions with clientId as origin for UndoManager tracking
  */
 export function useNodesStateSynced(
   nodesMap: YMapType<unknown>,
   edgesMap: YMapType<unknown>,
   ydoc?: Doc | null,
-  clientId?: string | null
+  clientId?: string | null,
 ): [Node[], React.Dispatch<React.SetStateAction<Node[]>>, OnNodesChange] {
   const [nodes, setNodes] = useState<Node[]>([]);
 
@@ -31,9 +37,7 @@ export function useNodesStateSynced(
         const seen = new Set<string>();
         const currentNodes = Array.from(nodesMap.values()) as Node[];
         const next =
-          typeof nodesOrUpdater === 'function'
-            ? nodesOrUpdater(currentNodes)
-            : nodesOrUpdater;
+          typeof nodesOrUpdater === 'function' ? nodesOrUpdater(currentNodes) : nodesOrUpdater;
 
         for (const node of next) {
           seen.add(node.id);
@@ -54,7 +58,7 @@ export function useNodesStateSynced(
         doUpdate();
       }
     },
-    [nodesMap, ydoc, clientId]
+    [nodesMap, ydoc, clientId],
   );
 
   // The onNodesChange callback updates nodesMap.
@@ -89,7 +93,7 @@ export function useNodesStateSynced(
 
       // Skip transaction wrapping if undo/redo is in progress to prevent double-tracking
       const isUndoing = undoState.isUndoing;
-      
+
       // Wrap in transaction with clientId as origin for UndoManager tracking
       // But NOT during undo/redo operations!
       if (ydoc && clientId && !isUndoing) {
@@ -98,7 +102,7 @@ export function useNodesStateSynced(
         doUpdate();
       }
     },
-    [nodesMap, edgesMap, ydoc, clientId]
+    [nodesMap, edgesMap, ydoc, clientId],
   );
 
   // Observe the nodesMap and update the nodes state whenever the map changes.
@@ -115,4 +119,3 @@ export function useNodesStateSynced(
 
   return [nodes, setNodesSynced, onNodesChanges];
 }
-

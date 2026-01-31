@@ -65,11 +65,14 @@ export const Header = () => {
           >
             {/* Logo - строго слева */}
             <div className="pl-4 sm:pl-6 lg:pl-8 flex-shrink-0">
-              <Link to={getPath('/home')} className="text-2xl font-bold text-wy-primary" style={{ letterSpacing: '-0.05em', textTransform: 'lowercase' }}>
+              <Link
+                to={getPath('/home')}
+                className="text-2xl font-bold text-wy-primary"
+                style={{ letterSpacing: '-0.05em', textTransform: 'lowercase' }}
+              >
                 workyy
               </Link>
             </div>
-
 
             {/* Desktop Actions - строго справа у края */}
             <div className="flex items-center flex-shrink-0 pr-4 sm:pr-6 lg:pr-8">
