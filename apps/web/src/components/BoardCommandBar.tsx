@@ -6,6 +6,8 @@ import {
   Cursor,
   Cylinder,
   Database,
+  Eraser,
+  FileArrowUp,
   Microphone,
   NotePencil,
   PencilSimple,
@@ -23,7 +25,7 @@ import type { NodeStatus } from '../state/executionStore';
 import type { ShapeType } from './flowNodes/ShapeNode';
 import { ShapePalette } from './ShapePalette';
 
-export type CanvasTool = 'select' | 'note' | 'pen' | 'text' | 'shape' | 'voice';
+export type CanvasTool = 'hand' | 'select' | 'note' | 'pen' | 'text' | 'shape' | 'eraser' | 'voice';
 
 type BoardCommandBarProps = {
   currentTool: CanvasTool;
