@@ -65,7 +65,6 @@ import { VoiceNode } from './flowNodes/VoiceNode';
 import { ImageNode } from './flowNodes/ImageNode';
 import { VideoNode } from './flowNodes/VideoNode';
 import { DocumentNode } from './flowNodes/DocumentNode';
-import CustomConnectionLine from './flowEdges/CustomConnectionLine';
 import CollaborativeCursors from './CollaborativeCursors';
 import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
 import { EditingPresenceProvider } from '../context/EditingPresenceContext';
