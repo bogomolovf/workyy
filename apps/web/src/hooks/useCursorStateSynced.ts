@@ -40,35 +40,45 @@ export function useCursorStateSynced(
 
   // CRITICAL FIX: Remove old cursor entries that belong to this user but have different clientId
   // This prevents duplicate cursors after page refresh when Yjs creates a new clientId
+  // 
+  // IMPORTANT: This effect should only run on INITIALIZATION or when clientId changes,
+  // NOT on every cursorsMap change. Stale cursor cleanup is handled by flush() with MAX_IDLE_TIME.
+  const hasInitializedRef = useRef(false);
+  
   useEffect(() => {
-    const now = Date.now();
-    const staleThreshold = 5000; // 5 seconds
-    
-    for (const [id, cursor] of cursorsMap) {
-      // Remove cursor if:
-      // 1. It has a different clientId AND
-      // 2. It belongs to the same user (same userId or userName) OR it's stale (older than 5 seconds)
-      if (id !== clientId) {
-        const isSameUser = 
-          (userInfo?.userId && cursor.userId === userInfo.userId) ||
-          (userInfo?.userName && cursor.userName === userInfo.userName);
-        const isStale = now - cursor.timestamp > staleThreshold;
-        
-        if (isSameUser || isStale) {
-          cursorsMap.delete(id);
-        }
-      }
+    // Only run cleanup logic once on initialization or when clientId changes
+    if (hasInitializedRef.current && previousClientIdRef.current === clientId) {
+      return;
     }
     
-    // CRITICAL FIX: Remove old cursor entry when clientId changes (e.g., after page refresh)
+    // Remove old cursor entry when clientId changes (e.g., after page refresh)
     // This prevents duplicate cursors from appearing after page refresh
     if (previousClientIdRef.current !== null && previousClientIdRef.current !== clientId) {
-      // Delete the old cursor entry from cursorsMap to prevent duplication
       if (cursorsMap.has(previousClientIdRef.current)) {
         cursorsMap.delete(previousClientIdRef.current);
       }
     }
+    
+    // On first initialization, remove cursors that belong to the same user but have different clientId
+    // This cleans up stale cursors from previous sessions of the same user
+    if (!hasInitializedRef.current) {
+      for (const [id, cursor] of cursorsMap) {
+        if (id !== clientId) {
+          const isSameUser = 
+            (userInfo?.userId && cursor.userId === userInfo.userId) ||
+            (userInfo?.userName && cursor.userName === userInfo.userName);
+          
+          // Only remove if it's the same user (not other users' cursors)
+          // Stale cursor cleanup is handled separately by flush() with MAX_IDLE_TIME
+          if (isSameUser) {
+            cursorsMap.delete(id);
+          }
+        }
+      }
+    }
+    
     previousClientIdRef.current = clientId;
+    hasInitializedRef.current = true;
   }, [clientId, cursorsMap, userInfo]);
 
   // Flush any cursors that have gone stale.
@@ -95,6 +105,12 @@ export function useCursorStateSynced(
         return;
       }
 
+      // CRITICAL FIX: Capture event coordinates BEFORE any async operation
+      // React synthetic events are pooled and reused, so clientX/clientY may be
+      // undefined or reset by the time requestAnimationFrame callback executes
+      const clientX = event.clientX;
+      const clientY = event.clientY;
+
       const now = Date.now();
       
       // Optimized throttle: use requestAnimationFrame for smooth 60 FPS updates
@@ -108,8 +124,8 @@ export function useCursorStateSynced(
         // Schedule update for next animation frame (synchronized with browser rendering)
         throttleTimerRef.current = window.requestAnimationFrame(() => {
           const position = screenToFlowPosition({
-            x: event.clientX,
-            y: event.clientY,
+            x: clientX,
+            y: clientY,
           });
 
           const cursorData: Cursor = {
@@ -141,8 +157,8 @@ export function useCursorStateSynced(
         
         throttleTimerRef.current = window.requestAnimationFrame(() => {
           const position = screenToFlowPosition({
-            x: event.clientX,
-            y: event.clientY,
+            x: clientX,
+            y: clientY,
           });
 
           const cursorData: Cursor = {

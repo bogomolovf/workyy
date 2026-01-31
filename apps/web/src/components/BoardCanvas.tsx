@@ -65,6 +65,11 @@ import { VoiceNode } from './flowNodes/VoiceNode';
 import { ImageNode } from './flowNodes/ImageNode';
 import { VideoNode } from './flowNodes/VideoNode';
 import { DocumentNode } from './flowNodes/DocumentNode';
+import CustomConnectionLine from './flowEdges/CustomConnectionLine';
+import CollaborativeCursors from './CollaborativeCursors';
+import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
+import { EditingPresenceProvider } from '../context/EditingPresenceContext';
+import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
   ssr: false,
@@ -122,6 +127,7 @@ type BoardCanvasProps = {
   yjsOnNodesChange?: (changes: NodeChange[]) => void; // Direct Yjs handler for ReactFlow format
   yjsOnEdgesChange?: (changes: EdgeChange[]) => void; // Direct Yjs handler for ReactFlow format
   cursorsMap?: any; // YMap for cursors (from Yjs)
+  editingMap?: any; // YMap for editing presence (from Yjs)
   clientId?: string; // Client ID for cursor tracking
   userInfo?: { userId?: string; userName?: string }; // User information for cursor display
 };
@@ -625,6 +631,7 @@ export function BoardCanvas({
   yjsOnNodesChange,
   yjsOnEdgesChange,
   cursorsMap,
+  editingMap,
   clientId,
 }: BoardCanvasProps) {
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
@@ -648,26 +655,32 @@ export function BoardCanvas({
 
   return (
     <ReactFlowProvider>
-      <div className="flex h-full w-full flex-1 min-h-0">
-        <InnerBoardCanvas
-          board={board}
-          nodes={nodes}
-          edges={edges}
-          executionEntries={executionEntries}
-          onCodeChange={onCodeChange}
-          onRunNode={onRunNode}
-          onRunNodeFull={onRunNodeFull}
-          onRunDownstream={onRunDownstream}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={onSelectNode}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          yjsOnNodesChange={yjsOnNodesChange}
-          yjsOnEdgesChange={yjsOnEdgesChange}
-          cursorsMap={cursorsMap}
-          clientId={clientId}
-          userInfo={board.userInfo}
-        />
+      <EditingPresenceProvider
+        editingMap={editingMap}
+        clientId={clientId}
+        userInfo={board.userInfo ? { ...board.userInfo, color: '#6366f1' } : undefined}
+      >
+        <div className="flex h-full w-full flex-1 min-h-0">
+          <InnerBoardCanvas
+            board={board}
+            nodes={nodes}
+            edges={edges}
+            executionEntries={executionEntries}
+            onCodeChange={onCodeChange}
+            onRunNode={onRunNode}
+            onRunNodeFull={onRunNodeFull}
+            onRunDownstream={onRunDownstream}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={onSelectNode}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            yjsOnNodesChange={yjsOnNodesChange}
+            yjsOnEdgesChange={yjsOnEdgesChange}
+            cursorsMap={cursorsMap}
+            editingMap={editingMap}
+            clientId={clientId}
+            userInfo={board.userInfo}
+          />
         {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
         <div
           className="flex-none transition-all duration-200"
@@ -729,6 +742,7 @@ export function BoardCanvas({
           ) : null}
         </div>
       </div>
+      </EditingPresenceProvider>
     </ReactFlowProvider>
   );
 }
@@ -751,6 +765,7 @@ function InnerBoardCanvas({
   yjsOnNodesChange,
   yjsOnEdgesChange,
   cursorsMap,
+  editingMap,
   clientId,
   userInfo,
 }: InnerProps) {
@@ -786,6 +801,9 @@ function InnerBoardCanvas({
   const [cursors, onMouseMove] = cursorsMap && clientId
     ? useCursorStateSynced(cursorsMap, clientId, userInfo, { showOwnCursor })
     : ([[], () => {}] as const);
+
+  // Editing presence is provided via EditingPresenceProvider context
+  // Individual nodes use useNodeEditing hook to access editing state
 
   // Debug logging for cursor synchronization
   useEffect(() => {
@@ -2519,6 +2537,7 @@ function InnerBoardCanvas({
                   },
                 }));
 
+                setLocalNodes((prev) => {
                   const next = prev.map((n) =>
                     n.id === change.id && n.type === 'text'
                       ? {

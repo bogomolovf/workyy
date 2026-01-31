@@ -28,7 +28,7 @@ export function useBoardCollaboration(
   const ydoc = useMemo(() => getBoardYdoc(boardId), [boardId]);
   const provider = useMemo(() => getBoardProvider(boardId), [boardId]);
 
-  // Get Yjs maps for nodes, edges, cursors, and datasets
+  // Get Yjs maps for nodes, edges, cursors, datasets, and editing presence
   // CRITICAL: All clients must use the same map names to share data
   // These maps are automatically synced through Yjs when all clients
   // connect to the same Y.Doc (which is ensured by using the same boardId as docName)
@@ -36,6 +36,8 @@ export function useBoardCollaboration(
   const edgesMap = useMemo(() => ydoc.getMap('edges'), [ydoc]);
   const cursorsMap = useMemo(() => ydoc.getMap('cursors'), [ydoc]);
   const datasetsMap = useMemo(() => ydoc.getMap('datasets'), [ydoc]);
+  // Map for tracking which users are editing which nodes (key: clientId:nodeId)
+  const editingMap = useMemo(() => ydoc.getMap('editing'), [ydoc]);
 
   // Debug logging for cursorsMap synchronization
   // CRITICAL: This observer helps verify that cursorsMap changes from other clients are received
@@ -280,6 +282,7 @@ export function useBoardCollaboration(
     // Yjs maps and client ID for cursor tracking and UndoManager
     cursorsMap,
     datasetsMap,
+    editingMap,  // For tracking who is editing which node
     nodesMap,  // Exported for UndoManager
     edgesMap,  // Exported for UndoManager
     clientId,

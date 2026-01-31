@@ -119,6 +119,15 @@ export function FreehandOverlay({ onAddPenNode, onUpdatePenNode, yjsOnNodesChang
     // No synchronization here - line is visible only to the drawing user until pointerUp
   }, [onCursorMove]);
 
+  // CRITICAL FIX: Always sync cursor position, even when not drawing
+  // This ensures cursor is visible to other users in pen mode
+  const handlePointerMoveForCursor = useCallback((e: PointerEvent) => {
+    // Always sync cursor position so other users can see where we are
+    if (onCursorMove) {
+      onCursorMove(e as unknown as React.PointerEvent<HTMLDivElement>);
+    }
+  }, [onCursorMove]);
+
   const handlePointerMove = useCallback((e: PointerEvent) => {
     // Sync cursor position during drawing so other users can see where we're drawing
     // This is called BEFORE stopPropagation to ensure cursor syncs even during drawing
@@ -286,7 +295,7 @@ export function FreehandOverlay({ onAddPenNode, onUpdatePenNode, yjsOnNodesChang
       ref={overlayRef}
       className="freehand-overlay"
       onPointerDown={handlePointerDown}
-      onPointerMove={points.length > 0 ? handlePointerMove : undefined}
+      onPointerMove={points.length > 0 ? handlePointerMove : handlePointerMoveForCursor}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       style={{

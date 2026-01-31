@@ -1,10 +1,13 @@
 import dynamic from 'next/dynamic';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { NodeProps } from 'reactflow';
 import PlotlyPreview from './PlotlyPreview';
 import { InteractiveResultTable } from '../InteractiveResultTable';
 import { useExecutionStore } from '../../state/executionStore';
 import type { NodeStatus } from '../../state/executionStore';
+import { useNodeEditing } from '../../context/EditingPresenceContext';
+import { EditingIndicator } from '../EditingIndicator';
+import type { editor } from 'monaco-editor';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -62,8 +65,54 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
   const shouldShowError = Boolean(error) && !hiddenOutputs.error;
   const shouldShowWarnings = hasWarnings && !hiddenOutputs.warnings;
 
+  // Use editing presence to show who is editing this Python node
+  const {
+    otherEditors,
+    isBeingEdited,
+    onFocus: handleEditingFocus,
+    onChange: handleEditingChange,
+    onBlur: handleEditingBlur,
+  } = useNodeEditing(data.nodeId);
+
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+
+  // Handle code change and update editing presence
+  const handleCodeChange = useCallback(
+    (value: string | undefined) => {
+      data.onChangeCode(value ?? '');
+      handleEditingChange();
+    },
+    [data.onChangeCode, handleEditingChange]
+  );
+
+  // Handle Monaco editor mount to set up focus/blur listeners
+  const handleEditorMount = useCallback(
+    (editor: editor.IStandaloneCodeEditor) => {
+      editorRef.current = editor;
+      
+      // Track focus
+      editor.onDidFocusEditorWidget(() => {
+        handleEditingFocus();
+      });
+      
+      // Track blur
+      editor.onDidBlurEditorWidget(() => {
+        handleEditingBlur();
+      });
+    },
+    [handleEditingFocus, handleEditingBlur]
+  );
+
   return (
-    <div className="w-[380px] rounded-2xl border border-slate-700 bg-slate-900/80 shadow-lg">
+    <div
+      className="w-[380px] rounded-2xl border bg-slate-900/80 shadow-lg relative"
+      style={{
+        borderColor: isBeingEdited ? (otherEditors[0]?.color || '#6366f1') : '#334155',
+        borderWidth: isBeingEdited ? 2 : 1,
+      }}
+    >
+      {/* Show editing indicator when others are editing this Python node */}
+      {isBeingEdited && <EditingIndicator editors={otherEditors} position="top-right" />}
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           Python Node
@@ -84,7 +133,8 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
         <MonacoEditor
           language="python"
           value={code}
-          onChange={(value) => data.onChangeCode(value ?? '')}
+          onChange={handleCodeChange}
+          onMount={handleEditorMount}
           theme="vs-dark"
           options={{
             minimap: { enabled: false },

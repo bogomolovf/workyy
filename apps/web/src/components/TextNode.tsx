@@ -2,6 +2,8 @@ import { useCallback, useRef, useEffect } from 'react';
 import { NodeResizer, type NodeProps } from 'reactflow';
 import { RichTextEditor, type RichTextEditorRef } from './RichTextEditor';
 import { TextToolbar } from './TextToolbar';
+import { useNodeEditing } from '../context/EditingPresenceContext';
+import { EditingIndicator } from './EditingIndicator';
 
 type TextData = {
   nodeId: string;
@@ -59,6 +61,15 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
   const resizeObserverRef = useRef<ResizeObserver | null>(null); // Ref для ResizeObserver
   const isUpdatingSizeRef = useRef(false); // Флаг для предотвращения одновременных обновлений размеров
   const pendingSizeUpdateRef = useRef<NodeJS.Timeout | null>(null); // Таймер для debounce обновлений размеров
+
+  // Use editing presence to show who is editing this text node
+  const {
+    otherEditors,
+    isBeingEdited,
+    onFocus: handleEditingFocus,
+    onChange: handleEditingChange,
+    onBlur: handleEditingBlur,
+  } = useNodeEditing(id);
 
   // Инициализируем контент: если есть richContent, используем его, иначе plain text
   // Используем <p><br></p> для пустого контента, чтобы избежать ошибки "Empty text nodes are not allowed"
@@ -155,6 +166,9 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
         text: content.text, // подстраховка
       });
 
+      // Update editing presence timestamp
+      handleEditingChange();
+
       // Временно отключаем ResizeObserver, чтобы избежать конфликта обновлений
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
@@ -186,7 +200,7 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
         });
       });
     },
-    [data, id, updateNodeSize],
+    [data, id, updateNodeSize, handleEditingChange],
   );
 
   const handleFontSizeChange = useCallback(
@@ -417,8 +431,14 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
         minWidth: 120,
         minHeight: 40,
         boxSizing: 'border-box',
+        // Add visual indicator border when others are editing
+        boxShadow: isBeingEdited ? `0 0 0 2px ${otherEditors[0]?.color || '#6366f1'}` : undefined,
       }}
+      onFocus={handleEditingFocus}
+      onBlur={handleEditingBlur}
     >
+      {/* Show editing indicator when others are editing this text */}
+      {isBeingEdited && <EditingIndicator editors={otherEditors} position="top-right" />}
       {selected && (
         <TextToolbar
           fontSize={fontSize}

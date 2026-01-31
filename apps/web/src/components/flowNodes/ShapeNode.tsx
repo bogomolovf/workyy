@@ -6,6 +6,8 @@ import { RichTextEditor, type RichTextEditorRef } from '../RichTextEditor';
 import { ShapeToolbar } from '../shape/ShapeToolbar';
 import { StickyToolbar } from '../StickyToolbar';
 import { TextToolbar } from '../TextToolbar';
+import { useNodeEditing } from '../../context/EditingPresenceContext';
+import { EditingIndicator } from '../EditingIndicator';
 
 // Утилита для генерации SVG path из точек (как в React Flow Pro)
 function generatePath(points: number[][]): string {
@@ -144,6 +146,18 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   const finalWidth = nodeWidth > 0 ? nodeWidth : (data?.width ?? 160);
   const finalHeight = nodeHeight > 0 ? nodeHeight : (data?.height ?? 96);
 
+  // Проверяем, является ли это заметкой (есть текст или callbacks)
+  const isNote = Boolean(text !== undefined || data?.onChangeText);
+
+  // Use editing presence to show who is editing this note
+  const {
+    otherEditors,
+    isBeingEdited,
+    onFocus: handleEditingFocus,
+    onChange: handleEditingChange,
+    onBlur: handleEditingBlur,
+  } = useNodeEditing(id);
+
   // Refs для textarea (если это заметка)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -175,8 +189,10 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   const handleTextChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       data?.onChangeText?.(id, e.target.value);
+      // Update editing presence timestamp on each keystroke
+      handleEditingChange();
     },
-    [data, id],
+    [data, id, handleEditingChange],
   );
 
   const handleColorChange = useCallback(
@@ -663,65 +679,73 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
         </div>
       )}
       {isNote && (
-        <textarea
-          ref={textareaRef}
-          value={text ?? ''}
-          onChange={handleTextChange}
-          placeholder="Sticky note..."
-          className="absolute inset-0 w-full h-full resize-none bg-transparent text-slate-800 outline-none p-2 cursor-pointer"
-          style={{
-            boxSizing: 'border-box',
-            fontSize: `${fontSize}px`,
-            fontFamily: fontFamily,
-            fontWeight: isBold ? 'bold' : 'normal',
-            fontStyle: isItalic ? 'italic' : 'normal',
-            lineHeight: '1.5',
-            borderRadius: 'inherit',
-            pointerEvents: selected ? 'auto' : 'none',
-          }}
-          onMouseDown={(e) => {
-            const textarea = e.target as HTMLTextAreaElement;
-            const isEmpty = !text || text.trim().length === 0;
-            const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
+        <>
+          {/* Show editing indicator when others are editing this note */}
+          {isBeingEdited && <EditingIndicator editors={otherEditors} position="top-right" />}
+          <textarea
+            ref={textareaRef}
+            value={text ?? ''}
+            onChange={handleTextChange}
+            onFocus={handleEditingFocus}
+            onBlur={handleEditingBlur}
+            placeholder="Sticky note..."
+            className="absolute inset-0 w-full h-full resize-none bg-transparent text-slate-800 outline-none p-2 cursor-pointer"
+            style={{
+              boxSizing: 'border-box',
+              fontSize: `${fontSize}px`,
+              fontFamily: fontFamily,
+              fontWeight: isBold ? 'bold' : 'normal',
+              fontStyle: isItalic ? 'italic' : 'normal',
+              lineHeight: '1.5',
+              borderRadius: 'inherit',
+              pointerEvents: selected ? 'auto' : 'none',
+              // Add visual indicator border when others are editing
+              boxShadow: isBeingEdited ? `0 0 0 2px ${otherEditors[0]?.color || '#6366f1'}` : undefined,
+            }}
+            onMouseDown={(e) => {
+              const textarea = e.target as HTMLTextAreaElement;
+              const isEmpty = !text || text.trim().length === 0;
+              const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
 
-            // Если заметка пустая, разрешаем перетаскивание (не останавливаем propagation)
-            if (isEmpty && !hasSelection) {
-              return; // Не останавливаем propagation - React Flow обработает перетаскивание
-            }
+              // Если заметка пустая, разрешаем перетаскивание (не останавливаем propagation)
+              if (isEmpty && !hasSelection) {
+                return; // Не останавливаем propagation - React Flow обработает перетаскивание
+              }
 
-            // Если есть выделение текста, останавливаем для работы с текстом
-            if (hasSelection) {
+              // Если есть выделение текста, останавливаем для работы с текстом
+              if (hasSelection) {
+                e.stopPropagation();
+                return;
+              }
+
+              // Если клик на тексте, останавливаем для редактирования
               e.stopPropagation();
-              return;
-            }
+            }}
+            onPointerDown={(e) => {
+              const textarea = e.target as HTMLTextAreaElement;
+              const isEmpty = !text || text.trim().length === 0;
+              const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
 
-            // Если клик на тексте, останавливаем для редактирования
-            e.stopPropagation();
-          }}
-          onPointerDown={(e) => {
-            const textarea = e.target as HTMLTextAreaElement;
-            const isEmpty = !text || text.trim().length === 0;
-            const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
+              if (isEmpty && !hasSelection) {
+                return;
+              }
 
-            if (isEmpty && !hasSelection) {
-              return;
-            }
+              if (hasSelection) {
+                e.stopPropagation();
+                return;
+              }
 
-            if (hasSelection) {
               e.stopPropagation();
-              return;
-            }
-
-            e.stopPropagation();
-          }}
-          onDragStart={(e) => {
-            // Предотвращаем drag только если это выделение текста
-            const textarea = e.target as HTMLTextAreaElement;
-            if (textarea.selectionStart !== textarea.selectionEnd) {
-              e.preventDefault();
-            }
-          }}
-        />
+            }}
+            onDragStart={(e) => {
+              // Предотвращаем drag только если это выделение текста
+              const textarea = e.target as HTMLTextAreaElement;
+              if (textarea.selectionStart !== textarea.selectionEnd) {
+                e.preventDefault();
+              }
+            }}
+          />
+        </>
       )}
     </div>
   );

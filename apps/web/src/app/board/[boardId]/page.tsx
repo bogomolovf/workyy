@@ -1838,6 +1838,7 @@ function BoardPageContent({ params }: BoardPageProps) {
               yjsOnNodesChange={collaboration.onNodesChange}
               yjsOnEdgesChange={collaboration.onEdgesChange}
               cursorsMap={collaboration.cursorsMap}
+              editingMap={collaboration.editingMap}
               clientId={collaboration.clientId}
             />
           </div>
