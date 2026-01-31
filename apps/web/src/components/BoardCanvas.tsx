@@ -2014,7 +2014,6 @@ function InnerBoardCanvas({
                               : {
                                   nodeId: node.id,
                                   nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
-                                  execution: entry,
                                   onCodeChange: (code: string) => onCodeChange(node.id, code),
                                   onRun: () => onRunNode(node.id),
                                   onRunDownstream: () => onRunDownstream(node.id),
