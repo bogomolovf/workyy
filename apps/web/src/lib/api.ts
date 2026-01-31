@@ -17,9 +17,11 @@ export type BoardResponse = {
       | 'text'
       | 'shape'
       | 'image'
+      | 'video'
+      | 'document'
       | 'pen'
       | 'database'
-      | 'csv';
+      | 'voice';
     position: { x: number; y: number };
     payload?: Record<string, unknown>;
   }>;
@@ -146,9 +148,11 @@ export type PersistedNode = {
     | 'text'
     | 'shape'
     | 'image'
+    | 'video'
+    | 'document'
     | 'pen'
     | 'database'
-    | 'csv';
+    | 'voice';
   position: { x: number; y: number };
   payload?: Record<string, unknown>;
   boardId?: string;
@@ -331,74 +335,29 @@ export async function fetchCurrentUser() {
   return res.json();
 }
 
-// Workspace members API functions
+// File upload API
 
-export type WorkspaceMember = {
-  userId: string;
-  email: string;
-  name: string | null;
-  avatarUrl: string | null;
-  role: 'owner' | 'editor' | 'viewer';
-  addedAt: string;
+export type UploadedFile = {
+  id: string;
+  filename: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  url: string;
 };
 
-export async function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
-  if (!isValidUuid(workspaceId)) {
-    throw new Error('invalid-workspace-id');
-  }
+export async function uploadFile(boardId: string, file: File): Promise<UploadedFile> {
+  const formData = new FormData();
+  formData.append('file', file);
 
-  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
-    headers: { Accept: 'application/json' },
-    credentials: 'include',
-  });
-
-  if (!res.ok) {
-    let detail = 'Failed to load workspace members';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
-
-  const data = await res.json();
-  return Array.isArray(data.members) ? (data.members as WorkspaceMember[]) : [];
-}
-
-export type AddWorkspaceMemberInput = {
-  email: string;
-  role?: 'owner' | 'editor' | 'viewer';
-};
-
-export type AddedWorkspaceMember = {
-  userId: string;
-  email: string;
-  name: string | null;
-  role: 'owner' | 'editor' | 'viewer';
-};
-
-export async function addWorkspaceMember(
-  workspaceId: string,
-  payload: AddWorkspaceMemberInput,
-): Promise<AddedWorkspaceMember> {
-  if (!isValidUuid(workspaceId)) {
-    throw new Error('invalid-workspace-id');
-  }
-
-  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
+  const res = await fetch(`${API_URL}/api/files/upload?boardId=${encodeURIComponent(boardId)}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
     credentials: 'include',
-    body: JSON.stringify(payload),
+    body: formData,
   });
 
   if (!res.ok) {
-    let detail = 'Failed to add member';
+    let detail = 'Failed to upload file';
     try {
       const problem = await res.json();
       detail = problem?.detail ?? detail;
@@ -411,27 +370,14 @@ export async function addWorkspaceMember(
   return res.json();
 }
 
-export async function removeWorkspaceMember(
-  workspaceId: string,
-  memberUserId: string,
-): Promise<void> {
-  if (!isValidUuid(workspaceId) || !isValidUuid(memberUserId)) {
-    throw new Error('invalid-id');
-  }
+export async function deleteFile(fileId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/files/${fileId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
 
-  const res = await fetch(
-    `${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`,
-    {
-      method: 'DELETE',
-      headers: {
-        Accept: 'application/json',
-      },
-      credentials: 'include',
-    },
-  );
-
-  if (!res.ok) {
-    let detail = 'Failed to remove member';
+  if (!res.ok && res.status !== 204) {
+    let detail = 'Failed to delete file';
     try {
       const problem = await res.json();
       detail = problem?.detail ?? detail;
@@ -442,42 +388,13 @@ export async function removeWorkspaceMember(
   }
 }
 
-export type UpdateWorkspaceMemberRoleInput = {
-  role: 'owner' | 'editor' | 'viewer';
-};
+export function getFileUrl(fileId: string): string {
+  return `${API_URL}/api/files/${fileId}`;
+}
 
-export async function updateWorkspaceMemberRole(
-  workspaceId: string,
-  memberUserId: string,
-  payload: UpdateWorkspaceMemberRoleInput,
-): Promise<{ userId: string; role: 'owner' | 'editor' | 'viewer' }> {
-  if (!isValidUuid(workspaceId) || !isValidUuid(memberUserId)) {
-    throw new Error('invalid-id');
-  }
-
-  const res = await fetch(
-    `${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`,
-    {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(payload),
-    },
-  );
-
-  if (!res.ok) {
-    let detail = 'Failed to update member role';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
-
-  return res.json();
+// Determine node type from MIME type
+export function getNodeTypeFromMimeType(mimeType: string): 'image' | 'video' | 'document' {
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  return 'document';
 }

@@ -1,15 +1,12 @@
 'use client';
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   ArrowRight,
   ChartBar,
   Cursor,
   Cylinder,
   Database,
-  Eraser,
-  FileArrowUp,
+  Microphone,
   NotePencil,
   PencilSimple,
   Play,
@@ -20,11 +17,13 @@ import {
   TextT,
   Trash,
 } from '@phosphor-icons/react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { NodeStatus } from '../state/executionStore';
-import { ShapePalette } from './ShapePalette';
 import type { ShapeType } from './flowNodes/ShapeNode';
+import { ShapePalette } from './ShapePalette';
 
-export type CanvasTool = 'hand' | 'select' | 'note' | 'pen' | 'text' | 'shape' | 'eraser';
+export type CanvasTool = 'select' | 'note' | 'pen' | 'text' | 'shape' | 'voice';
 
 type BoardCommandBarProps = {
   currentTool: CanvasTool;
@@ -41,7 +40,7 @@ type BoardCommandBarProps = {
   onAddPythonNode?: () => void;
   onAddDatabaseNode?: () => void;
   onAddPlotNode?: () => void;
-  onUploadSpreadsheet?: (file: File) => void;
+  onAddVoiceNode?: () => void;
   onDeleteSelection?: () => void;
   hasSelection?: boolean;
   // Undo/Redo moved to UndoRedoControls in board header
@@ -61,6 +60,7 @@ const canvasTools: CanvasToolConfig[] = [
   { id: 'pen', label: 'Pen', icon: PencilSimple, hotkey: 'P' },
   { id: 'text', label: 'Text', icon: TextT, hotkey: 'T' },
   { id: 'shape', label: 'Shape', icon: SquaresFour, hotkey: 'S' },
+  { id: 'voice', label: 'Voice', icon: Microphone, hotkey: 'M' },
 ];
 
 const statusToneClasses: Record<NodeStatus, string> = {
@@ -98,7 +98,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   onAddPythonNode,
   onAddDatabaseNode,
   onAddPlotNode,
-  onUploadSpreadsheet,
+  onAddVoiceNode,
   onDeleteSelection,
   hasSelection,
   portalRoot,

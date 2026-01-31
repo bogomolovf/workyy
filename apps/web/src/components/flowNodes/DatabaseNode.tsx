@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { NodeProps } from 'reactflow';
 import { Handle, Position } from 'reactflow';
 import type { DatabaseNodePayload } from '../../lib/databaseNodeTypes';
+import { DATABASE_TYPE_LABELS } from '../../lib/databaseNodeTypes';
 import { DatabaseConnectionModal } from '../DatabaseConnectionModal';
 
 type DatabaseNodeData = {
@@ -44,6 +45,7 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
     (data.payload as DatabaseNodePayload | undefined) ??
     ({
       connectionName: 'New Database',
+      dbType: 'postgresql',
       host: '',
       port: 5432,
       database: '',
@@ -102,11 +104,10 @@ export function DatabaseNode({ data, selected }: NodeProps<DatabaseNodeData>) {
                 <p className="text-sm font-medium text-slate-900 truncate">
                   {payload.connectionName || 'New Database'}
                 </p>
-                {payload.host && (
-                  <p className="text-xs text-slate-500 truncate">
-                    {payload.host}:{payload.port}
-                  </p>
-                )}
+                <p className="text-xs text-slate-500 truncate">
+                  {DATABASE_TYPE_LABELS[payload.dbType]}
+                  {payload.host && ` • ${payload.host}:${payload.port}`}
+                </p>
               </div>
             </div>
             <StatusBadge status={payload.status ?? 'idle'} />

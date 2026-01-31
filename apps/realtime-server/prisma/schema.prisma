@@ -72,6 +72,7 @@ model Board {
   runRequests RunRequest[]
   auditEvents AuditEvent[]
   drawing   BoardDrawing?
+  files     File[]
 
   @@unique([workspaceId, title])
 }
@@ -103,10 +104,12 @@ enum NodeType {
   text
   shape
   image
+  video
+  document
   draw
   pen
   database
-  csv
+  voice
 }
 
 model Edge {
@@ -200,6 +203,7 @@ model DatabaseConnection {
   id            String   @id @default(uuid())
   workspaceId   String
   connectionName String
+  dbType        DatabaseType @default(postgresql)
   host          String
   port          Int
   database      String
@@ -233,6 +237,14 @@ enum RetentionType {
   board
   run
   snapshot
+}
+
+enum DatabaseType {
+  postgresql
+  mysql
+  oracle
+  sqlserver
+  clickhouse
 }
 
 model RunRequest {
@@ -283,5 +295,20 @@ model BoardDrawing {
   updatedAt DateTime @updatedAt
 
   board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+}
+
+model File {
+  id          String   @id @default(uuid())
+  boardId     String
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  path        String
+  createdAt   DateTime @default(now())
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId])
 }
 

@@ -1,15 +1,26 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import { useQuery } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { fetchBoard, isValidUuid } from '../../../lib/api';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useExecutionStore } from '../../../state/executionStore';
+import { fetchBoard, isValidUuid, type BoardResponse } from '../../../lib/api';
 import { executeSql } from '../../../lib/duckdbClient';
 import { runPython } from '../../../lib/pythonExecutor';
 import { useCanvasLayoutStore } from '../../../state/canvasLayoutStore';
+import { useExecutionStore } from '../../../state/executionStore';
+
+type ExecutionNode = Extract<
+  BoardResponse['nodes'][number],
+  { type: 'sql' | 'python' | 'table' | 'plot' }
+>;
+
+const isExecutionNode = (node: BoardResponse['nodes'][number]): node is ExecutionNode => {
+  return (
+    node.type === 'sql' || node.type === 'python' || node.type === 'table' || node.type === 'plot'
+  );
+};
 
 const ENV_DEMO_BOARD_ID = process.env.NEXT_PUBLIC_DEMO_BOARD_ID ?? '';
 
@@ -54,7 +65,8 @@ export default function DemoBoardPage() {
 
   useEffect(() => {
     if (data?.nodes) {
-      initFromNodes(data.nodes);
+      const executionNodes = data.nodes.filter(isExecutionNode);
+      initFromNodes(executionNodes);
       if (!selectedNodeId && data.nodes.length > 0) {
         setSelectedNodeId(data.nodes[0].id);
       }
@@ -101,9 +113,10 @@ export default function DemoBoardPage() {
         if (node.type === 'python') {
           const upstreamEdge = data.edges.find((edge) => edge.targetId === nodeId);
           const latestEntries = useExecutionStore.getState().entries;
+          const upstreamEntry = upstreamEdge ? latestEntries[upstreamEdge.sourceId] : undefined;
           const upstreamResult =
-            upstreamEdge && latestEntries[upstreamEdge.sourceId]?.output?.kind === 'sql'
-              ? latestEntries[upstreamEdge.sourceId]?.output?.result
+            upstreamEntry?.output?.kind === 'sql'
+              ? (upstreamEntry.output.result as import('../../../state/executionStore').SqlResult)
               : undefined;
 
           const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
