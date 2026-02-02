@@ -1,16 +1,22 @@
 'use client';
 
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
 import { InteractiveResultTable } from '../InteractiveResultTable';
 import { DATA_NODE_HANDLE_CLASS } from '../BoardCanvas';
-import { FileArrowDown, Table } from '@phosphor-icons/react';
+import { FileArrowDown, Table, SpinnerGap, ArrowDown } from '@phosphor-icons/react';
 import type { SqlResult } from '../../state/executionStore';
+import { useExecutionStore } from '../../state/executionStore';
+import { queryTablePaginated } from '../../lib/duckdbClient';
+
+// Number of rows to load per batch
+const ROWS_PER_BATCH = 100;
 
 export type CsvNodePayload = {
   filename?: string;
   tableName?: string; // DuckDB table name for SQL queries
   data?: SqlResult;
+  totalRowCount?: number; // Total rows in DuckDB (for lazy loading)
   originalColumns?: string[]; // Original column names before normalization
   uploadedAt?: string;
   fileType?: 'csv' | 'excel';
@@ -24,20 +30,93 @@ type CsvNodeData = {
 };
 
 function CsvNodeComponent({ data, selected }: NodeProps<CsvNodeData>) {
-  const { filename, tableName, data: csvData, uploadedAt, fileType } = data.payload || {};
+  const { filename, tableName, data: initialData, totalRowCount, uploadedAt, fileType } = data.payload || {};
   const nodeWidth = data.width || 500;
+  
+  // Get executionStore methods to sync data for PlotNode access
+  const registerNode = useExecutionStore((state) => state.registerNode);
+  const setSuccess = useExecutionStore((state) => state.setSuccess);
+  const entryExists = useExecutionStore(
+    (state) => !!state.entries[data.nodeId],
+  );
+
+  // Ensure CSV node is registered in executionStore on mount (for PlotNode to find data)
+  useEffect(() => {
+    if (!entryExists && (initialData?.columns?.length ?? 0) > 0) {
+      registerNode({
+        id: data.nodeId,
+        type: 'csv',
+        payload: data.payload as Record<string, unknown>,
+      });
+    }
+  }, [data.nodeId, data.payload, entryExists, initialData?.columns?.length, registerNode]);
+
+  // State for lazy-loaded data
+  const [loadedRows, setLoadedRows] = useState<Array<Array<string | number | null>>>(
+    initialData?.rows || []
+  );
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  
+  // Combine columns from initial data
+  const columns = initialData?.columns || [];
+  
+  // Create SqlResult from loaded rows
+  const csvData: SqlResult | undefined = useMemo(() => {
+    if (columns.length === 0) return undefined;
+    return { columns, rows: loadedRows };
+  }, [columns, loadedRows]);
+  
+  // Sync data to executionStore whenever csvData changes
+  // This allows PlotNode to access the data via usePlotData hook
+  useEffect(() => {
+    if (csvData && csvData.columns.length > 0 && csvData.rows.length > 0) {
+      setSuccess(data.nodeId, {
+        kind: 'sql',
+        result: csvData,
+        code: '', // CSV nodes don't have code
+      });
+    }
+  }, [csvData, data.nodeId, setSuccess]);
 
   const hasData = useMemo(() => {
     return csvData && csvData.columns.length > 0 && csvData.rows.length > 0;
   }, [csvData]);
+
+  // Check if there are more rows to load
+  const hasMoreRows = useMemo(() => {
+    if (!totalRowCount) return false;
+    return loadedRows.length < totalRowCount;
+  }, [loadedRows.length, totalRowCount]);
+  
+  // Load more rows from DuckDB
+  const loadMoreRows = useCallback(async (loadAll = false) => {
+    if (!tableName || isLoading || !hasMoreRows) return;
+    
+    setIsLoading(true);
+    setLoadError(null);
+    
+    try {
+      const remaining = (totalRowCount || 0) - loadedRows.length;
+      const batchSize = loadAll ? remaining : ROWS_PER_BATCH;
+      const result = await queryTablePaginated(tableName, loadedRows.length, batchSize);
+      setLoadedRows(prev => [...prev, ...result.rows]);
+    } catch (err) {
+      console.error('Failed to load more rows:', err);
+      setLoadError(err instanceof Error ? err.message : 'Failed to load more rows');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tableName, loadedRows.length, isLoading, hasMoreRows, totalRowCount]);
 
   const stats = useMemo(() => {
     if (!csvData) return null;
     return {
       rows: csvData.rows.length,
       columns: csvData.columns.length,
+      total: totalRowCount || csvData.rows.length,
     };
-  }, [csvData]);
+  }, [csvData, totalRowCount]);
 
   const fileTypeLabel = useMemo(() => {
     if (fileType === 'excel') return 'Excel';
@@ -174,7 +253,7 @@ function CsvNodeComponent({ data, selected }: NodeProps<CsvNodeData>) {
                   <div className="flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5">
                     <Table size={12} weight="bold" className="text-cyan-700" />
                     <span className="text-[10px] font-semibold text-cyan-700">
-                      {stats.rows.toLocaleString()} rows
+                      {stats.rows.toLocaleString()}{stats.total > stats.rows ? ` / ${stats.total.toLocaleString()}` : ''} rows
                     </span>
                   </div>
                   <div className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
@@ -210,8 +289,51 @@ function CsvNodeComponent({ data, selected }: NodeProps<CsvNodeData>) {
         {/* Data Preview */}
         <div className="p-3">
           {hasData ? (
-            <div className="rounded-lg border border-slate-200 overflow-hidden">
-              <InteractiveResultTable result={csvData!} compact maxHeight={350} />
+            <div className="flex flex-col gap-2">
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <InteractiveResultTable result={csvData!} compact maxHeight={350} />
+              </div>
+              
+              {/* Load more buttons */}
+              {hasMoreRows && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => loadMoreRows(false)}
+                    disabled={isLoading}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isLoading ? (
+                      <>
+                        <SpinnerGap size={16} weight="bold" className="animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <ArrowDown size={16} weight="bold" />
+                        Load {Math.min(ROWS_PER_BATCH, (totalRowCount || 0) - loadedRows.length).toLocaleString()} more
+                      </>
+                    )}
+                  </button>
+                  {((totalRowCount || 0) - loadedRows.length) > ROWS_PER_BATCH && (
+                    <button
+                      type="button"
+                      onClick={() => loadMoreRows(true)}
+                      disabled={isLoading}
+                      className="flex items-center justify-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-100 hover:border-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Load all ({((totalRowCount || 0) - loadedRows.length).toLocaleString()})
+                    </button>
+                  )}
+                </div>
+              )}
+              
+              {/* Error message */}
+              {loadError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {loadError}
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex h-32 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/50 text-sm text-slate-500 gap-2">

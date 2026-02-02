@@ -86,7 +86,7 @@ export function ChartRenderer({
       >
         <div className="text-center">
           <p className="mb-1 font-medium">No data available</p>
-          <p className="text-xs">Connect a SQL or Python node and run it to see data.</p>
+          <p className="text-xs">Connect a SQL, Python, or CSV node to see data.</p>
         </div>
       </div>
     );

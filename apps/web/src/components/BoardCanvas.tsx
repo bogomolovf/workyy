@@ -69,6 +69,49 @@ import CollaborativeCursors from './CollaborativeCursors';
 import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
 import { EditingPresenceProvider } from '../context/EditingPresenceContext';
 import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
+import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
+import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
+
+// SessionStorage-backed cache for voice audio data
+// Persists across HMR, re-renders, and component remounts (until tab close)
+const VOICE_AUDIO_STORAGE_KEY = 'workyy_voice_audio_cache';
+
+const getVoiceAudioFromStorage = (nodeId: string): { audioData: string; duration: number; mimeType: string } | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const cached = sessionStorage.getItem(`${VOICE_AUDIO_STORAGE_KEY}_${nodeId}`);
+    return cached ? JSON.parse(cached) : undefined;
+  } catch { return undefined; }
+};
+
+const setVoiceAudioToStorage = (nodeId: string, data: { audioData: string; duration: number; mimeType: string }) => {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(`${VOICE_AUDIO_STORAGE_KEY}_${nodeId}`, JSON.stringify(data));
+  } catch { /* quota exceeded or other error */ }
+};
+
+const getVoiceAudioKeysFromStorage = (): string[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(VOICE_AUDIO_STORAGE_KEY + '_')) {
+        keys.push(key.replace(VOICE_AUDIO_STORAGE_KEY + '_', ''));
+      }
+    }
+    return keys;
+  } catch { return []; }
+};
+
+// Wrapper object to match previous API
+const globalVoiceAudioCache = {
+  get: getVoiceAudioFromStorage,
+  set: setVoiceAudioToStorage,
+  keys: getVoiceAudioKeysFromStorage,
+  get size() { return getVoiceAudioKeysFromStorage().length; }
+};
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
   ssr: false,
@@ -832,8 +875,45 @@ function InnerBoardCanvas({
   // Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
   // Changes are automatically tracked through Yjs transactions with clientId origin
 
+  // Voice audio data is stored in globalVoiceAudioCache (module-level)
+  // to persist across component remounts
+
   useEffect(() => {
-    setLocalNodes(nodes);
+    // Merge incoming nodes with local state, using ref for voice audio data
+    setLocalNodes(() => {
+      return nodes.map((incomingNode) => {
+        // For voice nodes, check if we have cached audioData in ref
+        if (incomingNode.type === 'voice') {
+          const incomingPayload = (incomingNode.payload ?? {}) as Record<string, unknown>;
+          const cachedAudio = globalVoiceAudioCache.get(incomingNode.id);
+          
+          // If incoming has audioData, update cache
+          if (incomingPayload.audioData) {
+            globalVoiceAudioCache.set(incomingNode.id, {
+              audioData: incomingPayload.audioData as string,
+              duration: (incomingPayload.duration as number) || 0,
+              mimeType: (incomingPayload.mimeType as string) || 'audio/webm',
+            });
+            return incomingNode;
+          }
+          
+          // If we have cached audioData but incoming doesn't, use cached
+          if (cachedAudio && !incomingPayload.audioData) {
+            return {
+              ...incomingNode,
+              payload: {
+                ...incomingPayload,
+                audioData: cachedAudio.audioData,
+                duration: cachedAudio.duration,
+                mimeType: cachedAudio.mimeType,
+              },
+            };
+          }
+        }
+        
+        return incomingNode;
+      });
+    });
   }, [nodes]);
 
   useEffect(() => {
@@ -910,8 +990,29 @@ function InnerBoardCanvas({
   const emitNodesChange = useCallback(
     (next: BoardCanvasProps['nodes'], shouldSaveToHistory = false) => {
       if (!onNodesChange) return;
-      const sanitized = sanitizeExternalNodes(next);
+      
+      // Inject audioData from ref before sanitizing - ensures audio is always saved
+      const nodesWithAudio = next.map((node) => {
+        if (node.type === 'voice') {
+          const cachedAudio = globalVoiceAudioCache.get(node.id);
+          if (cachedAudio && !(node.payload as any)?.audioData) {
+            return {
+              ...node,
+              payload: {
+                ...(node.payload ?? {}),
+                audioData: cachedAudio.audioData,
+                duration: cachedAudio.duration,
+                mimeType: cachedAudio.mimeType,
+              },
+            };
+          }
+        }
+        return node;
+      });
+      
+      const sanitized = sanitizeExternalNodes(nodesWithAudio);
       const signature = JSON.stringify(sanitized);
+      
       if (signature === lastEmittedRef.current) return;
       lastEmittedRef.current = signature;
 
@@ -989,6 +1090,7 @@ function InnerBoardCanvas({
 
   const [selectedShape, setSelectedShape] = useState<ShapeType | null>('rectangle');
   const isHandMode = tool === 'hand';
+  const isSelectMode = tool === 'select';
   const isStickyMode = tool === 'note';
   const isPenMode = tool === 'pen';
   const isEraserMode = tool === 'eraser';
@@ -1375,24 +1477,26 @@ function InnerBoardCanvas({
                 ? 'databaseNode'
                 : isPlot
                   ? 'plotNode'
-                  : isPen
-                    ? 'pen'
-                    : isText
-                      ? 'textNode'
-                      : isVoice
-                        ? 'voiceNode'
-                        : isImage
-                          ? 'imageNode'
-                          : isVideo
-                            ? 'videoNode'
-                            : isDocument
-                              ? 'documentNode'
-                              : isShape || isNote
-                                ? 'shapeNode'
-                                : 'default';
+                  : isCsv
+                    ? 'csvNode'
+                    : isPen
+                      ? 'pen'
+                      : isText
+                        ? 'textNode'
+                        : isVoice
+                          ? 'voiceNode'
+                          : isImage
+                            ? 'imageNode'
+                            : isVideo
+                              ? 'videoNode'
+                              : isDocument
+                                ? 'documentNode'
+                                : isShape || isNote
+                                  ? 'shapeNode'
+                                  : 'default';
 
           // Определяем тип слоя для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
-          const isDataNode = isSql || isPython || isDatabase || isPlot;
+          const isDataNode = isSql || isPython || isDatabase || isPlot || isCsv;
           const isCanvasNode =
             isPen || isText || isShape || isNote || isVoice || isImage || isVideo || isDocument;
 
@@ -1950,14 +2054,29 @@ function InnerBoardCanvas({
                                 audioData: payload.audioData ?? null,
                                 duration: payload.duration ?? 0,
                                 mimeType: payload.mimeType ?? 'audio/webm',
+                                recordedBy: payload.recordedBy,
+                                recordedAt: payload.recordedAt,
+                                currentUser: board.userInfo ? {
+                                  id: board.userInfo.userId ?? '',
+                                  name: board.userInfo.userName ?? '',
+                                } : undefined,
                                 onChangeAudio: (
                                   nid: string,
                                   audioPayload: {
                                     audioData: string;
                                     duration: number;
                                     mimeType: string;
+                                    recordedBy?: { id: string; name: string };
+                                    recordedAt?: number;
                                   },
                                 ) => {
+                                  // Cache audioData in ref to prevent loss during batching
+                                  globalVoiceAudioCache.set(nid, {
+                                    audioData: audioPayload.audioData,
+                                    duration: audioPayload.duration,
+                                    mimeType: audioPayload.mimeType,
+                                  });
+                                  
                                   setLocalNodes((prev) => {
                                     const next = prev.map((n) =>
                                       n.id === nid && n.type === 'voice'
@@ -1968,6 +2087,8 @@ function InnerBoardCanvas({
                                               audioData: audioPayload.audioData,
                                               duration: audioPayload.duration,
                                               mimeType: audioPayload.mimeType,
+                                              recordedBy: audioPayload.recordedBy,
+                                              recordedAt: audioPayload.recordedAt,
                                             },
                                           }
                                         : n,
@@ -2005,23 +2126,53 @@ function InnerBoardCanvas({
                                 payload: node.payload,
                               }
                             : isPlot
-                              ? {
-                                  nodeId: node.id,
-                                  payload: node.payload,
-                                  edges: localEdges,
-                                  width: storedWidth,
-                                }
-                              : {
-                                  nodeId: node.id,
-                                  nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
-                                  onCodeChange: (code: string) => onCodeChange(node.id, code),
-                                  onRun: () => onRunNode(node.id),
-                                  onRunDownstream: () => onRunDownstream(node.id),
-                                  onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
-                                  width: storedWidth,
-                                  isCodeCollapsed,
-                                  nodeKind: node.type,
-                                },
+                              ? (() => {
+                                  const incomingEdge = localEdges.find(
+                                    (e) => e.targetId === node.id,
+                                  );
+                                  const upstreamNode = incomingEdge
+                                    ? localNodes.find(
+                                        (n) => n.id === incomingEdge.sourceId,
+                                      )
+                                    : null;
+                                  const isCsvSource =
+                                    upstreamNode?.type === 'csv' ||
+                                    upstreamNode?.type === 'csvNode';
+                                  const upstreamPayload = upstreamNode?.payload as
+                                    | { tableName?: string }
+                                    | undefined;
+                                  const upstreamCsvTableName =
+                                    isCsvSource && upstreamPayload?.tableName
+                                      ? upstreamPayload.tableName
+                                      : undefined;
+                                  return {
+                                    nodeId: node.id,
+                                    payload: node.payload,
+                                    edges: localEdges,
+                                    width: storedWidth,
+                                    upstreamCsvTableName,
+                                  };
+                                })()
+                              : isCsv
+                                ? {
+                                    nodeId: node.id,
+                                    payload: node.payload,
+                                    width: storedWidth,
+                                    onResize: (nodeId: string, width: number, height: number) => {
+                                      setNodeWidth(nodeId, width);
+                                    },
+                                  }
+                                : {
+                                    nodeId: node.id,
+                                    nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
+                                    onCodeChange: (code: string) => onCodeChange(node.id, code),
+                                    onRun: () => onRunNode(node.id),
+                                    onRunDownstream: () => onRunDownstream(node.id),
+                                    onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
+                                    width: storedWidth,
+                                    isCodeCollapsed,
+                                    nodeKind: node.type,
+                                  },
             // Для shape nodes (включая заметки) передаем width и height как пропсы, чтобы NodeResizer мог обновлять их в реальном времени
             ...(isShape || isNote
               ? {
@@ -2832,6 +2983,7 @@ function InnerBoardCanvas({
       // Register the dataset in DuckDB so SQL nodes can query it
       let tableName = '';
       let normalizedColumns: string[] = [];
+      const totalRowCount = result.data.rows.length;
       try {
         const duckDbResult = await registerDatasetFromCsvNode(
           result.filename,
@@ -2858,10 +3010,17 @@ function InnerBoardCanvas({
       const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
 
       const nodeId = crypto.randomUUID();
-      // Create data with normalized column names for display
-      const displayData = normalizedColumns.length > 0
-        ? { ...result.data, columns: normalizedColumns }
-        : result.data;
+      
+      // Table preview: default 100 rows (no user selector). Full data lives in DuckDB;
+      // Plot nodes connected to this CSV use full dataset via useFullCsvDataForPlot.
+      const PREVIEW_ROW_LIMIT = 100;
+      const previewRows = result.data.rows.slice(0, PREVIEW_ROW_LIMIT);
+      const columns = normalizedColumns.length > 0 ? normalizedColumns : result.data.columns;
+      
+      const previewData = {
+        columns,
+        rows: previewRows,
+      };
 
       const csvNode: BoardCanvasProps['nodes'][number] = {
         id: nodeId,
@@ -2869,8 +3028,9 @@ function InnerBoardCanvas({
         position,
         payload: {
           filename: result.filename,
-          tableName, // Store the DuckDB table name
-          data: displayData, // Use normalized column names
+          tableName, // Store the DuckDB table name for lazy loading
+          data: previewData, // Only preview rows for initial render
+          totalRowCount, // Total rows in DuckDB for "Load more" functionality
           originalColumns: result.data.columns, // Keep original for reference
           uploadedAt: new Date().toISOString(),
           fileType: result.fileType,
@@ -3501,19 +3661,20 @@ function InnerBoardCanvas({
         className="board-canvas-root relative flex h-full min-h-0 w-full flex-1 overflow-hidden"
         style={{ position: 'relative' }}
       >
-        <div className="relative h-full w-full overflow-hidden">
+        <div 
+          className="relative h-full w-full overflow-hidden" 
+          onPointerMoveCapture={onMouseMove}
+        >
           <div className="relative h-full w-full">
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
               fitView
               fitViewOptions={{ padding: 0.2, duration: 0 }}
-              panOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
+              panOnDrag={!isSelectMode && !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
               panOnScroll={false}
               zoomOnScroll
-              selectionOnDrag={
-                !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
-              }
+              selectionOnDrag={isSelectMode}
               nodesDraggable={!isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
               nodesConnectable={
                 !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
@@ -3832,6 +3993,8 @@ function InnerBoardCanvas({
                   }}
                 />
               )}
+              {/* Collaborative cursors overlay */}
+              <CollaborativeCursors cursors={cursors} />
             </ReactFlow>
           </div>
         </div>
@@ -3852,6 +4015,7 @@ function InnerBoardCanvas({
           onAddDatabaseNode={handleAddDatabaseNode}
           onAddPlotNode={handleAddPlotNode}
           onAddVoiceNode={handleAddVoiceNode}
+          onUploadSpreadsheet={handleUploadSpreadsheet}
           selectedShape={selectedShape}
           onSelectShape={setSelectedShape}
           onDeleteSelection={handleDeleteSelection}

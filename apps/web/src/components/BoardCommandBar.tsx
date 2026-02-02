@@ -43,6 +43,7 @@ type BoardCommandBarProps = {
   onAddDatabaseNode?: () => void;
   onAddPlotNode?: () => void;
   onAddVoiceNode?: () => void;
+  onUploadSpreadsheet?: (file: File) => void;
   onDeleteSelection?: () => void;
   hasSelection?: boolean;
   // Undo/Redo moved to UndoRedoControls in board header
@@ -101,6 +102,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   onAddDatabaseNode,
   onAddPlotNode,
   onAddVoiceNode,
+  onUploadSpreadsheet,
   onDeleteSelection,
   hasSelection,
   portalRoot,

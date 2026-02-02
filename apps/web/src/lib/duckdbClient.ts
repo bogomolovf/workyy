@@ -565,3 +565,67 @@ export async function restoreDatasetsForBoard(boardId: string): Promise<void> {
     // if restore fails, we just start with an empty DuckDB context
   }
 }
+
+/**
+ * Query paginated data from a DuckDB table.
+ * Used for lazy loading large CSV datasets.
+ */
+export async function queryTablePaginated(
+  tableName: string,
+  offset: number,
+  limit: number,
+): Promise<SqlResult> {
+  const { connection } = await getDuckDbContext();
+  const query = `SELECT * FROM ${quotedIdentifier(tableName)} LIMIT ${limit} OFFSET ${offset};`;
+  const result = await connection.query(query);
+  
+  // Convert Arrow table to SqlResult format
+  const columns = result.schema.fields.map((f) => f.name);
+  const rows: Array<Array<string | number | null>> = [];
+  
+  for (let i = 0; i < result.numRows; i++) {
+    const row: Array<string | number | null> = [];
+    for (let j = 0; j < columns.length; j++) {
+      const col = result.getChildAt(j);
+      const value = col?.get(i);
+      if (value === null || value === undefined) {
+        row.push(null);
+      } else if (typeof value === 'bigint') {
+        row.push(Number(value));
+      } else {
+        row.push(value);
+      }
+    }
+    rows.push(row);
+  }
+  
+  return { columns, rows };
+}
+
+/**
+ * Get total row count for a DuckDB table.
+ */
+export async function getTableRowCount(tableName: string): Promise<number> {
+  const { connection } = await getDuckDbContext();
+  const query = `SELECT COUNT(*) as count FROM ${quotedIdentifier(tableName)};`;
+  const result = await connection.query(query);
+
+  const countCol = result.getChildAt(0);
+  const count = countCol?.get(0);
+  return typeof count === 'bigint' ? Number(count) : (count ?? 0);
+}
+
+/** Max rows to fetch for plot visualizations (prevents UI freeze on huge datasets) */
+const PLOT_FULL_DATA_LIMIT = 100_000;
+
+/**
+ * Fetch full dataset from a DuckDB table for visualization.
+ * Used when Plot node is connected to CSV - builds charts from entire dataset
+ * without loading all rows into the canvas preview.
+ */
+export async function queryTableFull(tableName: string): Promise<SqlResult> {
+  const { connection } = await getDuckDbContext();
+  const query = `SELECT * FROM ${quotedIdentifier(tableName)} LIMIT ${PLOT_FULL_DATA_LIMIT};`;
+  const table = await connection.query(query);
+  return tableToSqlResult(table);
+}

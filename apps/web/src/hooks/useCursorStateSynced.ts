@@ -30,9 +30,7 @@ export function useCursorStateSynced(
 ): [Cursor[], (event: React.PointerEvent<HTMLDivElement>) => void] {
   const [cursors, setCursors] = useState<Cursor[]>([]);
   const { screenToFlowPosition } = useReactFlow();
-  const throttleTimerRef = useRef<number | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
-  const observerRafRef = useRef<number | null>(null);
   const previousClientIdRef = useRef<string | null>(null);
 
   // Use user-selected cursor color from settings store
@@ -40,9 +38,6 @@ export function useCursorStateSynced(
 
   // CRITICAL FIX: Remove old cursor entries that belong to this user but have different clientId
   // This prevents duplicate cursors after page refresh when Yjs creates a new clientId
-  // 
-  // IMPORTANT: This effect should only run on INITIALIZATION or when clientId changes,
-  // NOT on every cursorsMap change. Stale cursor cleanup is handled by flush() with MAX_IDLE_TIME.
   const hasInitializedRef = useRef(false);
   
   useEffect(() => {
@@ -52,7 +47,6 @@ export function useCursorStateSynced(
     }
     
     // Remove old cursor entry when clientId changes (e.g., after page refresh)
-    // This prevents duplicate cursors from appearing after page refresh
     if (previousClientIdRef.current !== null && previousClientIdRef.current !== clientId) {
       if (cursorsMap.has(previousClientIdRef.current)) {
         cursorsMap.delete(previousClientIdRef.current);
@@ -60,7 +54,6 @@ export function useCursorStateSynced(
     }
     
     // On first initialization, remove cursors that belong to the same user but have different clientId
-    // This cleans up stale cursors from previous sessions of the same user
     if (!hasInitializedRef.current) {
       for (const [id, cursor] of cursorsMap) {
         if (id !== clientId) {
@@ -68,8 +61,6 @@ export function useCursorStateSynced(
             (userInfo?.userId && cursor.userId === userInfo.userId) ||
             (userInfo?.userName && cursor.userName === userInfo.userName);
           
-          // Only remove if it's the same user (not other users' cursors)
-          // Stale cursor cleanup is handled separately by flush() with MAX_IDLE_TIME
           if (isSameUser) {
             cursorsMap.delete(id);
           }
@@ -84,116 +75,55 @@ export function useCursorStateSynced(
   // Flush any cursors that have gone stale.
   const flush = useCallback(() => {
     const now = Date.now();
-    const beforeSize = cursorsMap.size;
-    const deletedIds: string[] = [];
 
     for (const [id, cursor] of cursorsMap) {
       if (now - cursor.timestamp > MAX_IDLE_TIME) {
         cursorsMap.delete(id);
-        deletedIds.push(id);
       }
     }
-  }, [cursorsMap, clientId]);
+  }, [cursorsMap]);
 
   const onMouseMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       // Ensure clientX/clientY are available
       if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[CursorSync] Missing clientX/clientY in event:', event);
-        }
         return;
       }
 
-      // CRITICAL FIX: Capture event coordinates BEFORE any async operation
-      // React synthetic events are pooled and reused, so clientX/clientY may be
-      // undefined or reset by the time requestAnimationFrame callback executes
-      const clientX = event.clientX;
-      const clientY = event.clientY;
-
       const now = Date.now();
+      const timeSinceLast = now - lastUpdateTimeRef.current;
       
-      // Optimized throttle: use requestAnimationFrame for smooth 60 FPS updates
-      // This ensures updates are synchronized with browser rendering
-      if (now - lastUpdateTimeRef.current < CURSOR_THROTTLE_MS) {
-        // Cancel previous scheduled update if it exists
-        if (throttleTimerRef.current !== null) {
-          window.cancelAnimationFrame(throttleTimerRef.current);
-        }
-        
-        // Schedule update for next animation frame (synchronized with browser rendering)
-        throttleTimerRef.current = window.requestAnimationFrame(() => {
-          const position = screenToFlowPosition({
-            x: clientX,
-            y: clientY,
-          });
-
-          const cursorData: Cursor = {
-            id: clientId,
-            color: cursorColor,
-            x: position.x,
-            y: position.y,
-            timestamp: Date.now(),
-          };
-
-          // Add user information if provided
-          if (userInfo?.userId) {
-            cursorData.userId = userInfo.userId;
-          }
-          if (userInfo?.userName) {
-            cursorData.userName = userInfo.userName;
-          }
-
-          cursorsMap.set(clientId, cursorData);
-          lastUpdateTimeRef.current = Date.now();
-          throttleTimerRef.current = null;
-        });
-      } else {
-        // Update immediately if enough time has passed (use requestAnimationFrame for consistency)
-        // This ensures all updates are synchronized with browser rendering
-        if (throttleTimerRef.current !== null) {
-          window.cancelAnimationFrame(throttleTimerRef.current);
-        }
-        
-        throttleTimerRef.current = window.requestAnimationFrame(() => {
-          const position = screenToFlowPosition({
-            x: clientX,
-            y: clientY,
-          });
-
-          const cursorData: Cursor = {
-            id: clientId,
-            color: cursorColor,
-            x: position.x,
-            y: position.y,
-            timestamp: Date.now(),
-          };
-
-          // Add user information if provided
-          if (userInfo?.userId) {
-            cursorData.userId = userInfo.userId;
-          }
-          if (userInfo?.userName) {
-            cursorData.userName = userInfo.userName;
-          }
-
-          cursorsMap.set(clientId, cursorData);
-          lastUpdateTimeRef.current = Date.now();
-          throttleTimerRef.current = null;
-        });
+      // Simple throttle - skip if too soon
+      if (timeSinceLast < CURSOR_THROTTLE_MS) {
+        return;
       }
+
+      lastUpdateTimeRef.current = now;
+      
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const cursorData: Cursor = {
+        id: clientId,
+        color: cursorColor,
+        x: position.x,
+        y: position.y,
+        timestamp: now,
+      };
+
+      if (userInfo?.userId) cursorData.userId = userInfo.userId;
+      if (userInfo?.userName) cursorData.userName = userInfo.userName;
+
+      cursorsMap.set(clientId, cursorData);
     },
     [screenToFlowPosition, cursorsMap, clientId, cursorColor, userInfo]
   );
 
-  // Cleanup animation frame on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (throttleTimerRef.current !== null) {
-        window.cancelAnimationFrame(throttleTimerRef.current);
-      }
-      // CRITICAL FIX: Remove this client's cursor from cursorsMap when component unmounts
-      // This prevents duplicate cursors after page refresh
       if (cursorsMap.has(clientId)) {
         cursorsMap.delete(clientId);
       }
@@ -202,36 +132,10 @@ export function useCursorStateSynced(
 
   useEffect(() => {
     const timer = window.setInterval(flush, MAX_IDLE_TIME);
-    // Use requestAnimationFrame to synchronize state updates with browser rendering
-    // This ensures smooth cursor movement without jittering
+    
+    // Update cursors immediately without RAF for instant response
     const observer = () => {
-      // Cancel previous frame if exists
-      if (observerRafRef.current !== null) {
-        window.cancelAnimationFrame(observerRafRef.current);
-      }
-      
-      // Schedule update for next animation frame
-      observerRafRef.current = window.requestAnimationFrame(() => {
-        const allCursors = [...cursorsMap.values()];
-        setCursors(allCursors);
-        observerRafRef.current = null;
-
-        // Debug logging in development
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[CursorSync] Cursors map updated:', {
-            mapSize: cursorsMap.size,
-            totalCursors: allCursors.length,
-            cursors: allCursors.map((c) => ({
-              id: c.id,
-              clientId,
-              isSelf: c.id === clientId,
-              hasUserName: !!c.userName,
-              timestamp: c.timestamp,
-            })),
-            receivedFromOtherClients: allCursors.filter((c) => c.id !== clientId).length,
-          });
-        }
-      });
+      setCursors([...cursorsMap.values()]);
     };
 
     flush();
@@ -241,39 +145,18 @@ export function useCursorStateSynced(
     return () => {
       cursorsMap.unobserve(observer);
       window.clearInterval(timer);
-      // Cancel pending animation frame on cleanup
-      if (observerRafRef.current !== null) {
-        window.cancelAnimationFrame(observerRafRef.current);
-        observerRafRef.current = null;
-      }
     };
-  }, [flush, cursorsMap, clientId]);
+  }, [flush, cursorsMap]);
 
   const cursorsWithoutSelf = useMemo(
     () => cursors.filter(({ id }) => id !== clientId),
     [cursors, clientId]
   );
 
-  // Determine which cursors to show based on options
   const cursorsToShow = useMemo(
     () => (options?.showOwnCursor ? cursors : cursorsWithoutSelf),
     [cursors, cursorsWithoutSelf, options?.showOwnCursor]
   );
 
-  // Debug logging in development
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[CursorSync] Cursor state:', {
-        allCursors: cursors.length,
-        cursorsWithoutSelf: cursorsWithoutSelf.length,
-        cursorsToShow: cursorsToShow.length,
-        mapSize: cursorsMap.size,
-        showOwnCursor: options?.showOwnCursor ?? false,
-        clientId,
-      });
-    }
-  }, [cursors.length, cursorsWithoutSelf.length, cursorsToShow.length, cursorsMap.size, options?.showOwnCursor, clientId]);
-
   return [cursorsToShow, onMouseMove];
 }
-

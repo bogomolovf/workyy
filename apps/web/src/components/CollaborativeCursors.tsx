@@ -58,8 +58,7 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
           
           .collaborative-cursor-group {
             animation: collaborativeCursorFadeIn 0.2s ease-out;
-            /* Removed transition on transform to prevent jittering */
-            /* Transform updates are handled directly without CSS transition for smooth movement */
+            /* No transition - instant updates for smooth tracking */
           }
           
           .collaborative-cursor-path {

@@ -574,8 +574,10 @@ function BoardPageContent({ params }: BoardPageProps) {
     };
   }, []);
 
-  // Register CSV nodes from payload into DuckDB on initial load
-  // This ensures CSV data is available for SQL queries after page reload
+  // Register CSV nodes from payload into DuckDB on initial load (fallback when localStorage empty)
+  // NOTE: restoreDatasetsForBoard runs first and loads FULL data from localStorage.
+  // Payload.data is preview-only (100 rows) - we must NOT overwrite full data with it.
+  // Only register from payload when localStorage has no datasets (e.g. new device).
   useEffect(() => {
     if (csvNodesRegisteredRef.current) return;
 
@@ -585,19 +587,29 @@ function BoardPageContent({ params }: BoardPageProps) {
     csvNodesRegisteredRef.current = true;
 
     void (async () => {
+      const { getDatasetsKey } = await import('../../../lib/duckdbClient');
+      const key = getDatasetsKey(boardId);
+      const hasStoredDatasets =
+        typeof window !== 'undefined' &&
+        (window.localStorage.getItem(key) ?? '[]') !== '[]';
+
       for (const node of csvNodes) {
         const payload = node.payload as {
           filename?: string;
           tableName?: string;
           data?: SqlResult;
+          totalRowCount?: number;
         } | undefined;
-        if (payload?.data && payload?.filename) {
-          try {
-            await registerDatasetFromCsvNode(payload.filename, payload.data, boardId);
-            console.log(`Registered CSV "${payload.filename}" as table in DuckDB`);
-          } catch (err) {
-            console.error(`Failed to register CSV node ${node.id} in DuckDB:`, err);
-          }
+        if (!payload?.data || !payload?.filename) continue;
+        const rowCount = payload.data.rows?.length ?? 0;
+        const totalCount = payload.totalRowCount ?? rowCount;
+        // Skip when payload is partial AND we have full data in localStorage
+        if (totalCount > rowCount && hasStoredDatasets) continue;
+        try {
+          await registerDatasetFromCsvNode(payload.filename, payload.data, boardId);
+          console.log(`Registered CSV "${payload.filename}" as table in DuckDB`);
+        } catch (err) {
+          console.error(`Failed to register CSV node ${node.id} in DuckDB:`, err);
         }
       }
       await refreshTables();
@@ -893,33 +905,49 @@ function BoardPageContent({ params }: BoardPageProps) {
         }
 
         if (node.type === 'plot') {
-          // Plot nodes don't execute code - they visualize data from upstream nodes
-          // Find upstream node and get its data
+          // Plot nodes don't execute code - they visualize data from upstream nodes.
+          // Visualization must be built from the FULL dataset (not preview).
           const upstreamEdges = edgesState.filter((edge) => edge.targetId === nodeId);
           let inputData: SqlResult | undefined;
 
-          // Try to find upstream SQL or Python node with data
           for (const edge of upstreamEdges) {
             const upstreamEntry = useExecutionStore.getState().entries[edge.sourceId];
-            if (upstreamEntry?.output) {
-              if (upstreamEntry.output.kind === 'sql') {
+
+            if (upstreamEntry?.output?.kind === 'sql') {
+              // SQL upstream: fetch full result for visualization (not preview limit)
+              const sqlCode = upstreamEntry.code ?? '';
+              if (sqlCode.trim()) {
+                try {
+                  const fullResult = await executeSqlWithPreview(sqlCode, {
+                    fullLoad: true,
+                  });
+                  inputData = fullResult;
+                } catch (err) {
+                  console.warn('Plot: full SQL load failed, using preview', err);
+                  inputData = upstreamEntry.output.result;
+                }
+              } else {
                 inputData = upstreamEntry.output.result;
-                break;
-              } else if (
-                upstreamEntry.output.kind === 'python' &&
-                upstreamEntry.output.result?.table
-              ) {
-                inputData = upstreamEntry.output.result.table;
-                break;
-              } else if (
-                upstreamEntry.output.kind === 'plot' &&
-                upstreamEntry.output.result?.inputData
-              ) {
-                inputData = upstreamEntry.output.result.inputData;
-                break;
               }
+              break;
+            }
+            if (
+              upstreamEntry?.output?.kind === 'python' &&
+              upstreamEntry.output.result?.table
+            ) {
+              inputData = upstreamEntry.output.result.table;
+              break;
+            }
+            if (
+              upstreamEntry?.output?.kind === 'plot' &&
+              upstreamEntry.output.result?.inputData
+            ) {
+              inputData = upstreamEntry.output.result.inputData;
+              break;
             }
           }
+          // CSV upstream: PlotNode uses useFullCsvDataForPlot(upstreamCsvTableName) for
+          // rendering, so full dataset is loaded in the component; no need to fetch here.
 
           // Get plot configuration from payload
           const plotPayload = (node.payload ?? {}) as PlotNodePayload;
@@ -1543,6 +1571,23 @@ function BoardPageContent({ params }: BoardPageProps) {
 
   const handleNodesChange = useCallback(
     (updated: CanvasNode[]) => {
+      // Check if any voice node has NEW audioData that needs to be synced
+      // This must be checked BEFORE the isYjsUpdate check to ensure audio is always synced
+      const yjsNodesMapEarly = new Map(collaboration.canvasNodes.map((n) => [n.id, n]));
+      const hasNewVoiceAudio = updated.some((n) => {
+        if (n.type !== 'voice') return false;
+        const payload = n.payload as Record<string, unknown> | undefined;
+        if (!payload?.audioData) return false;
+        const yjsNode = yjsNodesMapEarly.get(n.id);
+        const yjsPayload = yjsNode?.payload as Record<string, unknown> | undefined;
+        return !yjsPayload?.audioData || yjsPayload.audioData !== payload.audioData;
+      });
+      
+      // If we have new voice audio, force sync it regardless of isYjsUpdate
+      if (hasNewVoiceAudio) {
+        collaboration.handleCanvasNodesChange(updated);
+      }
+      
       // Skip sync if this update came from Yjs (to prevent loops)
       if (isYjsUpdateRef.current) {
         isYjsUpdateRef.current = false;
@@ -1565,11 +1610,31 @@ function BoardPageContent({ params }: BoardPageProps) {
       // Only sync if this is a local change that hasn't been synced through Yjs yet
       // Check if this update contains nodes that are already in Yjs (synced via yjsOnNodesChange)
       const yjsNodeIds = new Set(collaboration.canvasNodes.map((n) => n.id));
+      const yjsNodesMap = new Map(collaboration.canvasNodes.map((n) => [n.id, n]));
       const hasNewNodes = updated.some((n) => !yjsNodeIds.has(n.id));
       
-      // Only sync through handleCanvasNodesChange if there are truly new nodes
-      // that haven't been synced through Yjs yet
-      if (hasNewNodes) {
+      // Check if any voice node has new audioData that needs to be synced
+      const hasVoiceAudioChanges = updated.some((n) => {
+        if (n.type !== 'voice') return false;
+        const payload = n.payload as Record<string, unknown> | undefined;
+        if (!payload?.audioData) return false;
+        // Check if Yjs version has this audioData
+        const yjsNode = yjsNodesMap.get(n.id);
+        const yjsPayload = yjsNode?.payload as Record<string, unknown> | undefined;
+        return !yjsPayload?.audioData || yjsPayload.audioData !== payload.audioData;
+      });
+
+      // Check if any node has payload changes (e.g. plot config, chart type, SQL/Python code)
+      const hasPayloadChanges = updated.some((n) => {
+        const yjsNode = yjsNodesMap.get(n.id);
+        if (!yjsNode) return false;
+        return (
+          JSON.stringify(n.payload ?? {}) !== JSON.stringify(yjsNode.payload ?? {})
+        );
+      });
+
+      // Sync through handleCanvasNodesChange if there are new nodes, voice audio changes, or payload changes
+      if (hasNewNodes || hasVoiceAudioChanges || hasPayloadChanges) {
         collaboration.handleCanvasNodesChange(updated);
       }
 

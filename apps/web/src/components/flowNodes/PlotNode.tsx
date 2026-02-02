@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo, useCallback, memo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { ChartRenderer } from '../visualizations/ChartRenderer';
 import { usePlotData } from '../../hooks/usePlotData';
+import { useFullCsvDataForPlot } from '../../hooks/useFullCsvDataForPlot';
 import type { PlotNodePayload } from '../../lib/visualization/chartTypes';
 import { validatePlotConfig } from '../../lib/visualization/dataAnalyzer';
 import { DATA_NODE_HANDLE_CLASS } from '../BoardCanvas';
@@ -14,6 +15,8 @@ type PlotNodeData = {
   payload?: Record<string, unknown>;
   edges: Array<{ sourceId: string; targetId: string }>;
   width: number;
+  /** When Plot is connected to CSV node - use full data from DuckDB for visualization */
+  upstreamCsvTableName?: string;
 };
 
 function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
@@ -47,8 +50,16 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
     [data.edges, data.nodeId],
   );
 
-  // Use simplified usePlotData that reads from Zustand directly
-  const plotData = usePlotData(data.nodeId, incomingEdges);
+  // When connected to CSV: fetch full dataset from DuckDB (not limited to first 100 rows)
+  const { data: fullCsvData, loading: fullCsvLoading } = useFullCsvDataForPlot(
+    data.upstreamCsvTableName,
+  );
+  // Fallback: data from executionStore (SQL, Python, or partial CSV)
+  const storeData = usePlotData(data.nodeId, incomingEdges);
+  // Prefer full CSV data when available; otherwise use store data
+  const plotData = data.upstreamCsvTableName
+    ? fullCsvData ?? storeData
+    : storeData;
   const echartsInstanceRef = useRef<any>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -65,7 +76,7 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
         currentErrorMessage = 'Run upstream node to load data.';
       } else {
         currentStatus = 'no-data';
-        currentErrorMessage = 'Connect a SQL or Python node to this chart.';
+        currentErrorMessage = 'Connect a SQL, Python, or CSV node to this chart.';
       }
     } else {
       const validation = validatePlotConfig(plotData, payload);
@@ -199,6 +210,11 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
                 Config needed
               </span>
             )}
+            {data.upstreamCsvTableName && fullCsvLoading && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                Loading full data…
+              </span>
+            )}
             {/* Export button - always visible when status is ready, regardless of selection */}
             {status === 'ready' && (
               <div className="relative">
@@ -305,6 +321,9 @@ export const PlotNode = memo(PlotNodeComponent, (prevProps, nextProps) => {
     .sort()
     .join(',');
   if (prevIncomingKey !== nextIncomingKey) return false;
+
+  if (prevProps.data.upstreamCsvTableName !== nextProps.data.upstreamCsvTableName)
+    return false;
 
   return true; // Props are equal, skip re-render
 });

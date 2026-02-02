@@ -7,6 +7,7 @@ import { PlotPreview } from './PlotPreview';
 import { InteractiveResultTable } from './InteractiveResultTable';
 import { PlotNodeConfigPanel } from './flowNodes/PlotNodeConfigPanel';
 import { usePlotData } from '../hooks/usePlotData';
+import { useFullCsvDataForPlot } from '../hooks/useFullCsvDataForPlot';
 import type { PlotNodePayload } from '../lib/visualization/chartTypes';
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
@@ -159,6 +160,20 @@ export function BoardInspector(props: InspectorProps) {
   const plotNodeId = props.kind === 'plot' ? props.nodeId : '';
   const plotData = usePlotData(plotNodeId, plotEdges);
 
+  // When Plot is connected to CSV: fetch full dataset for config panel (not limited to 100 rows)
+  const upstreamCsvTableName = useMemo(() => {
+    if (props.kind !== 'plot') return undefined;
+    const edge = props.edges.find((e) => e.targetId === props.nodeId);
+    if (!edge) return undefined;
+    const sourceNode = props.nodes.find((n) => n.id === edge.sourceId);
+    const isCsv =
+      sourceNode?.type === 'csv' || sourceNode?.type === 'csvNode';
+    if (!isCsv) return undefined;
+    return (sourceNode.payload as { tableName?: string })?.tableName;
+  }, [props.kind, props.nodeId, props.edges, props.nodes]);
+  const { data: fullCsvData } = useFullCsvDataForPlot(upstreamCsvTableName);
+  const plotDataForConfig = upstreamCsvTableName ? (fullCsvData ?? plotData) : plotData;
+
   // Handle plot node configuration
   if (props.kind === 'plot') {
     const payload =
@@ -243,7 +258,7 @@ export function BoardInspector(props: InspectorProps) {
         <PlotNodeConfigPanel
           nodeId={props.nodeId}
           payload={payload}
-          data={plotData}
+          data={plotDataForConfig}
           onChange={handlePlotConfigChange}
         />
       </aside>

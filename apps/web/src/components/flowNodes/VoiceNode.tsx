@@ -9,9 +9,24 @@ type VoiceData = {
   audioData: string | null; // Base64 encoded audio
   duration: number; // Duration in seconds
   mimeType: string; // 'audio/webm' or 'audio/mp4'
+  recordedBy?: { // Who recorded this message
+    id: string;
+    name: string;
+  };
+  recordedAt?: number; // Timestamp when recorded
+  currentUser?: { // Current user info for new recordings
+    id: string;
+    name: string;
+  };
   onChangeAudio?: (
     id: string,
-    data: { audioData: string; duration: number; mimeType: string },
+    data: { 
+      audioData: string; 
+      duration: number; 
+      mimeType: string;
+      recordedBy?: { id: string; name: string };
+      recordedAt?: number;
+    },
   ) => void;
 };
 
@@ -109,7 +124,15 @@ function PauseIcon({ className }: { className?: string }) {
 }
 
 export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
-  const { audioData, duration: savedDuration, mimeType: savedMimeType, onChangeAudio } = data;
+  const { 
+    audioData, 
+    duration: savedDuration, 
+    mimeType: savedMimeType, 
+    recordedBy,
+    recordedAt,
+    currentUser,
+    onChangeAudio 
+  } = data;
 
   // Recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -132,6 +155,7 @@ export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
 
   // Permission state
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [microphoneNotFound, setMicrophoneNotFound] = useState(false);
 
   // Initialize WaveSurfer when audio data is available
   useEffect(() => {
@@ -140,40 +164,77 @@ export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
     // Create audio URL from base64
     const audioUrl = `data:${savedMimeType || 'audio/webm'};base64,${audioData}`;
 
+    // Track if this effect has been cleaned up
+    let isDestroyed = false;
+
     // Initialize WaveSurfer
-    const wavesurfer = WaveSurfer.create({
-      container: waveformRef.current,
-      waveColor: '#CBD5E1',
-      progressColor: '#3B82F6',
-      cursorColor: 'transparent',
-      barWidth: 3,
-      barGap: 2,
-      barRadius: 2,
-      height: 36,
-      normalize: true,
-      backend: 'WebAudio',
+    let wavesurfer: WaveSurfer | null = null;
+    
+    try {
+      wavesurfer = WaveSurfer.create({
+        container: waveformRef.current,
+        waveColor: '#CBD5E1',
+        progressColor: '#3B82F6',
+        cursorColor: 'transparent',
+        barWidth: 3,
+        barGap: 2,
+        barRadius: 2,
+        height: 36,
+        normalize: true,
+        backend: 'WebAudio',
+      });
+    } catch {
+      // Ignore creation errors
+      return;
+    }
+
+    const ws = wavesurfer;
+
+    // Handle errors silently (AbortError when component unmounts during load)
+    ws.on('error', () => {
+      // Ignore errors - likely AbortError from unmount during load
     });
 
-    wavesurfer.load(audioUrl);
-
-    wavesurfer.on('ready', () => {
-      setDuration(wavesurfer.getDuration());
-      wavesurferRef.current = wavesurfer;
+    // Load audio and catch any errors
+    ws.load(audioUrl).catch(() => {
+      // Ignore load errors (AbortError when component unmounts)
     });
 
-    wavesurfer.on('audioprocess', () => {
-      setCurrentTime(wavesurfer.getCurrentTime());
+    ws.on('ready', () => {
+      if (isDestroyed) return;
+      setDuration(ws.getDuration());
+      wavesurferRef.current = ws;
     });
 
-    wavesurfer.on('play', () => setIsPlaying(true));
-    wavesurfer.on('pause', () => setIsPlaying(false));
-    wavesurfer.on('finish', () => {
+    ws.on('audioprocess', () => {
+      if (isDestroyed) return;
+      setCurrentTime(ws.getCurrentTime());
+    });
+
+    ws.on('play', () => !isDestroyed && setIsPlaying(true));
+    ws.on('pause', () => !isDestroyed && setIsPlaying(false));
+    ws.on('finish', () => {
+      if (isDestroyed) return;
       setIsPlaying(false);
       setCurrentTime(0);
     });
 
     return () => {
-      wavesurfer.destroy();
+      isDestroyed = true;
+      // Stop playback first to prevent async errors
+      try {
+        ws.stop();
+      } catch {
+        // Ignore stop errors
+      }
+      // Use setTimeout to allow pending operations to complete
+      setTimeout(() => {
+        try {
+          ws.destroy();
+        } catch {
+          // Ignore AbortError when wavesurfer is already destroyed or not fully initialized
+        }
+      }, 0);
       wavesurferRef.current = null;
     };
   }, [audioData, savedMimeType]);
@@ -189,6 +250,7 @@ export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
   const startRecording = useCallback(async () => {
     try {
       setPermissionDenied(false);
+      setMicrophoneNotFound(false);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       const mimeType = getSupportedMimeType();
@@ -239,11 +301,13 @@ export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
         // Calculate duration
         const finalDuration = (Date.now() - recordingStartTimeRef.current) / 1000;
 
-        // Save to node data
+        // Save to node data with user info
         onChangeAudio?.(id, {
           audioData: base64Data,
           duration: finalDuration,
           mimeType,
+          recordedBy: currentUser,
+          recordedAt: Date.now(),
         });
 
         setRecordingDuration(0);
@@ -267,8 +331,13 @@ export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
       }, 100);
     } catch (error) {
       console.error('Failed to start recording:', error);
-      if ((error as Error).name === 'NotAllowedError') {
+      const errorName = (error as Error).name;
+      if (errorName === 'NotAllowedError') {
         setPermissionDenied(true);
+        setMicrophoneNotFound(false);
+      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+        setMicrophoneNotFound(true);
+        setPermissionDenied(false);
       }
     }
   }, [id, onChangeAudio]);
@@ -346,6 +415,8 @@ export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
           <span className="text-sm font-medium text-slate-700">Голосовое сообщение</span>
           {permissionDenied ? (
             <span className="text-xs text-red-500">Доступ к микрофону запрещён</span>
+          ) : microphoneNotFound ? (
+            <span className="text-xs text-red-500">Микрофон не найден</span>
           ) : (
             <span className="text-xs text-slate-500">Нажмите для записи</span>
           )}
@@ -391,24 +462,44 @@ export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
     );
   }
 
+  // Get initials from user name
+  const getInitials = (name: string) => {
+    const parts = name.split(/[\s@.]+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
   // Render playback state (Telegram-style)
   return (
     <div
       className={`
-        flex items-center gap-3 rounded-[20px] bg-slate-100 px-4 py-3
+        flex items-center gap-2 rounded-full bg-slate-100 py-2 pl-2 pr-3
         transition-shadow duration-200
         ${selected ? 'shadow-lg ring-2 ring-blue-400' : 'shadow-md'}
       `}
       style={{ minWidth: 280 }}
     >
-      {/* Play/Pause button */}
-      <button
-        onClick={togglePlayback}
-        className="nodrag flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-500 text-white transition-colors hover:bg-blue-600 active:bg-blue-700"
-        title={isPlaying ? 'Пауза' : 'Воспроизвести'}
-      >
-        {isPlaying ? <PauseIcon className="h-5 w-5" /> : <PlayIcon className="ml-0.5 h-5 w-5" />}
-      </button>
+      {/* Play/Pause button with user avatar overlay */}
+      <div className="relative flex-shrink-0">
+        <button
+          onClick={togglePlayback}
+          className="nodrag flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-white transition-colors hover:bg-blue-600 active:bg-blue-700"
+          title={isPlaying ? 'Пауза' : 'Воспроизвести'}
+        >
+          {isPlaying ? <PauseIcon className="h-5 w-5" /> : <PlayIcon className="ml-0.5 h-5 w-5" />}
+        </button>
+        {/* User avatar badge - bottom right corner of play button */}
+        {recordedBy && (
+          <div
+            className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500 text-[8px] font-bold text-white ring-2 ring-slate-100"
+            title={`Записал: ${recordedBy.name}`}
+          >
+            {getInitials(recordedBy.name)}
+          </div>
+        )}
+      </div>
 
       {/* Waveform */}
       <div ref={waveformRef} className="nodrag min-w-[120px] flex-1 cursor-pointer" />
