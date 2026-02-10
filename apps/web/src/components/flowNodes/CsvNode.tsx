@@ -90,24 +90,27 @@ function CsvNodeComponent({ data, selected }: NodeProps<CsvNodeData>) {
   }, [loadedRows.length, totalRowCount]);
   
   // Load more rows from DuckDB
-  const loadMoreRows = useCallback(async (loadAll = false) => {
-    if (!tableName || isLoading || !hasMoreRows) return;
-    
-    setIsLoading(true);
-    setLoadError(null);
-    
-    try {
-      const remaining = (totalRowCount || 0) - loadedRows.length;
-      const batchSize = loadAll ? remaining : ROWS_PER_BATCH;
-      const result = await queryTablePaginated(tableName, loadedRows.length, batchSize);
-      setLoadedRows(prev => [...prev, ...result.rows]);
-    } catch (err) {
-      console.error('Failed to load more rows:', err);
-      setLoadError(err instanceof Error ? err.message : 'Failed to load more rows');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [tableName, loadedRows.length, isLoading, hasMoreRows, totalRowCount]);
+  const loadMoreRows = useCallback(
+    async (loadAll = false) => {
+      if (!tableName || isLoading || !hasMoreRows) return;
+
+      setIsLoading(true);
+      setLoadError(null);
+
+      try {
+        const remaining = (totalRowCount || 0) - loadedRows.length;
+        const batchSize = loadAll ? remaining : ROWS_PER_BATCH;
+        const result = await queryTablePaginated(tableName, loadedRows.length, batchSize);
+        setLoadedRows((prev) => [...prev, ...result.rows]);
+      } catch (err) {
+        console.error('Failed to load more rows:', err);
+        setLoadError(err instanceof Error ? err.message : 'Failed to load more rows');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [tableName, loadedRows.length, isLoading, hasMoreRows, totalRowCount],
+  );
 
   const stats = useMemo(() => {
     if (!csvData) return null;

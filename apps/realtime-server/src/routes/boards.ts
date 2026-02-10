@@ -26,17 +26,19 @@ export async function boardsRoutes(app: FastifyInstance) {
 
     const { workspaceId } = parsedQuery.data;
 
-    // Get user's workspace IDs
+    // Get user's workspace IDs (boards in workspaces where user is a member)
     const userWorkspaces = await container.prisma.userWorkspaceRole.findMany({
       where: { userId },
       select: { workspaceId: true },
     });
     const userWorkspaceIds = userWorkspaces.map((uw) => uw.workspaceId);
 
-    // Filter boards by user's workspaces
+    // Include boards: in user's workspaces OR created by user (ownerId) so creator always sees their boards
     const whereClause: Prisma.BoardWhereInput = {
-      workspaceId: { in: userWorkspaceIds },
-      ...(workspaceId ? { workspaceId } : {}),
+      OR: [
+        { workspaceId: { in: userWorkspaceIds }, ...(workspaceId ? { workspaceId } : {}) },
+        { ownerId: userId, ...(workspaceId ? { workspaceId } : {}) },
+      ],
     };
 
     // If specific workspaceId is provided, check access

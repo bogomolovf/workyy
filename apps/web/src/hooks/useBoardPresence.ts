@@ -18,28 +18,24 @@ export function useBoardPresence(
 
     const updateUsers = () => {
       const now = Date.now();
-      const STALE_THRESHOLD = 15000; // 15 seconds - user is considered offline after this
+      const STALE_THRESHOLD = 5000; // 5 seconds - user is considered offline so online count updates quickly
 
-      const activeUsers: PresenceUser[] = [];
-      const seenUserIds = new Set<string>();
-
+      // One entry per user: keep the cursor with latest timestamp (new color when reconnected)
+      const latestByUser = new Map<string, { cursor: Cursor; timestamp: number }>();
       for (const cursor of cursorsMap.values()) {
-        // Skip stale cursors (user left)
         if (now - cursor.timestamp > STALE_THRESHOLD) continue;
-
-        // Use a unique key: prefer userId, fallback to cursor id
-        const uniqueKey = cursor.userId || cursor.id;
-
-        // Avoid duplicates (same user on multiple tabs)
-        if (seenUserIds.has(uniqueKey)) continue;
-        seenUserIds.add(uniqueKey);
-
-        activeUsers.push({
-          id: uniqueKey,
-          name: cursor.userName,
-          color: cursor.color,
-        });
+        const uniqueKey = cursor.userId ?? cursor.userName ?? cursor.id;
+        const existing = latestByUser.get(uniqueKey);
+        if (!existing || cursor.timestamp > existing.timestamp) {
+          latestByUser.set(uniqueKey, { cursor, timestamp: cursor.timestamp });
+        }
       }
+
+      const activeUsers: PresenceUser[] = [...latestByUser.values()].map(({ cursor }) => ({
+        id: cursor.userId ?? cursor.userName ?? cursor.id,
+        name: cursor.userName,
+        color: cursor.color,
+      }));
 
       setUsers(activeUsers);
     };

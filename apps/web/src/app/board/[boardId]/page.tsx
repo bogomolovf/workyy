@@ -920,6 +920,7 @@ function BoardPageContent({ params }: BoardPageProps) {
                 try {
                   const fullResult = await executeSqlWithPreview(sqlCode, {
                     fullLoad: true,
+                    fullLoadMaxRows: 100_000,
                   });
                   inputData = fullResult;
                 } catch (err) {
@@ -1377,6 +1378,18 @@ function BoardPageContent({ params }: BoardPageProps) {
     triggerAutoSaveRef.current = triggerAutoSave;
   }, [triggerAutoSave]);
 
+  // Flush debounce and save immediately (e.g. on delete so refresh loads correct state)
+  const triggerImmediateSave = useCallback(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    // Run after React has applied setState so nodesStateRef is up to date
+    setTimeout(() => {
+      void autoSaveBoard();
+    }, 0);
+  }, [autoSaveBoard]);
+
   const buildPersistPayload = useCallback((): SaveBoardStructureInput => {
     const nodes = nodesState.map((node) => {
       const payload: Record<string, unknown> = { ...(node.payload ?? {}) };
@@ -1594,6 +1607,7 @@ function BoardPageContent({ params }: BoardPageProps) {
         // Still update local state for compatibility
         const previousIds = new Set(nodesStateRef.current.map((node) => node.id));
         const nextIds = new Set(updated.map((node) => node.id));
+        const isDeletionFromYjs = nextIds.size < previousIds.size;
         previousIds.forEach((id) => {
           if (!nextIds.has(id)) {
             removeExecutionEntry(id);
@@ -1602,6 +1616,9 @@ function BoardPageContent({ params }: BoardPageProps) {
         setNodesState(updated);
         // CRITICAL FIX: Trigger auto-save even for Yjs updates to ensure new nodes are saved
         triggerAutoSave();
+        if (isDeletionFromYjs) {
+          triggerImmediateSave();
+        }
         return;
       }
 
@@ -1641,6 +1658,7 @@ function BoardPageContent({ params }: BoardPageProps) {
       // Update local state for compatibility (will be replaced by Yjs data)
       const previousIds = new Set(nodesStateRef.current.map((node) => node.id));
       const nextIds = new Set(updated.map((node) => node.id));
+      const isDeletion = nextIds.size < previousIds.size;
       previousIds.forEach((id) => {
         if (!nextIds.has(id)) {
           removeExecutionEntry(id);
@@ -1652,8 +1670,12 @@ function BoardPageContent({ params }: BoardPageProps) {
       // CRITICAL FIX: Always trigger auto-save, even if sync went through Yjs
       // Auto-save must work independently of Yjs sync to prevent data loss
       triggerAutoSave();
+      // On deletion, save immediately so refresh loads correct state (debounce may run too late)
+      if (isDeletion) {
+        triggerImmediateSave();
+      }
     },
-    [removeExecutionEntry, collaboration, triggerAutoSave],
+    [removeExecutionEntry, collaboration, triggerAutoSave, triggerImmediateSave],
   );
 
   const handleEdgesChange = useCallback(

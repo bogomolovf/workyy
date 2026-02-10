@@ -5,6 +5,7 @@ import {
   calculateBoxplotStats,
   partitionByFacet,
   calculateFacetGrid,
+  sampleRowsForDisplay,
 } from './chartTransforms';
 import { analyzeDataColumns } from './dataAnalyzer';
 
@@ -511,7 +512,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
   const yField = config.mapping.y;
   const colorField = config.mapping.color;
 
-  // Extract data arrays
+  // Extract data arrays (from transformed data before sampling)
   const xIndex = xField ? transformedData.columns.indexOf(xField) : -1;
   const yIndices = yField
     ? Array.isArray(yField)
@@ -520,9 +521,13 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
     : [];
   const colorIndex = colorField ? transformedData.columns.indexOf(colorField) : -1;
 
-  // Build data points
+  // Downsample for display when data is large (keeps browser responsive)
+  const { data: dataForChart, totalRows: totalRowsBeforeSample, sampled: displaySampled } =
+    sampleRowsForDisplay(transformedData, config.chartType, xIndex, yIndices);
+
+  // Build data points from (possibly sampled) data
   const dataPoints: Array<Record<string, unknown>> = [];
-  for (const row of transformedData.rows) {
+  for (const row of dataForChart.rows) {
     const point: Record<string, unknown> = {};
     if (xIndex >= 0) point.x = row[xIndex];
     if (yIndices.length > 0) {
@@ -565,6 +570,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         fontSize: 14,
         fontWeight: 'normal',
       },
+      ...(displaySampled && {
+        subtext: `Showing ${dataForChart.rows.length.toLocaleString()} of ${totalRowsBeforeSample.toLocaleString()} points`,
+        subtextStyle: { fontSize: 11, color: '#64748b' },
+      }),
     },
     tooltip:
       config.styling.enableTooltips !== false
@@ -622,7 +631,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           ? yIndices.map((yIdx, seriesIdx) => ({
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
               type: 'bar',
-              data: transformedData.rows.map((row) => row[yIdx]),
+              data: dataForChart.rows.map((row) => row[yIdx]),
             }))
           : [];
 
@@ -654,7 +663,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           ? yIndices.map((yIdx, seriesIdx) => ({
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
               type: 'bar',
-              data: transformedData.rows.map((row) => row[yIdx]),
+              data: dataForChart.rows.map((row) => row[yIdx]),
             }))
           : [];
 
@@ -683,13 +692,19 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
     case 'line': {
       const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
+      const useLargeMode = dataForChart.rows.length > 2000 || displaySampled;
       const seriesData =
         yIndices.length > 0
           ? yIndices.map((yIdx, seriesIdx) => ({
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
               type: 'line',
-              data: transformedData.rows.map((row) => row[yIdx]),
+              data: dataForChart.rows.map((row) => row[yIdx]),
               smooth: true,
+              ...(useLargeMode && {
+                sampling: 'lttb',
+                large: true,
+                largeThreshold: 2000,
+              }),
             }))
           : [];
 
@@ -715,14 +730,20 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
     case 'area': {
       const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
+      const useLargeModeArea = dataForChart.rows.length > 2000 || displaySampled;
       const seriesData =
         yIndices.length > 0
           ? yIndices.map((yIdx, seriesIdx) => ({
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
               type: 'line',
               areaStyle: {},
-              data: transformedData.rows.map((row) => row[yIdx]),
+              data: dataForChart.rows.map((row) => row[yIdx]),
               smooth: true,
+              ...(useLargeModeArea && {
+                sampling: 'lttb',
+                large: true,
+                largeThreshold: 2000,
+              }),
             }))
           : [];
 
@@ -750,7 +771,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const seriesData =
         yIndices.length > 0
           ? yIndices.map((yIdx, seriesIdx) => {
-              const scatterData = transformedData.rows.map((row) => [row[xIndex], row[yIdx]]);
+              const scatterData = dataForChart.rows.map((row) => [row[xIndex], row[yIdx]]);
               return {
                 name: Array.isArray(yField) ? yField[seriesIdx] : yField,
                 type: 'scatter',
@@ -783,15 +804,15 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
     case 'pie':
     case 'doughnut': {
       // For pie charts, use first categorical as label, first numeric as value
-      const labelField = xField || transformedData.columns[0];
+      const labelField = xField || dataForChart.columns[0];
       const valueField = Array.isArray(yField)
         ? yField[0]
         : yField ||
-          transformedData.columns.find((c) => c !== labelField) ||
-          transformedData.columns[1];
+          dataForChart.columns.find((c) => c !== labelField) ||
+          dataForChart.columns[1];
 
-      const labelIndex = transformedData.columns.indexOf(labelField);
-      const valueIndex = valueField ? transformedData.columns.indexOf(valueField) : -1;
+      const labelIndex = dataForChart.columns.indexOf(labelField);
+      const valueIndex = valueField ? dataForChart.columns.indexOf(valueField) : -1;
 
       if (labelIndex < 0 || valueIndex < 0) {
         return {
@@ -800,7 +821,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         };
       }
 
-      const pieData = transformedData.rows.map((row) => ({
+      const pieData = dataForChart.rows.map((row) => ({
         name: String(row[labelIndex] ?? ''),
         value:
           typeof row[valueIndex] === 'number'
@@ -866,12 +887,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       // Use X or Y field (prefer numeric or temporal field that can be converted to numbers)
       // Helper function to check if a field contains numeric values
       const isNumericField = (fieldName: string): boolean => {
-        const idx = transformedData.columns.indexOf(fieldName);
+        const idx = dataForChart.columns.indexOf(fieldName);
         if (idx < 0) return false;
         // Check first few rows to see if values are numeric
-        const sampleSize = Math.min(10, transformedData.rows.length);
+        const sampleSize = Math.min(10, dataForChart.rows.length);
         for (let i = 0; i < sampleSize; i++) {
-          const val = transformedData.rows[i]?.[idx];
+          const val = dataForChart.rows[i]?.[idx];
           if (val === null || val === undefined) continue;
           if (typeof val === 'number') return true;
           if (typeof val === 'string') {
@@ -887,7 +908,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           ? xField
           : yField && isNumericField(yField)
             ? yField
-            : transformedData.columns.find((c) => isNumericField(c));
+            : dataForChart.columns.find((c) => isNumericField(c));
 
       if (!numericField) {
         return {
@@ -896,8 +917,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         };
       }
 
-      const fieldIndex = transformedData.columns.indexOf(numericField);
-      const values = transformedData.rows
+      const fieldIndex = dataForChart.columns.indexOf(numericField);
+      const values = dataForChart.rows
         .map((row) => row[fieldIndex])
         .filter((v) => v !== null && v !== undefined)
         .map((v) => (typeof v === 'number' ? v : parseFloat(String(v))))
@@ -943,15 +964,15 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         };
       }
 
-      const xIndex = transformedData.columns.indexOf(xField);
-      const yIndex = transformedData.columns.indexOf(Array.isArray(yField) ? yField[0] : yField);
-      const valueField = transformedData.columns.find((c) => {
-        const idx = transformedData.columns.indexOf(c);
+      const xIndex = dataForChart.columns.indexOf(xField);
+      const yIndex = dataForChart.columns.indexOf(Array.isArray(yField) ? yField[0] : yField);
+      const valueField = dataForChart.columns.find((c) => {
+        const idx = dataForChart.columns.indexOf(c);
         return (
           idx !== xIndex &&
           idx !== yIndex &&
-          transformedData.rows[0] &&
-          typeof transformedData.rows[0][idx] === 'number'
+          dataForChart.rows[0] &&
+          typeof dataForChart.rows[0][idx] === 'number'
         );
       });
 
@@ -960,7 +981,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const xValues = new Set<string>();
       const yValues = new Set<string>();
 
-      for (const row of transformedData.rows) {
+      for (const row of dataForChart.rows) {
         const xVal = String(row[xIndex] ?? '');
         const yVal = String(row[yIndex] ?? '');
         const key = `${xVal}|${yVal}`;
@@ -972,7 +993,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         }
 
         if (valueField) {
-          const valIdx = transformedData.columns.indexOf(valueField);
+          const valIdx = dataForChart.columns.indexOf(valueField);
           const val = row[valIdx];
           if (val !== null && val !== undefined) {
             const numVal = typeof val === 'number' ? val : parseFloat(String(val));
@@ -1084,10 +1105,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       };
 
       const groupMap = new Map<string, { rows: SqlResult['rows']; key: string }>();
-      for (const row of transformedData.rows) {
+      for (const row of dataForChart.rows) {
         const key = groupByFields
           .map((f) => {
-            const idx = transformedData.columns.indexOf(f);
+            const idx = dataForChart.columns.indexOf(f);
             return String(row[idx] ?? '');
           })
           .join('|');
@@ -1097,7 +1118,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         groupMap.get(key)!.rows.push(row);
       }
 
-      const sizeIndex = transformedData.columns.indexOf(sizeField);
+      const sizeIndex = dataForChart.columns.indexOf(sizeField);
       for (const [key, group] of groupMap.entries()) {
         const values = group.rows
           .map((row) => row[sizeIndex])
@@ -1148,13 +1169,13 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         };
       }
 
-      const numericIndex = transformedData.columns.indexOf(numericField);
-      const groupIndex = groupField ? transformedData.columns.indexOf(groupField) : -1;
+      const numericIndex = dataForChart.columns.indexOf(numericField);
+      const groupIndex = groupField ? dataForChart.columns.indexOf(groupField) : -1;
 
       if (groupIndex >= 0) {
         // Grouped boxplot
         const groupMap = new Map<string, number[]>();
-        for (const row of transformedData.rows) {
+        for (const row of dataForChart.rows) {
           const groupVal = String(row[groupIndex] ?? '');
           const numVal = row[numericIndex];
           if (numVal !== null && numVal !== undefined) {
@@ -1198,7 +1219,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         };
       } else {
         // Single boxplot
-        const values = transformedData.rows
+        const values = dataForChart.rows
           .map((row) => row[numericIndex])
           .filter((v) => v !== null && v !== undefined)
           .map((v) => (typeof v === 'number' ? v : parseFloat(String(v))))
@@ -1235,7 +1256,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
     case 'radar': {
       // For radar: use categorical columns as metrics, rows as series
-      const analyses = analyzeDataColumns(transformedData);
+      const analyses = analyzeDataColumns(dataForChart);
       const numericCols = analyses.filter((a) => a.type === 'numeric');
       const groupField = config.mapping.facet || xField;
 
@@ -1251,12 +1272,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       }
 
       const metrics = numericCols.slice(0, 8).map((c) => c.name); // Limit to 8 metrics
-      const groupIndex = groupField ? transformedData.columns.indexOf(groupField) : -1;
+      const groupIndex = groupField ? dataForChart.columns.indexOf(groupField) : -1;
 
       if (groupIndex >= 0) {
         // Group by field
         const groupMap = new Map<string, SqlResult['rows']>();
-        for (const row of transformedData.rows) {
+        for (const row of dataForChart.rows) {
           const groupVal = String(row[groupIndex] ?? '');
           if (!groupMap.has(groupVal)) {
             groupMap.set(groupVal, []);
@@ -1267,7 +1288,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         const series: any[] = [];
         for (const [groupName, rows] of groupMap.entries()) {
           const values = metrics.map((metric) => {
-            const idx = transformedData.columns.indexOf(metric);
+            const idx = dataForChart.columns.indexOf(metric);
             const metricValues = rows
               .map((row) => row[idx])
               .filter((v) => v !== null && v !== undefined)
@@ -1301,10 +1322,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       } else {
         // Each row is a series
         const series: any[] = [];
-        for (let i = 0; i < Math.min(transformedData.rows.length, 10); i++) {
-          const row = transformedData.rows[i];
+        for (let i = 0; i < Math.min(dataForChart.rows.length, 10); i++) {
+          const row = dataForChart.rows[i];
           const values = metrics.map((metric) => {
-            const idx = transformedData.columns.indexOf(metric);
+            const idx = dataForChart.columns.indexOf(metric);
             const val = row[idx];
             return val !== null && val !== undefined
               ? typeof val === 'number'
@@ -1351,15 +1372,15 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         };
       }
 
-      const sourceIndex = transformedData.columns.indexOf(sourceField);
-      const targetIndex = transformedData.columns.indexOf(targetField);
-      const valueIndex = valueField ? transformedData.columns.indexOf(valueField) : -1;
+      const sourceIndex = dataForChart.columns.indexOf(sourceField);
+      const targetIndex = dataForChart.columns.indexOf(targetField);
+      const valueIndex = valueField ? dataForChart.columns.indexOf(valueField) : -1;
 
       // Aggregate flows
       const flowMap = new Map<string, number>();
       const nodes = new Set<string>();
 
-      for (const row of transformedData.rows) {
+      for (const row of dataForChart.rows) {
         const source = String(row[sourceIndex] ?? '');
         const target = String(row[targetIndex] ?? '');
         const value =
@@ -1421,8 +1442,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const barField = yField[0];
       const lineField = yField[1];
 
-      const barIndex = transformedData.columns.indexOf(barField);
-      const lineIndex = transformedData.columns.indexOf(lineField);
+      const barIndex = dataForChart.columns.indexOf(barField);
+      const lineIndex = dataForChart.columns.indexOf(lineField);
 
       if (barIndex < 0 || lineIndex < 0) {
         return {
@@ -1454,15 +1475,20 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           {
             name: barField,
             type: 'bar',
-            data: transformedData.rows.map((row) => row[barIndex]),
+            data: dataForChart.rows.map((row) => row[barIndex]),
             yAxisIndex: 0,
           },
           {
             name: lineField,
             type: 'line',
-            data: transformedData.rows.map((row) => row[lineIndex]),
+            data: dataForChart.rows.map((row) => row[lineIndex]),
             yAxisIndex: 1,
             smooth: true,
+            ...((dataForChart.rows.length > 2000 || displaySampled) && {
+              sampling: 'lttb',
+              large: true,
+              largeThreshold: 2000,
+            }),
           },
         ],
       };

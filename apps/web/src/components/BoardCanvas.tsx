@@ -868,6 +868,8 @@ function InnerBoardCanvas({
 
   const [localNodes, setLocalNodes] = useState(nodes);
   const localNodesRef = useRef(localNodes);
+  /** Ids we just deleted locally; avoid restoring them when nodes prop is still stale (Yjs observer not yet applied). */
+  const recentlyDeletedIdsRef = useRef<Set<string>>(new Set());
   const [localEdges, setLocalEdges] = useState(edges);
   const textNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const shapeNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -880,40 +882,48 @@ function InnerBoardCanvas({
 
   useEffect(() => {
     // Merge incoming nodes with local state, using ref for voice audio data
-    setLocalNodes(() => {
-      return nodes.map((incomingNode) => {
-        // For voice nodes, check if we have cached audioData in ref
-        if (incomingNode.type === 'voice') {
-          const incomingPayload = (incomingNode.payload ?? {}) as Record<string, unknown>;
-          const cachedAudio = globalVoiceAudioCache.get(incomingNode.id);
-          
-          // If incoming has audioData, update cache
-          if (incomingPayload.audioData) {
-            globalVoiceAudioCache.set(incomingNode.id, {
-              audioData: incomingPayload.audioData as string,
-              duration: (incomingPayload.duration as number) || 0,
-              mimeType: (incomingPayload.mimeType as string) || 'audio/webm',
-            });
-            return incomingNode;
-          }
-          
-          // If we have cached audioData but incoming doesn't, use cached
-          if (cachedAudio && !incomingPayload.audioData) {
-            return {
-              ...incomingNode,
-              payload: {
-                ...incomingPayload,
-                audioData: cachedAudio.audioData,
-                duration: cachedAudio.duration,
-                mimeType: cachedAudio.mimeType,
-              },
-            };
-          }
+    const merged = nodes.map((incomingNode) => {
+      // For voice nodes, check if we have cached audioData in ref
+      if (incomingNode.type === 'voice') {
+        const incomingPayload = (incomingNode.payload ?? {}) as Record<string, unknown>;
+        const cachedAudio = globalVoiceAudioCache.get(incomingNode.id);
+        
+        // If incoming has audioData, update cache
+        if (incomingPayload.audioData) {
+          globalVoiceAudioCache.set(incomingNode.id, {
+            audioData: incomingPayload.audioData as string,
+            duration: (incomingPayload.duration as number) || 0,
+            mimeType: (incomingPayload.mimeType as string) || 'audio/webm',
+          });
+          return incomingNode;
         }
         
-        return incomingNode;
-      });
+        // If we have cached audioData but incoming doesn't, use cached
+        if (cachedAudio && !incomingPayload.audioData) {
+          return {
+            ...incomingNode,
+            payload: {
+              ...incomingPayload,
+              audioData: cachedAudio.audioData,
+              duration: cachedAudio.duration,
+              mimeType: cachedAudio.mimeType,
+            },
+          };
+        }
+      }
+      
+      return incomingNode;
     });
+    // Don't restore nodes we just deleted: nodes prop can be stale (Yjs observer not yet applied).
+    const filtered = merged.filter((n) => !recentlyDeletedIdsRef.current.has(n.id));
+    // Clear deleted id from ref once it's no longer in prop (Yjs caught up)
+    const nodeIdSet = new Set(nodes.map((n) => n.id));
+    const toClear: string[] = [];
+    recentlyDeletedIdsRef.current.forEach((id) => {
+      if (!nodeIdSet.has(id)) toClear.push(id);
+    });
+    toClear.forEach((id) => recentlyDeletedIdsRef.current.delete(id));
+    setLocalNodes(() => filtered);
   }, [nodes]);
 
   useEffect(() => {
@@ -1334,6 +1344,7 @@ function InnerBoardCanvas({
 
       console.log('🧹 Erasing nodes:', nodeIds);
 
+      nodeIds.forEach((id) => recentlyDeletedIdsRef.current.add(id));
       // Sync deletion through Yjs to ensure real-time collaboration
       if (yjsOnNodesChange && nodeIds.length > 0) {
         const removeNodeChanges = nodeIds.map((id) => ({
@@ -3391,6 +3402,7 @@ function InnerBoardCanvas({
     // CRITICAL FIX: Sync deletion through Yjs first to ensure real-time collaboration
     // This ensures deleted elements are removed from Yjs map and don't reappear
     if (yjsOnNodesChange && selectedNodeIds.size > 0) {
+      selectedNodeIds.forEach((id) => recentlyDeletedIdsRef.current.add(id));
       const removeNodeChanges = Array.from(selectedNodeIds).map((id) => ({
         type: 'remove' as const,
         id,

@@ -78,6 +78,8 @@ export function useNodesStateSynced(
             for (const edge of connectedEdges) {
               edgesMap.delete(edge.id);
             }
+          } else if (change.type === 'remove' && !nodesMap.has(change.id)) {
+            // Node already absent from map; nothing to do
           } else {
             const updatedNode = nextNodes.find((n) => n.id === change.id);
             if (updatedNode) {

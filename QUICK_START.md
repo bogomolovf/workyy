@@ -1,5 +1,14 @@
 # Быстрый старт для разработки
 
+## Требования
+
+- **Node.js** и **pnpm**
+- **Docker** (или **Colima** на macOS) — для PostgreSQL и Redis
+
+Скрипт `./start.sh` сам попытается:
+- запустить **Docker Desktop**, если он установлен, но не запущен;
+- или установить и запустить **Colima** через Homebrew (`brew install colima`), если Docker недоступен.
+
 ## Первый запуск
 
 ### 1. Клонируйте репозиторий
@@ -83,6 +92,17 @@ docker compose down
 Если нужно изменить настройки, отредактируйте эти файлы.
 
 ## Решение проблем
+
+### Docker не запущен / Colima не установлен
+
+Скрипт `./start.sh` пытается автоматически:
+1. Запустить **Docker Desktop**, если он установлен в `/Applications/Docker.app`.
+2. Запустить **Colima**, если он уже установлен (`brew install colima`).
+3. Установить Colima через Homebrew и запустить его.
+
+Если ничего не сработало:
+- Установите [Docker Desktop](https://www.docker.com/products/docker-desktop/) и запустите его вручную, затем снова выполните `./start.sh`.
+- Или установите Colima и Docker CLI: `brew install docker colima && colima start`, затем `./start.sh`.
 
 ### Backend не отвечает
 

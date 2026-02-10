@@ -101,6 +101,22 @@ cd workyy-fullproject-stable/test-data
 - Old query results should be garbage collected
 - IndexedDB cache should have TTL expiration
 
+### Scenario 5: Plot Node with Large Data
+
+**Goal:** Verify plot nodes stay smooth with full datasets without overloading the browser
+
+1. Upload `test-100k.csv` (or run SQL that returns 50k+ rows)
+2. Connect a Plot node to the SQL/CSV node
+3. Choose Line, Area, or Scatter chart
+4. Run the upstream node and observe the plot
+
+**Expected Results:**
+- Chart renders quickly (display uses downsampling: up to 5k points for line/area/scatter)
+- Subtitle shows "Showing 5,000 of 100,000 points" when data is sampled
+- Pan/zoom and tooltips remain responsive
+- Full dataset is used for aggregation/filtering; only display is downsampled (LTTB for line/area, uniform for scatter)
+- SQL full-load for plot is capped at 100k rows; CSV plot load uses same cap
+
 ## Performance Metrics to Track
 
 | Metric | Target | How to Measure |

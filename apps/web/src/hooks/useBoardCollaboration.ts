@@ -182,6 +182,8 @@ export function useBoardCollaboration(
       const currentNodes = Array.from(nodesMap.values()) as Node[];
       const currentById = new Map(currentNodes.map((n) => [n.id, n]));
       const newById = new Map(reactFlowNodes.map((n) => [n.id, n]));
+      const incomingIds = new Set(reactFlowNodes.map((n) => n.id));
+      const removedFromMap = currentNodes.filter((n) => !incomingIds.has(n.id)).map((n) => n.id);
 
       // Compute changes: add new nodes, update existing ones
       const changes: NodeChange[] = [];

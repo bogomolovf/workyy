@@ -146,8 +146,10 @@ export type PreviewSqlResult = SqlResult & {
 export type ExecuteSqlOptions = {
   /** Maximum rows to return in preview mode (default: 1000) */
   previewLimit?: number;
-  /** If true, load all data regardless of size */
+  /** If true, load all data for visualization (e.g. plot). Use with fullLoadMaxRows to avoid overload. */
   fullLoad?: boolean;
+  /** When fullLoad is true, cap at this many rows so the browser stays responsive (e.g. 100_000). */
+  fullLoadMaxRows?: number;
 };
 
 /**
@@ -159,7 +161,11 @@ export async function executeSqlWithPreview(
   query: string,
   options?: ExecuteSqlOptions,
 ): Promise<PreviewSqlResult> {
-  const { previewLimit = DEFAULT_PREVIEW_LIMIT, fullLoad = false } = options ?? {};
+  const {
+    previewLimit = DEFAULT_PREVIEW_LIMIT,
+    fullLoad = false,
+    fullLoadMaxRows,
+  } = options ?? {};
   const { connection } = await getDuckDbContext();
 
   // Normalize query - remove trailing semicolons and whitespace
@@ -184,8 +190,21 @@ export async function executeSqlWithPreview(
     };
   }
 
-  // If full load requested or data fits within preview limit, return all
-  if (fullLoad || totalCount <= previewLimit) {
+  // Full load for plot: cap at fullLoadMaxRows to keep browser responsive
+  if (fullLoad) {
+    const limit = fullLoadMaxRows && totalCount > fullLoadMaxRows ? fullLoadMaxRows : totalCount;
+    const fullQuery = limit < totalCount ? `${normalizedQuery} LIMIT ${limit}` : normalizedQuery;
+    const table = await connection.query(fullQuery);
+    const result = tableToSqlResult(table);
+    return {
+      ...result,
+      totalCount,
+      isPreview: limit < totalCount,
+    };
+  }
+
+  // If data fits within preview limit, return all
+  if (totalCount <= previewLimit) {
     const table = await connection.query(query);
     const result = tableToSqlResult(table);
     return {
