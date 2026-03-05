@@ -2,7 +2,14 @@
 
 import { useRef, useState, useMemo, type PointerEvent, useCallback, useEffect } from 'react';
 import { useReactFlow } from 'reactflow';
-import type { ShapeType } from '../flowNodes/ShapeNode';
+import {
+  type ShapeType,
+  SHAPE_DEFAULTS,
+  normalizeDragRect,
+  normalizeDragLine,
+  isLineType,
+  getShapeClipPath,
+} from './shapeEngine';
 
 type ShapeDragOverlayProps = {
   selectedShape: ShapeType;
@@ -20,6 +27,10 @@ type ShapeDragOverlayProps = {
       opacity?: number;
       cornerRadius?: number;
       arrowHead?: boolean;
+      startX?: number;
+      startY?: number;
+      endX?: number;
+      endY?: number;
     };
   }) => void;
 };
@@ -33,15 +44,12 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
 
   const handlePointerDown = useCallback(
     (e: PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return; // Only left mouse button
+      if (e.button !== 0) return;
       (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
       e.preventDefault();
       e.stopPropagation();
 
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-      const { x, y } = screenToFlowPosition({ x: clientX, y: clientY });
-
+      const { x, y } = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       setStartPoint({ x, y });
       setCurrentPoint({ x, y });
       setIsDragging(true);
@@ -52,11 +60,7 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
   const handlePointerMove = useCallback(
     (e: PointerEvent) => {
       if (!isDragging || !startPoint) return;
-
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-      const { x, y } = screenToFlowPosition({ x: clientX, y: clientY });
-
+      const { x, y } = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       setCurrentPoint({ x, y });
     },
     [isDragging, startPoint, screenToFlowPosition],
@@ -73,138 +77,64 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
 
       (e.target as HTMLDivElement).releasePointerCapture(e.pointerId);
 
-      // Calculate dimensions
-      let x1 = startPoint.x;
-      let y1 = startPoint.y;
-      let x2 = currentPoint.x;
-      let y2 = currentPoint.y;
+      const opts = { shift: e.shiftKey, alt: e.altKey || e.metaKey };
+      const isLine = isLineType(selectedShape);
 
-      // Handle Shift modifier (keep aspect ratio)
-      const isShift = e.shiftKey;
-      // Handle Alt modifier (draw from center)
-      const isAlt = e.altKey || e.metaKey;
-
-      let width = Math.abs(x2 - x1);
-      let height = Math.abs(y2 - y1);
-
-      // For line/arrow types, we need different logic
-      const isLineType = selectedShape === 'line' || selectedShape === 'arrow';
-      const minSize = isLineType ? 10 : 20;
-
-      if (width < minSize && height < minSize) {
-        // Too small, cancel
-        setIsDragging(false);
-        setStartPoint(null);
-        setCurrentPoint(null);
-        return;
-      }
-
-      // Handle Alt (draw from center) for rectangle/ellipse
-      if (!isLineType && isAlt) {
-        width = width * 2;
-        height = height * 2;
-        x1 = startPoint.x - width / 2;
-        y1 = startPoint.y - height / 2;
-        x2 = startPoint.x + width / 2;
-        y2 = startPoint.y + height / 2;
-      }
-
-      // Handle Shift (keep aspect ratio) for rectangle/ellipse
-      if (!isLineType && isShift) {
-        const size = Math.max(width, height);
-        width = size;
-        height = size;
-        // Adjust position to maintain start corner
-        if (x2 < x1) {
-          x1 = x2;
+      if (isLine) {
+        const norm = normalizeDragLine(startPoint, currentPoint, opts);
+        const totalSize =
+          Math.abs(currentPoint.x - startPoint.x) + Math.abs(currentPoint.y - startPoint.y);
+        if (totalSize < SHAPE_DEFAULTS.minLineSize) {
+          setIsDragging(false);
+          setStartPoint(null);
+          setCurrentPoint(null);
+          return;
         }
-        if (y2 < y1) {
-          y1 = y2;
-        }
-      }
-
-      // For line/arrow, use start and end points directly
-      if (isLineType) {
-        // For lines, we use position as start point and calculate relative end point
-        // But we'll store it differently - width/height represent the bounding box
-        // The actual line will be drawn from (0,0) to (width, height)
-        if (isShift) {
-          // Snap to 0/45/90 degrees
-          const dx = x2 - x1;
-          const dy = y2 - y1;
-          const angle = Math.atan2(dy, dx);
-          const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          x2 = x1 + Math.cos(snappedAngle) * distance;
-          y2 = y1 + Math.sin(snappedAngle) * distance;
-        }
-
-        width = Math.abs(x2 - x1);
-        height = Math.abs(y2 - y1);
-
-        // For lines, position is the top-left of bounding box
-        // We'll store the relative end point in payload
-        const finalX1 = Math.min(x1, x2);
-        const finalY1 = Math.min(y1, y2);
-        const finalX2 = Math.max(x1, x2);
-        const finalY2 = Math.max(y1, y2);
-
-        width = finalX2 - finalX1;
-        height = finalY2 - finalY1;
-
-        const newNode = {
+        onAddShapeNode?.({
           id: crypto.randomUUID(),
-          type: 'shape' as const,
-          position: { x: finalX1, y: finalY1 },
-          width: Math.max(width, minSize),
-          height: Math.max(height, minSize),
+          type: 'shape',
+          position: { x: norm.x, y: norm.y },
+          width: norm.width,
+          height: norm.height,
           payload: {
             shapeType: selectedShape,
             fill: 'none',
-            stroke: '#1f1f1f',
-            strokeWidth: 2,
-            opacity: 1.0,
-            // For line/arrow, store relative end point
-            endX: x2 - x1,
-            endY: y2 - y1,
+            stroke: SHAPE_DEFAULTS.stroke,
+            strokeWidth: SHAPE_DEFAULTS.strokeWidth,
+            opacity: SHAPE_DEFAULTS.opacity,
+            endX: norm.endX,
+            endY: norm.endY,
             arrowHead: selectedShape === 'arrow',
           },
-        };
-
-        if (onAddShapeNode) {
-          onAddShapeNode(newNode);
+        });
+      } else {
+        const norm = normalizeDragRect(startPoint, currentPoint, opts);
+        const w = Math.abs(currentPoint.x - startPoint.x);
+        const h = Math.abs(currentPoint.y - startPoint.y);
+        if (w < SHAPE_DEFAULTS.minSize && h < SHAPE_DEFAULTS.minSize) {
+          setIsDragging(false);
+          setStartPoint(null);
+          setCurrentPoint(null);
+          return;
         }
-
-        setIsDragging(false);
-        setStartPoint(null);
-        setCurrentPoint(null);
-        return;
-      }
-
-      // For rectangle/ellipse/circle
-      const finalX = Math.min(x1, x2);
-      const finalY = Math.min(y1, y2);
-      const finalWidth = Math.max(width, minSize);
-      const finalHeight = Math.max(height, minSize);
-
-      const newNode = {
-        id: crypto.randomUUID(),
-        type: 'shape' as const,
-        position: { x: finalX, y: finalY },
-        width: finalWidth,
-        height: finalHeight,
-        payload: {
-          shapeType: selectedShape,
-          fill: 'transparent',
-          stroke: '#1f1f1f',
-          strokeWidth: 2,
-          opacity: 1.0,
-          cornerRadius: selectedShape === 'round-rectangle' ? 8 : 0,
-        },
-      };
-
-      if (onAddShapeNode) {
-        onAddShapeNode(newNode);
+        onAddShapeNode?.({
+          id: crypto.randomUUID(),
+          type: 'shape',
+          position: { x: norm.x, y: norm.y },
+          width: norm.width,
+          height: norm.height,
+          payload: {
+            shapeType: selectedShape,
+            fill: SHAPE_DEFAULTS.fill,
+            stroke: SHAPE_DEFAULTS.stroke,
+            strokeWidth: SHAPE_DEFAULTS.strokeWidth,
+            opacity: SHAPE_DEFAULTS.opacity,
+            cornerRadius:
+              selectedShape === 'round-rectangle'
+                ? SHAPE_DEFAULTS.roundRectCornerRadius
+                : SHAPE_DEFAULTS.cornerRadius,
+          },
+        });
       }
 
       setIsDragging(false);
@@ -214,10 +144,8 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
     [isDragging, startPoint, currentPoint, selectedShape, onAddShapeNode],
   );
 
-  // Handle Esc key to cancel
   useEffect(() => {
     if (!isDragging) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsDragging(false);
@@ -225,46 +153,56 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
         setCurrentPoint(null);
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isDragging]);
 
   const viewport = getViewport();
 
-  // Calculate preview dimensions - simplified, will render via SVG
-  const previewBox = useMemo(() => {
+  // ── Build preview geometry ─────────────────────────────────────────────────
+
+  const preview = useMemo(() => {
     if (!isDragging || !startPoint || !currentPoint) return null;
 
-    let x1 = startPoint.x;
-    let y1 = startPoint.y;
-    let x2 = currentPoint.x;
-    let y2 = currentPoint.y;
+    const isLine = isLineType(selectedShape);
 
-    const isLineType = selectedShape === 'line' || selectedShape === 'arrow';
+    if (isLine) {
+      return {
+        isLine: true as const,
+        x1: startPoint.x,
+        y1: startPoint.y,
+        x2: currentPoint.x,
+        y2: currentPoint.y,
+      };
+    }
 
-    let width = Math.abs(x2 - x1);
-    let height = Math.abs(y2 - y1);
+    const w = Math.abs(currentPoint.x - startPoint.x);
+    const h = Math.abs(currentPoint.y - startPoint.y);
+    if (w < 4 && h < 4) return null;
 
-    if (width < 10 && height < 10 && !isLineType) return null;
-
-    const finalX = Math.min(x1, x2);
-    const finalY = Math.min(y1, y2);
-    const finalWidth = Math.max(width, isLineType ? 10 : 20);
-    const finalHeight = Math.max(height, isLineType ? 10 : 20);
+    const x = Math.min(startPoint.x, currentPoint.x);
+    const y = Math.min(startPoint.y, currentPoint.y);
 
     return {
-      x: finalX,
-      y: finalY,
-      width: finalWidth,
-      height: finalHeight,
-      isLineType,
-      startX: x1,
-      startY: y1,
-      endX: x2,
-      endY: y2,
+      isLine: false as const,
+      x,
+      y,
+      width: Math.max(w, 1),
+      height: Math.max(h, 1),
+      clipPath: getShapeClipPath(selectedShape),
+      shapeType: selectedShape,
     };
   }, [isDragging, startPoint, currentPoint, selectedShape]);
+
+  // ── Convert flow coords to screen pixels ───────────────────────────────────
+
+  const toScreen = useCallback(
+    (fx: number, fy: number) => ({
+      sx: fx * viewport.zoom + viewport.x,
+      sy: fy * viewport.zoom + viewport.y,
+    }),
+    [viewport],
+  );
 
   return (
     <div
@@ -285,7 +223,70 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
         pointerEvents: 'auto',
       }}
     >
-      {/* Preview will be shown via temporary shape node during drag */}
+      {/* Shape preview during drag */}
+      {preview && !preview.isLine && (
+        <div
+          style={{
+            position: 'absolute',
+            left: preview.x * viewport.zoom + viewport.x,
+            top: preview.y * viewport.zoom + viewport.y,
+            width: preview.width * viewport.zoom,
+            height: preview.height * viewport.zoom,
+            clipPath: preview.clipPath,
+            border: `${SHAPE_DEFAULTS.strokeWidth}px solid ${SHAPE_DEFAULTS.stroke}`,
+            borderRadius:
+              preview.shapeType === 'circle' || preview.shapeType === 'ellipse'
+                ? '50%'
+                : preview.shapeType === 'round-rectangle'
+                  ? `${SHAPE_DEFAULTS.roundRectCornerRadius * viewport.zoom}px`
+                  : undefined,
+            background: 'rgba(99, 102, 241, 0.08)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      {/* Line/arrow preview */}
+      {preview &&
+        preview.isLine &&
+        (() => {
+          const { sx: sx1, sy: sy1 } = toScreen(preview.x1, preview.y1);
+          const { sx: sx2, sy: sy2 } = toScreen(preview.x2, preview.y2);
+          const dx = sx2 - sx1;
+          const dy = sy2 - sy1;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len < 2) return null;
+          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                left: sx1,
+                top: sy1,
+                width: len,
+                height: 0,
+                borderTop: `${SHAPE_DEFAULTS.strokeWidth}px solid ${SHAPE_DEFAULTS.stroke}`,
+                transformOrigin: '0 0',
+                transform: `rotate(${angle}deg)`,
+                pointerEvents: 'none',
+              }}
+            >
+              {selectedShape === 'arrow' && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: -3,
+                    top: -5,
+                    width: 0,
+                    height: 0,
+                    borderLeft: '8px solid ' + SHAPE_DEFAULTS.stroke,
+                    borderTop: '5px solid transparent',
+                    borderBottom: '5px solid transparent',
+                  }}
+                />
+              )}
+            </div>
+          );
+        })()}
     </div>
   );
 }

@@ -1,0 +1,80 @@
+/**
+ * Workyy design tokens — cyan → blue → violet.
+ * Light (default) and dark (aurora) via data-theme.
+ */
+
+:root,
+:root[data-theme="light"] {
+  --bg: #0b1026;
+  --page: #ffffff;
+  --surface: rgba(255, 255, 255, 0.1);
+  --surface-solid: #ffffff;
+  --border: rgba(255, 255, 255, 0.22);
+  --border-light: #e6ecff;
+
+  --text: #0b1220;
+  --text-on-hero: #f3f7ff;
+  --text-muted: #475569;
+
+  --primary: #5b9ffc;
+  --primary-hover: #3b82f6;
+  --primary-contrast: #08112e;
+
+  --accent-cyan: #54d5fa;
+  --accent-blue: #6072fc;
+  --accent-violet: #855ffb;
+  --accent-deep: #4d0ccc;
+
+  --hero-gradient: linear-gradient(
+    135deg,
+    #54d5fa 0%,
+    #5b9ffc 35%,
+    #6072fc 60%,
+    #855ffb 85%,
+    #4d0ccc 110%
+  );
+
+  --shadow-sm: 0 1px 2px rgba(2, 6, 23, 0.08);
+  --shadow-md: 0 14px 40px rgba(2, 6, 23, 0.18);
+
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+
+  --ring: 0 0 0 4px rgba(84, 213, 250, 0.25);
+}
+
+:root[data-theme="dark"] {
+  --page: #050814;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-solid: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.14);
+  --border-light: rgba(255, 255, 255, 0.12);
+
+  --text: #e5e7eb;
+  --text-on-hero: #f3f7ff;
+  --text-muted: #94a3b8;
+
+  --primary: #60a5fa;
+  --primary-hover: #3b82f6;
+  --primary-contrast: #061027;
+
+  --accent-cyan: #67d4fa;
+  --accent-blue: #818cf8;
+  --accent-violet: #a78bfa;
+  --accent-deep: #7c3aed;
+
+  --hero-gradient: linear-gradient(
+    135deg,
+    rgba(84, 213, 250, 0.25) 0%,
+    rgba(91, 159, 252, 0.22) 35%,
+    rgba(96, 114, 252, 0.2) 60%,
+    rgba(133, 95, 251, 0.22) 85%,
+    rgba(77, 12, 204, 0.25) 110%
+  );
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 20px 60px rgba(0, 0, 0, 0.55);
+
+  --ring: 0 0 0 4px rgba(96, 165, 250, 0.22);
+}

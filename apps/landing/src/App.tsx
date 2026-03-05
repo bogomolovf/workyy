@@ -1,20 +1,20 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BackToTop } from './components/BackToTop';
+import { Footer } from './components/Footer';
+import { Header } from './components/Header';
+import { PageTransition } from './components/PageTransition';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { BackToTop } from './components/BackToTop';
-import { PageTransition } from './components/PageTransition';
-import { Header } from './components/Header';
-import { Footer } from './components/Footer';
-import HomePage from './pages/HomePage';
-import ComparePage from './pages/ComparePage';
-import IntegrationsPage from './pages/IntegrationsPage';
 import ChangelogPage from './pages/ChangelogPage';
+import ComparePage from './pages/ComparePage';
+import HomePage from './pages/HomePage';
+import IntegrationsPage from './pages/IntegrationsPage';
 import RoadmapPage from './pages/RoadmapPage';
 
 const AppRoutes = () => {
   return (
     <div
-      className="app-shell flex min-h-screen flex-col text-wy-text"
+      className="app-shell flex min-h-screen flex-col bg-[var(--page)] text-wy-text"
       style={{ margin: 0, padding: 0, width: '100%' }}
     >
       <Header />

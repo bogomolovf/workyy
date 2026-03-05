@@ -5,6 +5,11 @@
   "description": "Workyy browser-based analytics canvas",
   "license": "MIT",
   "packageManager": "pnpm@8.15.7",
+  "pnpm": {
+    "overrides": {
+      "pdfjs-dist": "5.3.93"
+    }
+  },
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=8.0.0"

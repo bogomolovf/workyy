@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { createUserWithPassword, verifyUserPassword, getUserById } from '../services/userService';
-import { setAuthCookie, clearAuthCookie } from '../services/authService';
 import { prisma } from '../lib/prisma';
+import { setAuthCookie, clearAuthCookie } from '../services/authService';
+import { createUserWithPassword, verifyUserPassword, getUserById } from '../services/userService';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -69,6 +69,7 @@ export async function authRoutes(app: FastifyInstance) {
           type: 'about:blank',
           title: 'Internal Server Error',
           status: 500,
+          detail: 'Registration failed. Please try again.',
         });
       }
     }
@@ -88,37 +89,47 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { email, password } = result.data;
 
-    const user = await verifyUserPassword(email, password);
-    if (!user) {
-      reply.code(401).send({
-        type: 'about:blank',
-        title: 'Unauthorized',
-        status: 401,
-        detail: 'Invalid email or password',
+    try {
+      const user = await verifyUserPassword(email, password);
+      if (!user) {
+        reply.code(401).send({
+          type: 'about:blank',
+          title: 'Unauthorized',
+          status: 401,
+          detail: 'Invalid email or password',
+        });
+        return;
+      }
+
+      await prisma.auditEvent.create({
+        data: {
+          type: 'user.logged_in',
+          workspaceId: user.roles[0]?.workspaceId ?? null,
+          payload: { email: user.email, userId: user.id },
+        },
       });
-      return;
+
+      setAuthCookie(app, reply, { userId: user.id, email: user.email });
+
+      reply.send({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        workspaces: user.roles.map((r) => ({
+          id: r.workspaceId,
+          name: r.workspace.name,
+          role: r.role,
+        })),
+      });
+    } catch (err: unknown) {
+      app.log.error(err);
+      reply.code(500).send({
+        type: 'about:blank',
+        title: 'Internal Server Error',
+        status: 500,
+        detail: 'Login failed. Please try again.',
+      });
     }
-
-    await prisma.auditEvent.create({
-      data: {
-        type: 'user.logged_in',
-        workspaceId: user.roles[0]?.workspaceId ?? null,
-        payload: { email: user.email, userId: user.id },
-      },
-    });
-
-    setAuthCookie(app, reply, { userId: user.id, email: user.email });
-
-    reply.send({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      workspaces: user.roles.map((r) => ({
-        id: r.workspaceId,
-        name: r.workspace.name,
-        role: r.role,
-      })),
-    });
   });
 
   app.post('/auth/logout', async (request, reply) => {

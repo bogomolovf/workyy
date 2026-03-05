@@ -203,13 +203,14 @@ export async function filesRoutes(app: FastifyInstance) {
         });
       }
 
-      // Set appropriate headers
+      // Set appropriate headers (Content-Length enables progress in clients)
       reply.header('Content-Type', file.mimeType);
       reply.header(
         'Content-Disposition',
         `inline; filename="${encodeURIComponent(file.originalName)}"`,
       );
       reply.header('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+      reply.header('Content-Length', String(file.size));
 
       const stream = fs.createReadStream(filePath);
       return reply.send(stream);

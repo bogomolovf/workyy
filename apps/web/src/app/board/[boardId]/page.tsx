@@ -1,26 +1,36 @@
 'use client';
 
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { BoardMenuButton } from '../../../components/BoardMenu';
+import { LanguageSwitcher } from '../../../components/LanguageSwitcher';
+import { RequireAuth } from '../../../components/RequireAuth';
+import { ToastContainer } from '../../../components/Toast';
+import { UndoRedoControls } from '../../../components/UndoRedoControls';
+import { UserPresenceIndicator } from '../../../components/UserPresenceIndicator';
+import { useBoardCollaboration } from '../../../hooks/useBoardCollaboration';
+import { useBoardPresence } from '../../../hooks/useBoardPresence';
+import { useYjsUndoManager } from '../../../hooks/useYjsUndoManager';
 import {
+  deleteBoard as deleteBoardApi,
   fetchBoard,
   isValidUuid,
   saveBoardStructure,
   type BoardResponse,
+  type PersistedEdge,
+  type PersistedNode,
   type SaveBoardStructureInput,
 } from '../../../lib/api';
-import { RequireAuth } from '../../../components/RequireAuth';
 import { useAuthStore } from '../../../state/authStore';
-import { useRouter } from 'next/navigation';
-import { useExecutionStore, type ExecutionStoreState } from '../../../state/executionStore';
 import { useCanvasLayoutStore, type CanvasLayoutState } from '../../../state/canvasLayoutStore';
-import { useBoardCollaboration } from '../../../hooks/useBoardCollaboration';
-import { useBoardPresence } from '../../../hooks/useBoardPresence';
-import { useYjsUndoManager } from '../../../hooks/useYjsUndoManager';
-import { UserPresenceIndicator } from '../../../components/UserPresenceIndicator';
-import { UndoRedoControls } from '../../../components/UndoRedoControls';
+import { useExecutionStore, type ExecutionStoreState } from '../../../state/executionStore';
+import { useBoardSettingsStore } from '../../../state/boardSettingsStore';
+import type { SqlResult, PlotResult } from '../../../state/executionStore';
+import { useSettingsStore } from '../../../state/settingsStore';
+import { useTranslation } from '../../../hooks/useTranslation';
 import {
   executeSql,
   executeSqlWithPreview,
@@ -30,7 +40,6 @@ import {
   registerDatasetFromCsvNode,
 } from '../../../lib/duckdbClient';
 import { runPython } from '../../../lib/pythonExecutor';
-import type { SqlResult, PlotResult } from '../../../state/executionStore';
 import type { PlotConfig, PlotNodePayload } from '../../../lib/visualization/chartTypes';
 
 type ExecutionNode = Extract<
@@ -101,6 +110,7 @@ type BoardPageProps = {
 function BoardPageContent({ params }: BoardPageProps) {
   const { boardId } = params;
   const router = useRouter();
+  const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const [nodesState, setNodesState] = useState<CanvasNode[]>([]);
@@ -134,11 +144,17 @@ function BoardPageContent({ params }: BoardPageProps) {
     enabled: isValidUuid(boardId),
   });
 
+  const recordBoardVisit = useBoardSettingsStore((s) => s.recordBoardVisit);
+
+  useEffect(() => {
+    if (data?.board?.id) recordBoardVisit(data.board.id);
+  }, [data?.board?.id, recordBoardVisit]);
+
   // Initialize Yjs collaboration when board data is loaded
   const collaboration = useBoardCollaboration(
     boardId,
     data ? mapNodesToCanvas(data.nodes) : undefined,
-    data ? mapEdgesToCanvas(data.edges) : undefined
+    data ? mapEdgesToCanvas(data.edges) : undefined,
   );
 
   // Get list of users on the board for presence indicator
@@ -155,7 +171,7 @@ function BoardPageContent({ params }: BoardPageProps) {
     collaboration.ydoc,
     collaboration.nodesMap,
     collaboration.edgesMap,
-    collaboration.clientId
+    collaboration.clientId,
   );
 
   // Keyboard shortcuts for undo/redo
@@ -188,23 +204,40 @@ function BoardPageContent({ params }: BoardPageProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo, canUndo, canRedo]);
 
+  const handleDeleteBoard = useCallback(
+    (id: string) => {
+      deleteBoardApi(id)
+        .then(() => router.push('/'))
+        .catch((err) => console.error('Failed to delete board:', err));
+    },
+    [router],
+  );
+
   // Use Yjs as the single source of truth for nodes and edges
   const yjsNodes = collaboration.canvasNodes.length > 0 ? collaboration.canvasNodes : nodesState;
   const yjsEdges = collaboration.canvasEdges.length > 0 ? collaboration.canvasEdges : edgesState;
+
+  const getSnapshot = useCallback(
+    () => ({
+      nodes: yjsNodes as PersistedNode[],
+      edges: yjsEdges as PersistedEdge[],
+    }),
+    [yjsNodes, yjsEdges],
+  );
 
   // Sync Yjs changes back to local state (but prevent sync loops)
   // Only sync if nodes actually changed (by comparing IDs, positions, and content)
   useEffect(() => {
     if (collaboration.canvasNodes.length === 0) return;
-    
+
     // Compare by IDs to avoid unnecessary updates
     const currentIds = new Set(nodesStateRef.current.map((n) => n.id));
     const yjsIds = new Set(collaboration.canvasNodes.map((n) => n.id));
-    const idsChanged = 
+    const idsChanged =
       currentIds.size !== yjsIds.size ||
       Array.from(currentIds).some((id) => !yjsIds.has(id)) ||
       Array.from(yjsIds).some((id) => !currentIds.has(id));
-    
+
     // CRITICAL FIX: Also check if positions changed
     // This ensures that position updates from Yjs are synced to local state
     const positionsChanged = nodesStateRef.current.some((node) => {
@@ -217,22 +250,24 @@ function BoardPageContent({ params }: BoardPageProps) {
         Math.abs(yjsNode.position.y - node.position.y) > threshold
       );
     });
-    
+
     // CRITICAL FIX: Check if code changed in SQL/Python nodes
     // This ensures code changes from Yjs are synced to codeStore
     const codeChanged = nodesStateRef.current.some((node) => {
       if (node.type !== 'sql' && node.type !== 'python') return false;
       const yjsNode = collaboration.canvasNodes.find((n) => n.id === node.id);
       if (!yjsNode) return false;
-      const currentCode = node.type === 'sql' 
-        ? ((node.payload as any)?.sql ?? '')
-        : ((node.payload as any)?.python ?? '');
-      const yjsCode = node.type === 'sql'
-        ? ((yjsNode.payload as any)?.sql ?? '')
-        : ((yjsNode.payload as any)?.python ?? '');
+      const currentCode =
+        node.type === 'sql'
+          ? ((node.payload as any)?.sql ?? '')
+          : ((node.payload as any)?.python ?? '');
+      const yjsCode =
+        node.type === 'sql'
+          ? ((yjsNode.payload as any)?.sql ?? '')
+          : ((yjsNode.payload as any)?.python ?? '');
       return currentCode !== yjsCode;
     });
-    
+
     // CRITICAL FIX: Check if execution status/results changed
     // This ensures execution results from Yjs are synced to executionStore
     const executionChanged = nodesStateRef.current.some((node) => {
@@ -255,7 +290,7 @@ function BoardPageContent({ params }: BoardPageProps) {
       }
       return false;
     });
-    
+
     if (idsChanged || positionsChanged || codeChanged || executionChanged) {
       // Mark as Yjs update to prevent sync loop
       isYjsUpdateRef.current = true;
@@ -267,21 +302,22 @@ function BoardPageContent({ params }: BoardPageProps) {
           removeExecutionEntry(id);
         }
       });
-      
+
       // Update codeStore for SQL/Python nodes when code changes through Yjs
       if (codeChanged) {
         collaboration.canvasNodes.forEach((yjsNode) => {
           if (yjsNode.type === 'sql' || yjsNode.type === 'python') {
-            const code = yjsNode.type === 'sql'
-              ? ((yjsNode.payload as any)?.sql ?? '')
-              : ((yjsNode.payload as any)?.python ?? '');
+            const code =
+              yjsNode.type === 'sql'
+                ? ((yjsNode.payload as any)?.sql ?? '')
+                : ((yjsNode.payload as any)?.python ?? '');
             if (code) {
               setCodeStore(yjsNode.id, code);
             }
           }
         });
       }
-      
+
       // Update executionStore when execution status/results change through Yjs
       // CRITICAL FIX: Don't overwrite final states (success/error) with "running" from Yjs
       // This prevents errors from being overwritten by stale "running" status
@@ -293,18 +329,23 @@ function BoardPageContent({ params }: BoardPageProps) {
             if (execution) {
               const currentEntry = useExecutionStore.getState().entries[yjsNode.id];
               const currentStatus = currentEntry?.status;
-              
+
               // Always update "running" status when it comes from Yjs
               // This ensures other users see when someone starts executing a node
               // CRITICAL FIX: Don't overwrite success/error with "running" if we just set success/error locally
               // Check if the current status in nodesStateRef is already success/error - if so, don't overwrite with running
               const currentNodeInRef = nodesStateRef.current.find((n) => n.id === yjsNode.id);
-              const currentNodeExecution = currentNodeInRef ? (currentNodeInRef.payload as any)?.execution : null;
-              
+              const currentNodeExecution = currentNodeInRef
+                ? (currentNodeInRef.payload as any)?.execution
+                : null;
+
               if (execution.status === 'running') {
                 // Only set "running" if current status in ref is not already a final state
                 // This prevents overwriting success/error that was just set locally
-                if (currentNodeExecution?.status !== 'success' && currentNodeExecution?.status !== 'error') {
+                if (
+                  currentNodeExecution?.status !== 'success' &&
+                  currentNodeExecution?.status !== 'error'
+                ) {
                   // Always set "running" - it indicates a new execution has started
                   // This allows other users to see the execution progress in real-time
                   setStatus(yjsNode.id, 'running');
@@ -321,12 +362,12 @@ function BoardPageContent({ params }: BoardPageProps) {
           }
         });
       }
-      
+
       // Type assertion: collaboration.canvasNodes uses CanvasNode from yjs/adapters (type: string)
       // but we need the local CanvasNode type (with specific union type)
       // This is safe because all valid node types are included in the union
       setNodesState(collaboration.canvasNodes as CanvasNode[]);
-      
+
       // CRITICAL FIX: Trigger auto-save when nodes are added/updated through Yjs
       // This ensures that new nodes added via yjsOnNodesChange are saved to DB
       // Use setTimeout to ensure nodesStateRef is updated before auto-save
@@ -335,19 +376,26 @@ function BoardPageContent({ params }: BoardPageProps) {
         triggerAutoSaveRef.current?.();
       }, 0);
     }
-  }, [collaboration.canvasNodes, removeExecutionEntry, setCodeStore, setStatus, setSuccess, setError]);
+  }, [
+    collaboration.canvasNodes,
+    removeExecutionEntry,
+    setCodeStore,
+    setStatus,
+    setSuccess,
+    setError,
+  ]);
 
   useEffect(() => {
     if (collaboration.canvasEdges.length === 0) return;
-    
+
     // Compare by IDs to avoid unnecessary updates
     const currentIds = new Set(edgesStateRef.current.map((e) => e.id));
     const yjsIds = new Set(collaboration.canvasEdges.map((e) => e.id));
-    const idsChanged = 
+    const idsChanged =
       currentIds.size !== yjsIds.size ||
       Array.from(currentIds).some((id) => !yjsIds.has(id)) ||
       Array.from(yjsIds).some((id) => !currentIds.has(id));
-    
+
     if (idsChanged) {
       setEdgesState(collaboration.canvasEdges);
     }
@@ -425,9 +473,14 @@ function BoardPageContent({ params }: BoardPageProps) {
 
     const observer = async () => {
       try {
-        const { restoreDatasetsForBoard, getDatasetsKey } = await import('../../../lib/duckdbClient');
-        const datasets: Array<{ tableName: string; columns: string[]; rows: Array<Array<string | number | null>> }> = [];
-        
+        const { restoreDatasetsForBoard, getDatasetsKey } =
+          await import('../../../lib/duckdbClient');
+        const datasets: Array<{
+          tableName: string;
+          columns: string[];
+          rows: Array<Array<string | number | null>>;
+        }> = [];
+
         // Collect all datasets from Yjs map
         datasetsMap.forEach((dataset: any) => {
           datasets.push(dataset);
@@ -437,10 +490,10 @@ function BoardPageContent({ params }: BoardPageProps) {
         // Always update localStorage, even if empty (to handle deletions)
         const key = getDatasetsKey(boardId);
         window.localStorage.setItem(key, JSON.stringify(datasets));
-        
+
         // Restore datasets in local DuckDB (this will clear tables if datasets is empty)
         await restoreDatasetsForBoard(boardId);
-        
+
         // Refresh table list
         await refreshTables();
       } catch (error) {
@@ -450,7 +503,7 @@ function BoardPageContent({ params }: BoardPageProps) {
 
     // Observe changes in datasetsMap
     datasetsMap.observe(observer);
-    
+
     // Initial sync (even if map is empty, we need to restore from localStorage on first load)
     observer();
 
@@ -590,16 +643,17 @@ function BoardPageContent({ params }: BoardPageProps) {
       const { getDatasetsKey } = await import('../../../lib/duckdbClient');
       const key = getDatasetsKey(boardId);
       const hasStoredDatasets =
-        typeof window !== 'undefined' &&
-        (window.localStorage.getItem(key) ?? '[]') !== '[]';
+        typeof window !== 'undefined' && (window.localStorage.getItem(key) ?? '[]') !== '[]';
 
       for (const node of csvNodes) {
-        const payload = node.payload as {
-          filename?: string;
-          tableName?: string;
-          data?: SqlResult;
-          totalRowCount?: number;
-        } | undefined;
+        const payload = node.payload as
+          | {
+              filename?: string;
+              tableName?: string;
+              data?: SqlResult;
+              totalRowCount?: number;
+            }
+          | undefined;
         if (!payload?.data || !payload?.filename) continue;
         const rowCount = payload.data.rows?.length ?? 0;
         const totalCount = payload.totalRowCount ?? rowCount;
@@ -679,7 +733,7 @@ function BoardPageContent({ params }: BoardPageProps) {
       const code = entry?.code ?? '';
 
       setStatus(nodeId, 'running');
-      
+
       // Sync "running" status through Yjs for real-time collaboration
       // This allows other clients to see that the node is executing
       setNodesState((prev) => {
@@ -931,17 +985,11 @@ function BoardPageContent({ params }: BoardPageProps) {
               }
               break;
             }
-            if (
-              upstreamEntry?.output?.kind === 'python' &&
-              upstreamEntry.output.result?.table
-            ) {
+            if (upstreamEntry?.output?.kind === 'python' && upstreamEntry.output.result?.table) {
               inputData = upstreamEntry.output.result.table;
               break;
             }
-            if (
-              upstreamEntry?.output?.kind === 'plot' &&
-              upstreamEntry.output.result?.inputData
-            ) {
+            if (upstreamEntry?.output?.kind === 'plot' && upstreamEntry.output.result?.inputData) {
               inputData = upstreamEntry.output.result.inputData;
               break;
             }
@@ -1081,20 +1129,20 @@ function BoardPageContent({ params }: BoardPageProps) {
       if (!node || node.type !== 'sql') {
         return; // Only support full load for SQL nodes
       }
-      
+
       resetExecutionOutput(nodeId);
       const currentEntries = useExecutionStore.getState().entries;
       const entry = currentEntries[nodeId];
       const code = entry?.code ?? '';
 
       setStatus(nodeId, 'running');
-      
+
       try {
         // Execute with fullLoad=true to bypass preview limit
         const result = await executeSqlWithPreview(code, { fullLoad: true });
         const output = { kind: 'sql' as const, result, code };
         setSuccess(nodeId, output);
-        
+
         // Sync through Yjs
         setNodesState((prev) => {
           const next = prev.map((n) =>
@@ -1151,7 +1199,7 @@ function BoardPageContent({ params }: BoardPageProps) {
   // Auto-save debounce timer ref
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isAutoSavingRef = useRef(false);
-  
+
   // Ref to store triggerAutoSave function to avoid dependency issues
   const triggerAutoSaveRef = useRef<(() => void) | null>(null);
 
@@ -1159,7 +1207,14 @@ function BoardPageContent({ params }: BoardPageProps) {
   // CRITICAL FIX: Moved before first useEffect to fix initialization order
   const autoSaveBoard = useCallback(async () => {
     if (isAutoSavingRef.current || !dataLoadedRef.current || isLoadingRef.current) {
-      console.log('[AutoSave] Skipping - isAutoSaving:', isAutoSavingRef.current, 'dataLoaded:', dataLoadedRef.current, 'isLoading:', isLoadingRef.current);
+      console.log(
+        '[AutoSave] Skipping - isAutoSaving:',
+        isAutoSavingRef.current,
+        'dataLoaded:',
+        dataLoadedRef.current,
+        'isLoading:',
+        isLoadingRef.current,
+      );
       return;
     }
 
@@ -1168,7 +1223,7 @@ function BoardPageContent({ params }: BoardPageProps) {
     // This ensures that even if Yjs sync fails, auto-save still works
     const currentNodes = nodesStateRef.current.length > 0 ? nodesStateRef.current : nodesState;
     const currentEdges = edgesState.length > 0 ? edgesState : [];
-    
+
     console.log('[AutoSave] Saving nodes:', currentNodes.length, 'edges:', currentEdges.length);
 
     // Build payload from Yjs data
@@ -1357,7 +1412,16 @@ function BoardPageContent({ params }: BoardPageProps) {
     } finally {
       isAutoSavingRef.current = false;
     }
-  }, [boardId, persistBoard, queryClient, nodeSizes, collaboration.canvasNodes, collaboration.canvasEdges, nodesState, edgesState]);
+  }, [
+    boardId,
+    persistBoard,
+    queryClient,
+    nodeSizes,
+    collaboration.canvasNodes,
+    collaboration.canvasEdges,
+    nodesState,
+    edgesState,
+  ]);
 
   // Debounced auto-save trigger
   // CRITICAL FIX: Moved before first useEffect to fix initialization order
@@ -1371,7 +1435,7 @@ function BoardPageContent({ params }: BoardPageProps) {
       void autoSaveBoard();
     }, 500); // 500ms debounce for faster saves
   }, [autoSaveBoard]);
-  
+
   // CRITICAL FIX: Store triggerAutoSave in ref for use in useEffect
   useEffect(() => {
     triggerAutoSaveRef.current = triggerAutoSave;
@@ -1539,7 +1603,7 @@ function BoardPageContent({ params }: BoardPageProps) {
   const handleCodeChange = useCallback(
     (nodeId: string, code: string) => {
       setCodeStore(nodeId, code);
-      
+
       // Update local state
       setNodesState((prev) => {
         const next = prev.map((node) => {
@@ -1560,7 +1624,7 @@ function BoardPageContent({ params }: BoardPageProps) {
 
         return next;
       });
-      
+
       markDirty();
     },
     [setCodeStore, markDirty, collaboration],
@@ -1582,12 +1646,12 @@ function BoardPageContent({ params }: BoardPageProps) {
         const yjsPayload = yjsNode?.payload as Record<string, unknown> | undefined;
         return !yjsPayload?.audioData || yjsPayload.audioData !== payload.audioData;
       });
-      
+
       // If we have new voice audio, force sync it regardless of isYjsUpdate
       if (hasNewVoiceAudio) {
         collaboration.handleCanvasNodesChange(updated);
       }
-      
+
       // Skip sync if this update came from Yjs (to prevent loops)
       if (isYjsUpdateRef.current) {
         isYjsUpdateRef.current = false;
@@ -1612,7 +1676,7 @@ function BoardPageContent({ params }: BoardPageProps) {
       const yjsNodeIds = new Set(collaboration.canvasNodes.map((n) => n.id));
       const yjsNodesMap = new Map(collaboration.canvasNodes.map((n) => [n.id, n]));
       const hasNewNodes = updated.some((n) => !yjsNodeIds.has(n.id));
-      
+
       // Check if any voice node has new audioData that needs to be synced
       const hasVoiceAudioChanges = updated.some((n) => {
         if (n.type !== 'voice') return false;
@@ -1628,9 +1692,7 @@ function BoardPageContent({ params }: BoardPageProps) {
       const hasPayloadChanges = updated.some((n) => {
         const yjsNode = yjsNodesMap.get(n.id);
         if (!yjsNode) return false;
-        return (
-          JSON.stringify(n.payload ?? {}) !== JSON.stringify(yjsNode.payload ?? {})
-        );
+        return JSON.stringify(n.payload ?? {}) !== JSON.stringify(yjsNode.payload ?? {});
       });
 
       // Sync through handleCanvasNodesChange if there are new nodes, voice audio changes, or payload changes
@@ -1683,61 +1745,61 @@ function BoardPageContent({ params }: BoardPageProps) {
           boardId,
           persist: true,
         });
-        
+
         // Get dataset metadata from localStorage (saved by loadFileIntoDuckDb)
         const key = getDatasetsKey(boardId);
         const raw = window.localStorage.getItem(key);
         if (raw) {
-          const datasets: Array<{ tableName: string; columns: string[]; rows: Array<Array<string | number | null>> }> = JSON.parse(raw);
+          const datasets: Array<{
+            tableName: string;
+            columns: string[];
+            rows: Array<Array<string | number | null>>;
+          }> = JSON.parse(raw);
           const dataset = datasets.find((d) => d.tableName === tableName);
           if (dataset) {
             // Sync dataset metadata through Yjs for real-time collaboration
             collaboration.datasetsMap.set(tableName, dataset);
           }
         }
-        
-        setUploadMessage(`Загружено ${file.name} → таблица ${tableName} (${rows} строк).`);
+
+        setUploadMessage(t.uploadFileSuccess(file.name, tableName, rows));
         await refreshTables();
       } catch (uploadError) {
         console.error('Failed to import file', uploadError);
-        setUploadMessage(
-          uploadError instanceof Error ? uploadError.message : 'Не удалось загрузить файл',
-        );
+        setUploadMessage(uploadError instanceof Error ? uploadError.message : t.uploadFileError);
       } finally {
         setIsUploadingDataset(false);
         event.target.value = '';
       }
     },
-    [refreshTables, collaboration, boardId],
+    [refreshTables, collaboration, boardId, t],
   );
 
   const handleDatasetDelete = useCallback(
     async (tableName: string) => {
-      if (!confirm(`Удалить таблицу "${tableName}"? Это действие нельзя отменить.`)) {
+      if (!confirm(t.deleteTableConfirm(tableName))) {
         return;
       }
-      
+
       try {
         const { deleteTable } = await import('../../../lib/duckdbClient');
-        
+
         // Delete table from DuckDB and localStorage
         await deleteTable(tableName, boardId);
-        
+
         // Remove from Yjs map to sync deletion with other users
         collaboration.datasetsMap.delete(tableName);
-        
+
         // Refresh table list
         await refreshTables();
-        
-        setUploadMessage(`Таблица "${tableName}" удалена.`);
+
+        setUploadMessage(t.tableDeleted(tableName));
       } catch (deleteError) {
         console.error('Failed to delete table', deleteError);
-        setUploadMessage(
-          deleteError instanceof Error ? deleteError.message : 'Не удалось удалить таблицу',
-        );
+        setUploadMessage(deleteError instanceof Error ? deleteError.message : t.deleteTableError);
       }
     },
-    [refreshTables, collaboration, boardId],
+    [refreshTables, collaboration, boardId, t],
   );
 
   const handleDatasetButtonClick = useCallback(() => {
@@ -1792,18 +1854,19 @@ function BoardPageContent({ params }: BoardPageProps) {
       queryClient.invalidateQueries({ queryKey: ['board', boardId] });
     } catch (error) {
       console.error('Failed to save board', error);
-      setSaveError(error instanceof Error ? error.message : 'Не удалось сохранить доску');
+      setSaveError(error instanceof Error ? error.message : t.saveBoardError);
     } finally {
       setIsSaving(false);
     }
-  }, [boardId, buildPersistPayload, isDirty, isSaving, persistBoard, queryClient, saveError]);
+  }, [boardId, buildPersistPayload, isDirty, isSaving, persistBoard, queryClient, saveError, t]);
 
   if (!isValidUuid(boardId)) {
     return (
       <main className="flex h-screen items-center justify-center bg-[#f7f9fd] text-slate-900">
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-6 py-4 text-sm text-amber-700">
-          Некорректный идентификатор борда. Вернитесь на <Link href="/">главную</Link> и выберите
-          борд из списка.
+          {t.invalidBoardIdPrefix}
+          <Link href="/">{t.invalidBoardIdLink}</Link>
+          {t.invalidBoardIdSuffix}
         </div>
       </main>
     );
@@ -1811,14 +1874,28 @@ function BoardPageContent({ params }: BoardPageProps) {
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-[#f7f9fd] text-slate-900">
+      <ToastContainer />
       <header className="border-b border-slate-200 bg-white px-4 py-3">
         <div className="flex items-center justify-between">
-          {/* Left: Board title + Undo/Redo controls */}
+          {/* Left: Board menu + Board title + Undo/Redo controls */}
           <div className="flex items-center gap-4">
+            <BoardMenuButton
+              boardId={boardId}
+              boardTitle={data?.board.title}
+              workspaceId={data?.board.workspaceId ?? ''}
+              getSnapshot={getSnapshot}
+              routerPush={(url) => router.push(url)}
+              onDeleteBoard={handleDeleteBoard}
+              undo={handleUndo}
+              redo={handleRedo}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              fullscreenTarget={undefined}
+            />
             <h1 className="text-lg font-semibold text-slate-900 truncate">
-              {data?.board.title ?? 'Board'}
+              {data?.board.title ?? t.board}
             </h1>
-            
+
             {/* Undo/Redo controls - per-user */}
             <div className="flex items-center border-l border-slate-200 pl-4">
               <UndoRedoControls
@@ -1830,17 +1907,15 @@ function BoardPageContent({ params }: BoardPageProps) {
             </div>
           </div>
 
-          {/* Right: Presence indicator + Back to home */}
+          {/* Right: Presence indicator + Language switcher + Back to home */}
           <div className="flex items-center gap-3">
-            <UserPresenceIndicator 
-              users={presenceUsers} 
-              currentUserId={user?.id}
-            />
+            <LanguageSwitcher />
+            <UserPresenceIndicator users={presenceUsers} currentUserId={user?.id} />
             <Link
               className="rounded-md border border-indigo-400 px-3 py-1.5 text-sm font-medium text-indigo-500 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
               href="/"
             >
-              ← Back to home
+              {t.backToHome}
             </Link>
           </div>
         </div>
@@ -1857,17 +1932,16 @@ function BoardPageContent({ params }: BoardPageProps) {
       <section className="flex flex-1 min-h-0 flex-col overflow-hidden">
         {isLoading && (
           <div className="flex h-full items-center justify-center text-slate-500">
-            Loading board…
+            {t.loadingBoard}
           </div>
         )}
         {error && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-rose-500">
             <span>
-              Failed to load board <code>{boardId}</code>.
+              {t.failedToLoadBoard} <code>{boardId}</code>.
             </span>
             <span className="text-sm text-slate-400">
-              Проверьте, что realtime-сервер доступен по{' '}
-              <code>http://localhost:4000/api/boards/{boardId}</code>.
+              {t.checkRealtimeServer(`http://localhost:4000/api/boards/${boardId}`)}
             </span>
           </div>
         )}
@@ -1877,19 +1951,36 @@ function BoardPageContent({ params }: BoardPageProps) {
               board={{
                 ...data.board,
                 userInfo: user
-                  ? {
-                      userId: user.id,
-                      userName: user.name || user.email,
-                    }
+                  ? (() => {
+                      const profile = useSettingsStore.getState().profile;
+                      const userName =
+                        profile.nickname?.trim() || profile.name?.trim() || user.name || user.email;
+                      return {
+                        userId: user.id,
+                        userName,
+                      };
+                    })()
                   : undefined,
               }}
-              nodes={yjsNodes as Array<{
-                id: string;
-                boardId?: string;
-                type: 'sql' | 'python' | 'table' | 'plot' | 'note' | 'text' | 'shape' | 'image' | 'pen' | 'database';
-                position: { x: number; y: number };
-                payload?: Record<string, unknown>;
-              }>}
+              nodes={
+                yjsNodes as Array<{
+                  id: string;
+                  boardId?: string;
+                  type:
+                    | 'sql'
+                    | 'python'
+                    | 'table'
+                    | 'plot'
+                    | 'note'
+                    | 'text'
+                    | 'shape'
+                    | 'image'
+                    | 'pen'
+                    | 'database';
+                  position: { x: number; y: number };
+                  payload?: Record<string, unknown>;
+                }>
+              }
               edges={yjsEdges}
               executionEntries={entries}
               onCodeChange={handleCodeChange}
@@ -1904,6 +1995,8 @@ function BoardPageContent({ params }: BoardPageProps) {
               yjsOnEdgesChange={collaboration.onEdgesChange}
               cursorsMap={collaboration.cursorsMap}
               editingMap={collaboration.editingMap}
+              presentationBroadcastsMap={collaboration.presentationBroadcastsMap}
+              ydoc={collaboration.ydoc}
               clientId={collaboration.clientId}
             />
           </div>
