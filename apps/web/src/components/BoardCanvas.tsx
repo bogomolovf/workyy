@@ -27,7 +27,12 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
+import { EditingPresenceProvider } from '../context/EditingPresenceContext';
+import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
 import { type UploadedFile } from '../lib/api';
+import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
+import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
+import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
 import {
   getDefaultNodeWidth,
   useCanvasLayoutStore,
@@ -40,6 +45,7 @@ import { useExecutionStore } from '../state/executionStore';
 import { useAddNode } from '../state/useAddNode';
 import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
 import { BoardInspector } from './BoardInspector';
+import CollaborativeCursors from './CollaborativeCursors';
 import { ConnectionArrow } from './ConnectionArrow';
 import {
   resolveConnectionEndpoints,
@@ -48,7 +54,11 @@ import {
 } from './connectionUtils';
 import { FileDropOverlay } from './FileDropOverlay';
 import CustomConnectionLine from './flowEdges/CustomConnectionLine';
+import { CsvNode } from './flowNodes/CsvNode';
 import { DatabaseNode } from './flowNodes/DatabaseNode';
+import { DocumentNode } from './flowNodes/DocumentNode';
+import { ImageNode } from './flowNodes/ImageNode';
+import { PlotNode } from './flowNodes/PlotNode';
 import { InteractiveResultTable } from './InteractiveResultTable';
 import { PlotPreview } from './PlotPreview';
 import { FreehandOverlay } from './pen/FreehandOverlay';
@@ -58,37 +68,36 @@ import { PenToolbar } from './pen/PenToolbar';
 import { EraserOverlay } from './pen/EraserOverlay';
 // Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
 import { TextNode } from './TextNode';
-import { PlotNode } from './flowNodes/PlotNode';
-import { CsvNode } from './flowNodes/CsvNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
 import { VoiceNode } from './flowNodes/VoiceNode';
-import { ImageNode } from './flowNodes/ImageNode';
 import { VideoNode } from './flowNodes/VideoNode';
-import { DocumentNode } from './flowNodes/DocumentNode';
-import CollaborativeCursors from './CollaborativeCursors';
-import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
-import { EditingPresenceProvider } from '../context/EditingPresenceContext';
-import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
-import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
-import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
 
 // SessionStorage-backed cache for voice audio data
 // Persists across HMR, re-renders, and component remounts (until tab close)
 const VOICE_AUDIO_STORAGE_KEY = 'workyy_voice_audio_cache';
 
-const getVoiceAudioFromStorage = (nodeId: string): { audioData: string; duration: number; mimeType: string } | undefined => {
+const getVoiceAudioFromStorage = (
+  nodeId: string,
+): { audioData: string; duration: number; mimeType: string } | undefined => {
   if (typeof window === 'undefined') return undefined;
   try {
     const cached = sessionStorage.getItem(`${VOICE_AUDIO_STORAGE_KEY}_${nodeId}`);
     return cached ? JSON.parse(cached) : undefined;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 };
 
-const setVoiceAudioToStorage = (nodeId: string, data: { audioData: string; duration: number; mimeType: string }) => {
+const setVoiceAudioToStorage = (
+  nodeId: string,
+  data: { audioData: string; duration: number; mimeType: string },
+) => {
   if (typeof window === 'undefined') return;
   try {
     sessionStorage.setItem(`${VOICE_AUDIO_STORAGE_KEY}_${nodeId}`, JSON.stringify(data));
-  } catch { /* quota exceeded or other error */ }
+  } catch {
+    /* quota exceeded or other error */
+  }
 };
 
 const getVoiceAudioKeysFromStorage = (): string[] => {
@@ -102,7 +111,9 @@ const getVoiceAudioKeysFromStorage = (): string[] => {
       }
     }
     return keys;
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 };
 
 // Wrapper object to match previous API
@@ -110,7 +121,9 @@ const globalVoiceAudioCache = {
   get: getVoiceAudioFromStorage,
   set: setVoiceAudioToStorage,
   keys: getVoiceAudioKeysFromStorage,
-  get size() { return getVoiceAudioKeysFromStorage().length; }
+  get size() {
+    return getVoiceAudioKeysFromStorage().length;
+  },
 };
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
@@ -416,8 +429,8 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
       {error && <ErrorMessage message={error} />}
       {result && (
         <div className="mt-3">
-          <InteractiveResultTable 
-            result={result} 
+          <InteractiveResultTable
+            result={result}
             compact
             totalCount={result.totalCount}
             isPreview={result.isPreview}
@@ -438,7 +451,7 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   const hiddenOutputs = execution?.hiddenOutputs ?? { error: false, warnings: false };
   const dismissError = useExecutionStore((state: ExecutionStoreState) => state.dismissError);
   const dismissWarnings = useExecutionStore((state: ExecutionStoreState) => state.dismissWarnings);
-  
+
   const codeLines = code.split('\n').length;
   const expandedHeight = Math.max(240, codeLines * 18 + 60);
   const editorHeight = data.isCodeCollapsed ? Math.min(220, expandedHeight) : expandedHeight;
@@ -723,67 +736,67 @@ export function BoardCanvas({
             clientId={clientId}
             userInfo={board.userInfo}
           />
-        {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
-        <div
-          className="flex-none transition-all duration-200"
-          style={{
-            width: `${inspectorWidth}px`,
-            minWidth: `${inspectorWidth}px`,
-            maxWidth: `${inspectorWidth}px`,
-          }}
-        >
-          {inspectorKind && selectedNode ? (
-            <BoardInspector
-              nodeLabel={
-                (selectedNode.payload?.label as string | undefined) ??
-                `${inspectorKind === 'sql' ? 'SQL' : inspectorKind === 'python' ? 'Python' : 'Plot'} ${selectedNode.id.slice(0, 6)}`
-              }
-              kind={inspectorKind}
-              status={inspectorEntry?.status ?? 'idle'}
-              error={inspectorEntry?.error}
-              lastStartedAt={inspectorEntry?.startedAt}
-              lastFinishedAt={inspectorEntry?.finishedAt}
-              code={inspectorEntry?.code ?? ''}
-              onChange={(value) => onCodeChange(selectedNode.id, value ?? '')}
-              onCollapseChange={setInspectorCollapsed}
-              result={
-                inspectorKind === 'sql'
-                  ? inspectorEntry?.output?.kind === 'sql'
-                    ? inspectorEntry.output.result
-                    : undefined
-                  : inspectorKind === 'python'
-                    ? inspectorEntry?.output?.kind === 'python'
+          {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
+          <div
+            className="flex-none transition-all duration-200"
+            style={{
+              width: `${inspectorWidth}px`,
+              minWidth: `${inspectorWidth}px`,
+              maxWidth: `${inspectorWidth}px`,
+            }}
+          >
+            {inspectorKind && selectedNode ? (
+              <BoardInspector
+                nodeLabel={
+                  (selectedNode.payload?.label as string | undefined) ??
+                  `${inspectorKind === 'sql' ? 'SQL' : inspectorKind === 'python' ? 'Python' : 'Plot'} ${selectedNode.id.slice(0, 6)}`
+                }
+                kind={inspectorKind}
+                status={inspectorEntry?.status ?? 'idle'}
+                error={inspectorEntry?.error}
+                lastStartedAt={inspectorEntry?.startedAt}
+                lastFinishedAt={inspectorEntry?.finishedAt}
+                code={inspectorEntry?.code ?? ''}
+                onChange={(value) => onCodeChange(selectedNode.id, value ?? '')}
+                onCollapseChange={setInspectorCollapsed}
+                result={
+                  inspectorKind === 'sql'
+                    ? inspectorEntry?.output?.kind === 'sql'
                       ? inspectorEntry.output.result
                       : undefined
+                    : inspectorKind === 'python'
+                      ? inspectorEntry?.output?.kind === 'python'
+                        ? inspectorEntry.output.result
+                        : undefined
+                      : undefined
+                }
+                nodeId={selectedNode.id}
+                nodes={nodes}
+                edges={edges}
+                executionEntries={executionEntries}
+                onPlotConfigChange={
+                  inspectorKind === 'plot'
+                    ? (nodeId, newPayload) => {
+                        // Update nodes through onNodesChange callback
+                        const updatedNodes = nodes.map((n) =>
+                          n.id === nodeId
+                            ? {
+                                ...n,
+                                payload: {
+                                  ...(n.payload ?? {}),
+                                  ...newPayload,
+                                },
+                              }
+                            : n,
+                        );
+                        onNodesChange?.(updatedNodes);
+                      }
                     : undefined
-              }
-              nodeId={selectedNode.id}
-              nodes={nodes}
-              edges={edges}
-              executionEntries={executionEntries}
-              onPlotConfigChange={
-                inspectorKind === 'plot'
-                  ? (nodeId, newPayload) => {
-                      // Update nodes through onNodesChange callback
-                      const updatedNodes = nodes.map((n) =>
-                        n.id === nodeId
-                          ? {
-                              ...n,
-                              payload: {
-                                ...(n.payload ?? {}),
-                                ...newPayload,
-                              },
-                            }
-                          : n,
-                      );
-                      onNodesChange?.(updatedNodes);
-                    }
-                  : undefined
-              }
-            />
-          ) : null}
+                }
+              />
+            ) : null}
+          </div>
         </div>
-      </div>
       </EditingPresenceProvider>
     </ReactFlowProvider>
   );
@@ -840,9 +853,10 @@ function InnerBoardCanvas({
   // Also hide own cursor when using eraser (eraser has its own cursor indicator)
   // Show own cursor normally, but hide it when hovering over toolbars or using eraser
   const showOwnCursor = !isHoveringToolbar && tool !== 'eraser';
-  const [cursors, onMouseMove] = cursorsMap && clientId
-    ? useCursorStateSynced(cursorsMap, clientId, userInfo, { showOwnCursor })
-    : ([[], () => {}] as const);
+  const [cursors, onMouseMove] =
+    cursorsMap && clientId
+      ? useCursorStateSynced(cursorsMap, clientId, userInfo, { showOwnCursor })
+      : ([[], () => {}] as const);
 
   // Editing presence is provided via EditingPresenceProvider context
   // Individual nodes use useNodeEditing hook to access editing state
@@ -886,7 +900,7 @@ function InnerBoardCanvas({
         if (incomingNode.type === 'voice') {
           const incomingPayload = (incomingNode.payload ?? {}) as Record<string, unknown>;
           const cachedAudio = globalVoiceAudioCache.get(incomingNode.id);
-          
+
           // If incoming has audioData, update cache
           if (incomingPayload.audioData) {
             globalVoiceAudioCache.set(incomingNode.id, {
@@ -896,7 +910,7 @@ function InnerBoardCanvas({
             });
             return incomingNode;
           }
-          
+
           // If we have cached audioData but incoming doesn't, use cached
           if (cachedAudio && !incomingPayload.audioData) {
             return {
@@ -910,7 +924,7 @@ function InnerBoardCanvas({
             };
           }
         }
-        
+
         return incomingNode;
       });
     });
@@ -990,7 +1004,7 @@ function InnerBoardCanvas({
   const emitNodesChange = useCallback(
     (next: BoardCanvasProps['nodes'], shouldSaveToHistory = false) => {
       if (!onNodesChange) return;
-      
+
       // Inject audioData from ref before sanitizing - ensures audio is always saved
       const nodesWithAudio = next.map((node) => {
         if (node.type === 'voice') {
@@ -1009,10 +1023,10 @@ function InnerBoardCanvas({
         }
         return node;
       });
-      
+
       const sanitized = sanitizeExternalNodes(nodesWithAudio);
       const signature = JSON.stringify(sanitized);
-      
+
       if (signature === lastEmittedRef.current) return;
       lastEmittedRef.current = signature;
 
@@ -1027,7 +1041,10 @@ function InnerBoardCanvas({
   // This ensures that changes to node content (text, formatting, etc.) are synchronized
   // between all clients immediately, not just on auto-save
   const syncNodePayloadChange = useCallback(
-    (nodeId: string, payloadUpdate: (prevPayload: Record<string, unknown>) => Record<string, unknown>) => {
+    (
+      nodeId: string,
+      payloadUpdate: (prevPayload: Record<string, unknown>) => Record<string, unknown>,
+    ) => {
       // Update local state and sync through Yjs
       setLocalNodes((prev) => {
         const currentNode = prev.find((n) => n.id === nodeId);
@@ -1117,7 +1134,7 @@ function InnerBoardCanvas({
       const reactFlowNodes = document.querySelectorAll('.react-flow__node');
       const reactFlowViewport = document.querySelector('.react-flow__viewport');
       const reactFlowRenderer = document.querySelector('.react-flow__renderer');
-      
+
       // Force hide cursor ONLY on ReactFlow elements, NOT on body
       // This allows standard cursor to show outside the canvas area
       if (reactFlowContainer) {
@@ -1140,13 +1157,13 @@ function InnerBoardCanvas({
           (child as HTMLElement).style.setProperty('cursor', 'none', 'important');
         });
       });
-      
+
       // Restore standard cursor for Controls and MiniMap (like toolbar)
       const controls = document.querySelector('.react-flow__controls');
       const minimap = document.querySelector('.react-flow__minimap');
       const penToolbar = document.querySelector('[data-pen-toolbar]');
       const commandBar = document.querySelector('[data-board-command-bar]');
-      
+
       if (controls) {
         (controls as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
         const controlButtons = controls.querySelectorAll('button');
@@ -1161,7 +1178,7 @@ function InnerBoardCanvas({
           (el as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
         });
       }
-      
+
       // Restore standard cursor for PenToolbar (pen settings palette)
       if (penToolbar) {
         (penToolbar as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
@@ -1170,7 +1187,7 @@ function InnerBoardCanvas({
           (el as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
         });
       }
-      
+
       // Restore standard cursor for BoardCommandBar
       if (commandBar) {
         (commandBar as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
@@ -1285,7 +1302,7 @@ function InnerBoardCanvas({
     return () => {
       observer.disconnect();
       clearInterval(intervalId);
-      
+
       // Remove all listeners
       document.querySelectorAll('[data-cursor-listener]').forEach((el) => {
         el.removeEventListener('mouseenter', handleToolbarMouseEnter);
@@ -1293,7 +1310,6 @@ function InnerBoardCanvas({
       });
     };
   }, []);
-
 
   const selectedDataNode = useMemo(() => {
     if (!selectedNodeId) return null;
@@ -2056,10 +2072,12 @@ function InnerBoardCanvas({
                                 mimeType: payload.mimeType ?? 'audio/webm',
                                 recordedBy: payload.recordedBy,
                                 recordedAt: payload.recordedAt,
-                                currentUser: board.userInfo ? {
-                                  id: board.userInfo.userId ?? '',
-                                  name: board.userInfo.userName ?? '',
-                                } : undefined,
+                                currentUser: board.userInfo
+                                  ? {
+                                      id: board.userInfo.userId ?? '',
+                                      name: board.userInfo.userName ?? '',
+                                    }
+                                  : undefined,
                                 onChangeAudio: (
                                   nid: string,
                                   audioPayload: {
@@ -2076,7 +2094,7 @@ function InnerBoardCanvas({
                                     duration: audioPayload.duration,
                                     mimeType: audioPayload.mimeType,
                                   });
-                                  
+
                                   setLocalNodes((prev) => {
                                     const next = prev.map((n) =>
                                       n.id === nid && n.type === 'voice'
@@ -2131,9 +2149,7 @@ function InnerBoardCanvas({
                                     (e) => e.targetId === node.id,
                                   );
                                   const upstreamNode = incomingEdge
-                                    ? localNodes.find(
-                                        (n) => n.id === incomingEdge.sourceId,
-                                      )
+                                    ? localNodes.find((n) => n.id === incomingEdge.sourceId)
                                     : null;
                                   const isCsvSource =
                                     upstreamNode?.type === 'csv' ||
@@ -2205,24 +2221,28 @@ function InnerBoardCanvas({
             // Text nodes draggable только когда не в режиме text (в режиме select можно перетаскивать)
             // Shape nodes и заметки draggable всегда (как обычные элементы канвы), кроме режимов создания других элементов
             // Остальные ноды draggable всегда (если не в режиме создания sticky/pen/text)
-            draggable: isPen
-              ? !isPenMode
-              : isText
-                ? !isTextMode
-                : isVoice
-                  ? !isVoiceMode
-                  : isShape || isNote
-                    ? !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
-                    : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
-            selectable: isPen
-              ? !isPenMode
-              : isText
-                ? !isTextMode
-                : isVoice
-                  ? !isVoiceMode
-                  : isShape || isNote
-                    ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
-                    : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
+            draggable: isEraserMode
+              ? false
+              : isPen
+                ? !isPenMode
+                : isText
+                  ? !isTextMode
+                  : isVoice
+                    ? !isVoiceMode
+                    : isShape || isNote
+                      ? !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                      : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
+            selectable: isEraserMode
+              ? false
+              : isPen
+                ? !isPenMode
+                : isText
+                  ? !isTextMode
+                  : isVoice
+                    ? !isVoiceMode
+                    : isShape || isNote
+                      ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                      : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
             // Служебное поле для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
             _sortOrder: isDataNode ? 0 : isCanvasNode ? 1 : 0,
           } as Node & { _sortOrder: number };
@@ -2241,6 +2261,7 @@ function InnerBoardCanvas({
     onRunDownstream,
     toggleCodeCollapsed,
     isPenMode,
+    isEraserMode,
     isTextMode,
     isVoiceMode,
     emitNodesChange,
@@ -2505,18 +2526,18 @@ function InnerBoardCanvas({
       // This fixes the issue where deleted pen nodes reappear after deletion
       const nextIds = new Set(nextFlowNodes.map((n) => n.id));
       const nodesPropIds = new Set(nodes.map((n) => n.id));
-      
+
       // Only preserve notes that are still in nodes prop (not deleted through Yjs)
       const preservedNotes = prev.filter(
         (n) => n.type === 'note' && !nextIds.has(n.id) && nodesPropIds.has(n.id),
       );
-      
+
       // CRITICAL FIX: Don't preserve pen nodes that were deleted through Yjs
       // If a pen node is not in nodes prop, it was deleted through Yjs and should not be preserved
       const preservedPen = prev.filter(
         (n) => n.type === 'pen' && !nextIds.has(n.id) && nodesPropIds.has(n.id),
       );
-      
+
       const nextLocal = [...nextLocalCore, ...preservedNotes, ...preservedPen];
 
       if (mutated) {
@@ -2992,9 +3013,7 @@ function InnerBoardCanvas({
         );
         tableName = duckDbResult.tableName;
         normalizedColumns = duckDbResult.normalizedColumns;
-        console.log(
-          `Registered table "${tableName}" with ${duckDbResult.rows} rows in DuckDB`,
-        );
+        console.log(`Registered table "${tableName}" with ${duckDbResult.rows} rows in DuckDB`);
       } catch (err) {
         console.error('Failed to register dataset in DuckDB:', err);
         // Fallback table name
@@ -3010,13 +3029,13 @@ function InnerBoardCanvas({
       const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
 
       const nodeId = crypto.randomUUID();
-      
+
       // Table preview: default 100 rows (no user selector). Full data lives in DuckDB;
       // Plot nodes connected to this CSV use full dataset via useFullCsvDataForPlot.
       const PREVIEW_ROW_LIMIT = 100;
       const previewRows = result.data.rows.slice(0, PREVIEW_ROW_LIMIT);
       const columns = normalizedColumns.length > 0 ? normalizedColumns : result.data.columns;
-      
+
       const previewData = {
         columns,
         rows: previewRows,
@@ -3396,7 +3415,10 @@ function InnerBoardCanvas({
         id,
       }));
       yjsOnNodesChange(removeNodeChanges);
-      console.log('handleDeleteSelection: Synced node deletions through Yjs:', removeNodeChanges.length);
+      console.log(
+        'handleDeleteSelection: Synced node deletions through Yjs:',
+        removeNodeChanges.length,
+      );
     }
 
     // Also remove edges incident to removed nodes (they should be deleted automatically by Yjs,
@@ -3416,7 +3438,10 @@ function InnerBoardCanvas({
         id,
       }));
       yjsOnEdgesChange(removeEdgeChanges);
-      console.log('handleDeleteSelection: Synced edge deletions through Yjs:', removeEdgeChanges.length);
+      console.log(
+        'handleDeleteSelection: Synced edge deletions through Yjs:',
+        removeEdgeChanges.length,
+      );
     }
 
     // remove from localNodes (regular + mirrored notes + pen nodes)
@@ -3520,9 +3545,8 @@ function InnerBoardCanvas({
   const uuidv4 = useCallback(() => {
     try {
       // Most environments
-       
+
       if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
-         
         return (crypto as any).randomUUID() as string;
       }
     } catch {}
@@ -3661,26 +3685,44 @@ function InnerBoardCanvas({
         className="board-canvas-root relative flex h-full min-h-0 w-full flex-1 overflow-hidden"
         style={{ position: 'relative' }}
       >
-        <div 
-          className="relative h-full w-full overflow-hidden" 
-          onPointerMoveCapture={onMouseMove}
-        >
+        <div className="relative h-full w-full overflow-hidden" onPointerMoveCapture={onMouseMove}>
           <div className="relative h-full w-full">
+            {isPenMode && <PenToolbar />}
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
               fitView
               fitViewOptions={{ padding: 0.2, duration: 0 }}
-              panOnDrag={!isSelectMode && !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
+              panOnDrag={
+                !isSelectMode &&
+                !isStickyMode &&
+                !isPenMode &&
+                !isEraserMode &&
+                !isTextMode &&
+                !isShapeMode &&
+                !isVoiceMode
+              }
               panOnScroll={false}
               zoomOnScroll
               selectionOnDrag={isSelectMode}
-              nodesDraggable={!isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
+              nodesDraggable={
+                !isPenMode && !isEraserMode && !isTextMode && !isShapeMode && !isVoiceMode
+              }
               nodesConnectable={
-                !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                !isStickyMode &&
+                !isPenMode &&
+                !isEraserMode &&
+                !isTextMode &&
+                !isShapeMode &&
+                !isVoiceMode
               }
               elementsSelectable={
-                !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                !isStickyMode &&
+                !isPenMode &&
+                !isEraserMode &&
+                !isTextMode &&
+                !isShapeMode &&
+                !isVoiceMode
               }
               proOptions={{ hideAttribution: true }}
               className="h-full bg-white"
@@ -3941,6 +3983,13 @@ function InnerBoardCanvas({
                   }}
                 />
               )}
+              {isEraserMode && (
+                <EraserOverlay
+                  eraserSize={20}
+                  onDeleteNodes={handleDeleteNodes}
+                  onCursorMove={onMouseMove}
+                />
+              )}
               {isPenMode && (
                 <FreehandOverlay
                   onAddPenNode={(node) => {
@@ -3953,6 +4002,11 @@ function InnerBoardCanvas({
                       payload: {
                         points: node.data.points,
                         initialSize: node.data.initialSize,
+                        color: node.data.color,
+                        strokeWidth: node.data.strokeWidth,
+                        opacity: node.data.opacity,
+                        smoothing: node.data.smoothing,
+                        thinning: node.data.thinning,
                       },
                     };
                     console.log('Adding to localNodes:', externalNode);

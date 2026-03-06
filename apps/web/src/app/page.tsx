@@ -1,16 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { X, Users } from '@phosphor-icons/react';
+import { X, Users, MagnifyingGlass } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+import { CursorColorPicker } from '../components/CursorColorPicker';
+import { RequireAuth } from '../components/RequireAuth';
+import { WorkspaceMembers } from '../components/WorkspaceMembers';
 import { BoardSummary, createBoard, deleteBoard, fetchBoards } from '../lib/api';
 import { LANDING_URL } from '../lib/appConfig';
-import { RequireAuth } from '../components/RequireAuth';
 import { useAuthStore } from '../state/authStore';
-import { WorkspaceMembers } from '../components/WorkspaceMembers';
-import { CursorColorPicker } from '../components/CursorColorPicker';
 
 const DEFAULT_WORKSPACE_ID = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_ID ?? '';
 
@@ -22,6 +22,7 @@ function HomePageContent() {
   const [title, setTitle] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [showWorkspaceMembers, setShowWorkspaceMembers] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const {
     data: boards,
@@ -47,6 +48,13 @@ function HomePageContent() {
     }
     return null;
   }, [boards, user]);
+
+  const filteredBoards = useMemo(() => {
+    if (!boards) return undefined;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return boards;
+    return boards.filter((board) => board.title.toLowerCase().includes(q));
+  }, [boards, searchQuery]);
 
   const createBoardMutation = useMutation({
     mutationFn: ({ workspaceId, title }: { workspaceId: string; title: string }) =>
@@ -284,7 +292,42 @@ function HomePageContent() {
             </div>
           )}
 
-          <div className="mt-8">{renderBoards(boards)}</div>
+          {/* Search / filter boards */}
+          {boards && boards.length > 1 && (
+            <div className="relative mt-6">
+              <MagnifyingGlass
+                size={16}
+                weight="bold"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск по доскам…"
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  title="Очистить поиск"
+                >
+                  <X size={14} weight="bold" />
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="mt-6">
+            {searchQuery && filteredBoards && filteredBoards.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-500 shadow-sm">
+                Ничего не найдено по запросу «{searchQuery}»
+              </div>
+            ) : (
+              renderBoards(filteredBoards)
+            )}
+          </div>
         </div>
 
         <p className="mt-10 text-center text-xs text-slate-400">

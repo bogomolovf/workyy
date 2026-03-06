@@ -335,6 +335,78 @@ export async function fetchCurrentUser() {
   return res.json();
 }
 
+// Workspace members API
+
+export type WorkspaceMember = {
+  userId: string;
+  email: string;
+  name: string | null;
+  avatarUrl: string | null;
+  role: 'owner' | 'editor' | 'viewer';
+  addedAt: string;
+};
+
+export async function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const problem = await res.json().catch(() => ({}));
+    throw new Error(problem?.detail ?? 'Failed to fetch workspace members');
+  }
+  const data = await res.json();
+  return data.members ?? [];
+}
+
+export async function addWorkspaceMember(
+  workspaceId: string,
+  payload: { email: string; role: 'owner' | 'editor' | 'viewer' },
+): Promise<WorkspaceMember> {
+  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const problem = await res.json().catch(() => ({}));
+    throw new Error(problem?.detail ?? 'Failed to add member');
+  }
+  return res.json();
+}
+
+export async function removeWorkspaceMember(
+  workspaceId: string,
+  memberUserId: string,
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok && res.status !== 204) {
+    const problem = await res.json().catch(() => ({}));
+    throw new Error(problem?.detail ?? 'Failed to remove member');
+  }
+}
+
+export async function updateWorkspaceMemberRole(
+  workspaceId: string,
+  memberUserId: string,
+  payload: { role: 'owner' | 'editor' | 'viewer' },
+): Promise<{ userId: string; role: string }> {
+  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const problem = await res.json().catch(() => ({}));
+    throw new Error(problem?.detail ?? 'Failed to update role');
+  }
+  return res.json();
+}
+
 // File upload API
 
 export type UploadedFile = {

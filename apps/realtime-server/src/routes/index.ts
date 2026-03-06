@@ -7,6 +7,7 @@ import { drawingRoutes } from './drawing';
 import { filesRoutes } from './files';
 import { runsRoutes } from './runs';
 import { secretsRoutes } from './secrets';
+import { workspacesRoutes } from './workspaces';
 
 export async function createServiceRouter(app: FastifyInstance) {
   app.get('/version', async () => ({
@@ -22,4 +23,5 @@ export async function createServiceRouter(app: FastifyInstance) {
   await app.register(databaseConnectionsRoutes);
   await app.register(drawingRoutes);
   await app.register(filesRoutes);
+  await app.register(workspacesRoutes);
 }

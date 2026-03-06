@@ -1,11 +1,18 @@
-import { Doc } from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { Doc } from 'yjs';
 
 // Store Yjs documents and providers per board
 const boardDocs = new Map<string, Doc>();
 const boardProviders = new Map<string, WebsocketProvider>();
 // Track usage count per board to prevent premature cleanup
 const boardUsageCount = new Map<string, number>();
+// Store pending cleanup timers — allows cancellation if a component re-mounts
+// before the timer fires (critical for React Strict Mode)
+const boardCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+// Delay before actually destroying provider/doc (ms).
+// Must be long enough to survive React Strict Mode unmount→remount cycle.
+const CLEANUP_DELAY_MS = 1500;
 
 /**
  * Get WebSocket URL for collaboration
@@ -34,32 +41,15 @@ export function getBoardYdoc(boardId: string): Doc {
 }
 
 /**
- * Get or create a WebsocketProvider for a board
+ * Get or create a WebsocketProvider for a board.
+ * NOTE: This does NOT increment the usage count.
+ * Call `retainBoardYdoc` inside useEffect to manage the lifecycle.
  */
 export function getBoardProvider(boardId: string): WebsocketProvider {
-  // Increment usage count
-  boardUsageCount.set(boardId, (boardUsageCount.get(boardId) || 0) + 1);
-  
   if (!boardProviders.has(boardId)) {
     const doc = getBoardYdoc(boardId);
     const wsUrl = getWebSocketUrl();
-    // CRITICAL FIX: WebsocketProvider adds roomName to the URL as a path segment
-    // Final URL format: ws://host/collab/${roomName}
-    // We pass boardId as roomName, so URL becomes: ws://host/collab/${boardId}
-    // 
-    // IMPORTANT: Do NOT use params option - it adds query parameters (?boardId=...)
-    // which can cause WebSocket connection failures if server doesn't handle them properly.
-    // The roomName (boardId) is already in the path, which the server extracts via route parameter.
-    const provider = new WebsocketProvider(
-      wsUrl, // Base URL: ws://host/collab
-      boardId, // roomName - WebsocketProvider adds this to URL as path: /collab/${boardId}
-      doc,
-      {
-        connect: true,
-        // DO NOT add params here - it adds query parameters which can break WebSocket connection
-        // Server extracts boardId from path parameter /collab/:boardId
-      }
-    );
+    const provider = new WebsocketProvider(wsUrl, boardId, doc, { connect: true });
 
     // Log connection status for debugging
     provider.on('status', (event: { status: string }) => {
@@ -68,7 +58,6 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
         console.warn(`[Yjs WebSocket] Board ${boardId} disconnected`);
       }
       if (event.status === 'connected') {
-        // Log the actual URL used for connection (should be ws://host/collab/${boardId} without query params)
         const actualUrl = provider.url;
         const hasQueryParams = actualUrl?.includes('?');
         console.log(`[Yjs WebSocket] Board ${boardId} connected successfully`, {
@@ -77,7 +66,9 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
           roomName: (provider as any).roomName || boardId,
           wsconnected: provider.wsconnected,
           docClientID: doc.clientID.toString(),
-          note: hasQueryParams ? 'WARNING: URL contains query params (should not)' : 'OK: URL format correct',
+          note: hasQueryParams
+            ? 'WARNING: URL contains query params (should not)'
+            : 'OK: URL format correct',
         });
       }
     });
@@ -98,12 +89,9 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
       console.error(`[Yjs WebSocket] Board ${boardId} connection error:`, error);
     });
 
-    // Log when document updates are received from other clients
-    // CRITICAL: This helps verify that updates from other clients are received
+    // Log document updates in development
     doc.on('update', (update: Uint8Array, origin: any) => {
       if (process.env.NODE_ENV === 'development') {
-        // origin is the WebsocketProvider if update came from server (synced from other clients)
-        // origin is null if update came from local changes
         const isFromServer = origin && origin !== provider && origin !== doc;
         console.log(`[Yjs] Board ${boardId} received update:`, {
           updateSize: update.length,
@@ -111,21 +99,6 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
           originType: origin?.constructor?.name,
           isLocalChange: origin === null,
         });
-        
-        // Also log cursorsMap size when update is received
-        try {
-          const cursorsMap = doc.getMap('cursors');
-          console.log(`[Yjs] Board ${boardId} cursorsMap after update:`, {
-            mapSize: cursorsMap.size,
-            cursors: Array.from(cursorsMap.values()).map((c: any) => ({
-              id: c.id,
-              clientId: doc.clientID.toString(),
-              isSelf: c.id === doc.clientID.toString(),
-            })),
-          });
-        } catch (e) {
-          // cursorsMap might not exist yet
-        }
       }
     });
 
@@ -135,51 +108,97 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
 }
 
 /**
- * Cleanup Yjs document and provider for a board
- * CRITICAL: Use reference counting to prevent premature cleanup
- * In React Strict Mode, cleanup can be called during render, but we should only
- * cleanup when all references are released
+ * Increment usage count for a board.
+ * Call this inside `useEffect` (mount) so the count is symmetric with cleanup.
+ * Also cancels any pending delayed cleanup.
+ */
+export function retainBoardYdoc(boardId: string): void {
+  // Cancel any pending delayed cleanup from a previous unmount
+  const pendingTimer = boardCleanupTimers.get(boardId);
+  if (pendingTimer) {
+    clearTimeout(pendingTimer);
+    boardCleanupTimers.delete(boardId);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[Yjs] Cancelled pending cleanup for board ${boardId} (component re-mounted)`);
+    }
+  }
+
+  const count = (boardUsageCount.get(boardId) || 0) + 1;
+  boardUsageCount.set(boardId, count);
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Yjs] retainBoardYdoc ${boardId} — usage count: ${count}`);
+  }
+}
+
+/**
+ * Cleanup Yjs document and provider for a board.
+ * Uses delayed cleanup to survive React Strict Mode's unmount→remount cycle.
+ * If retainBoardYdoc is called before the timer fires, the cleanup is cancelled.
  */
 export function cleanupBoardYdoc(boardId: string): void {
   // Decrement usage count
   const currentCount = boardUsageCount.get(boardId) || 0;
   const newCount = Math.max(0, currentCount - 1);
   boardUsageCount.set(boardId, newCount);
-  
-  // Only cleanup if no one is using this board anymore
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Yjs] cleanupBoardYdoc ${boardId} — usage count: ${currentCount} → ${newCount}`);
+  }
+
+  // Still in use — nothing to do
   if (newCount > 0) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[Yjs] Skipping cleanup for board ${boardId} - still in use (count: ${newCount})`);
-    }
     return;
   }
-  
-  // No one is using this board - safe to cleanup
-  const provider = boardProviders.get(boardId);
-  if (provider) {
-    try {
-      provider.destroy();
-    } catch (error) {
-      console.warn(`[Yjs] Error destroying provider for board ${boardId}:`, error);
-    }
-    boardProviders.delete(boardId);
-  }
 
-  const doc = boardDocs.get(boardId);
-  if (doc) {
-    try {
-      doc.destroy();
-    } catch (error) {
-      console.warn(`[Yjs] Error destroying doc for board ${boardId}:`, error);
+  // Schedule delayed destruction.
+  // If a component re-mounts within CLEANUP_DELAY_MS (React Strict Mode),
+  // retainBoardYdoc will cancel this timer and the provider stays alive.
+  const timer = setTimeout(() => {
+    boardCleanupTimers.delete(boardId);
+
+    // Re-check: someone may have called retainBoardYdoc since the timer was set
+    const recheck = boardUsageCount.get(boardId) || 0;
+    if (recheck > 0) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(
+          `[Yjs] Delayed cleanup cancelled for board ${boardId} — re-acquired (count: ${recheck})`,
+        );
+      }
+      return;
     }
-    boardDocs.delete(boardId);
-  }
-  
-  // Clean up usage count
-  boardUsageCount.delete(boardId);
-  
+
+    // Safe to destroy
+    const provider = boardProviders.get(boardId);
+    if (provider) {
+      try {
+        provider.destroy();
+      } catch (error) {
+        console.warn(`[Yjs] Error destroying provider for board ${boardId}:`, error);
+      }
+      boardProviders.delete(boardId);
+    }
+
+    const doc = boardDocs.get(boardId);
+    if (doc) {
+      try {
+        doc.destroy();
+      } catch (error) {
+        console.warn(`[Yjs] Error destroying doc for board ${boardId}:`, error);
+      }
+      boardDocs.delete(boardId);
+    }
+
+    boardUsageCount.delete(boardId);
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[Yjs] Cleaned up board ${boardId} — provider and doc destroyed`);
+    }
+  }, CLEANUP_DELAY_MS);
+
+  boardCleanupTimers.set(boardId, timer);
+
   if (process.env.NODE_ENV === 'development') {
-    console.log(`[Yjs] Cleaned up board ${boardId} - provider and doc destroyed`);
+    console.log(`[Yjs] Scheduled delayed cleanup for board ${boardId} in ${CLEANUP_DELAY_MS}ms`);
   }
 }
-

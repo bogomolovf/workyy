@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Doc } from 'yjs';
 import type { NodeChange, EdgeChange, Node, Edge } from 'reactflow';
-import { getBoardYdoc, getBoardProvider, cleanupBoardYdoc } from '../lib/yjs/boardYdoc';
+import { Doc } from 'yjs';
 import {
   canvasNodeToReactFlowNode,
   reactFlowNodeToCanvasNode,
@@ -10,8 +9,14 @@ import {
   type CanvasNode,
   type CanvasEdge,
 } from '../lib/yjs/adapters';
-import { useNodesStateSynced } from './useNodesStateSynced';
+import {
+  getBoardYdoc,
+  getBoardProvider,
+  retainBoardYdoc,
+  cleanupBoardYdoc,
+} from '../lib/yjs/boardYdoc';
 import { useEdgesStateSynced } from './useEdgesStateSynced';
+import { useNodesStateSynced } from './useNodesStateSynced';
 
 /**
  * Hook for managing board collaboration through Yjs
@@ -20,7 +25,7 @@ import { useEdgesStateSynced } from './useEdgesStateSynced';
 export function useBoardCollaboration(
   boardId: string,
   initialNodes?: CanvasNode[],
-  initialEdges?: CanvasEdge[]
+  initialEdges?: CanvasEdge[],
 ) {
   const initializedRef = useRef(false);
 
@@ -38,6 +43,8 @@ export function useBoardCollaboration(
   const datasetsMap = useMemo(() => ydoc.getMap('datasets'), [ydoc]);
   // Map for tracking which users are editing which nodes (key: clientId:nodeId)
   const editingMap = useMemo(() => ydoc.getMap('editing'), [ydoc]);
+  // Map for audio call signaling and participant state (WebRTC offers/answers/ICE/presence)
+  const audioCallMap = useMemo(() => ydoc.getMap('audioCall'), [ydoc]);
 
   // Debug logging for cursorsMap synchronization
   // CRITICAL: This observer helps verify that cursorsMap changes from other clients are received
@@ -51,14 +58,14 @@ export function useBoardCollaboration(
         providerUrl: provider.url,
         providerRoomName: (provider as any).roomName || 'unknown',
       });
-      
+
       // Observe map changes to verify synchronization from other clients
       // This observer fires when ANY change happens in cursorsMap (local or remote)
       const observer = (event: any) => {
         const allCursors = Array.from(cursorsMap.values());
         const ownCursors = allCursors.filter((c: any) => c.id === ydoc.clientID.toString());
         const otherCursors = allCursors.filter((c: any) => c.id !== ydoc.clientID.toString());
-        
+
         console.log(`[Yjs] Board ${boardId} cursorsMap changed:`, {
           mapSize: cursorsMap.size,
           totalCursors: allCursors.length,
@@ -72,25 +79,27 @@ export function useBoardCollaboration(
             timestamp: c.timestamp,
           })),
           eventType: event.changes ? 'map-changes' : 'unknown',
-          changes: event.changes ? Array.from(event.changes.keys || []).map((k: any) => ({
-            key: k,
-            action: event.changes.keys.get(k)?.action,
-          })) : [],
+          changes: event.changes
+            ? Array.from(event.changes.keys || []).map((k: any) => ({
+                key: k,
+                action: event.changes.keys.get(k)?.action,
+              }))
+            : [],
         });
       };
-      
+
       // Observe all changes in cursorsMap
       cursorsMap.observe(observer);
-      
+
       // Also observe the Y.Doc for any updates (to see if updates from server are received)
       const docObserver = () => {
         console.log(`[Yjs] Board ${boardId} Y.Doc changed (cursorsMap may have updated):`, {
           cursorsMapSize: cursorsMap.size,
         });
       };
-      
+
       ydoc.on('afterTransaction', docObserver);
-      
+
       return () => {
         cursorsMap.unobserve(observer);
         ydoc.off('afterTransaction', docObserver);
@@ -137,37 +146,49 @@ export function useBoardCollaboration(
     nodesMap,
     edgesMap,
     ydoc,
-    clientId
+    clientId,
   );
   const [reactFlowEdges, setReactFlowEdges, onEdgesChange] = useEdgesStateSynced(
     edgesMap,
     ydoc,
-    clientId
+    clientId,
   );
 
   // Convert ReactFlow nodes/edges back to Canvas format for compatibility
   const canvasNodes = useMemo(
     () => reactFlowNodes.map(reactFlowNodeToCanvasNode),
-    [reactFlowNodes]
+    [reactFlowNodes],
   );
   const canvasEdges = useMemo(
     () => reactFlowEdges.map(reactFlowEdgeToCanvasEdge),
-    [reactFlowEdges]
+    [reactFlowEdges],
   );
 
   // Note: onNodesChange and onEdgesChange from hooks work with ReactFlow format
   // and automatically sync through Yjs. We expose them directly.
   // For Canvas format compatibility, we provide conversion helpers
 
-  // Cleanup on unmount
-  // CRITICAL: Reference counting in cleanupBoardYdoc prevents premature cleanup
-  // React Strict Mode can call cleanup during render, but reference counting ensures
-  // we only cleanup when all references are released
+  // Lifecycle: retain on mount, release on unmount.
+  // retainBoardYdoc increments the usage count and cancels any pending delayed cleanup.
+  // cleanupBoardYdoc decrements the count and schedules delayed destruction.
+  // This survives React Strict Mode (mount→unmount→remount) because the delayed
+  // cleanup timer is cancelled when retainBoardYdoc fires on remount.
   useEffect(() => {
+    retainBoardYdoc(boardId);
+
+    // Ensure provider is connected (safety net — if it was somehow disconnected)
+    if (provider && !provider.wsconnected) {
+      try {
+        provider.connect();
+      } catch {
+        // provider.connect() may throw if provider was destroyed — ignore
+      }
+    }
+
     return () => {
       cleanupBoardYdoc(boardId);
     };
-  }, [boardId]);
+  }, [boardId, provider]);
 
   // SIMPLIFIED: Direct sync through Yjs - following collaborative-11-pro-example pattern
   // Yjs map is the single source of truth, changes go directly to Yjs
@@ -177,7 +198,7 @@ export function useBoardCollaboration(
     (nodes: CanvasNode[]) => {
       // Convert Canvas nodes to ReactFlow format
       const reactFlowNodes = nodes.map(canvasNodeToReactFlowNode);
-      
+
       // Get current nodes from Yjs map (cast to Node[] since map stores unknown)
       const currentNodes = Array.from(nodesMap.values()) as Node[];
       const currentById = new Map(currentNodes.map((n) => [n.id, n]));
@@ -185,7 +206,7 @@ export function useBoardCollaboration(
 
       // Compute changes: add new nodes, update existing ones
       const changes: NodeChange[] = [];
-      
+
       for (const newNode of reactFlowNodes) {
         if (!currentById.has(newNode.id)) {
           // New node - add it
@@ -202,7 +223,7 @@ export function useBoardCollaboration(
         onNodesChange(changes);
       }
     },
-    [nodesMap, onNodesChange]
+    [nodesMap, onNodesChange],
   );
 
   // CRITICAL FIX: Use incremental changes instead of full replacement to avoid
@@ -267,7 +288,7 @@ export function useBoardCollaboration(
         onEdgesChange(changes);
       }
     },
-    [edgesMap, onEdgesChange]
+    [edgesMap, onEdgesChange],
   );
 
   return {
@@ -282,12 +303,12 @@ export function useBoardCollaboration(
     // Yjs maps and client ID for cursor tracking and UndoManager
     cursorsMap,
     datasetsMap,
-    editingMap,  // For tracking who is editing which node
-    nodesMap,  // Exported for UndoManager
-    edgesMap,  // Exported for UndoManager
+    editingMap, // For tracking who is editing which node
+    audioCallMap, // For audio call signaling and participant state
+    nodesMap, // Exported for UndoManager
+    edgesMap, // Exported for UndoManager
     clientId,
     provider,
     ydoc,
   };
 }
-
