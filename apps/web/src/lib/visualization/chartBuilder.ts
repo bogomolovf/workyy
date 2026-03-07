@@ -85,63 +85,102 @@ type EChartsOption = {
   }>;
 };
 
+/** Find column index by name (case-insensitive) */
+function findColumnIndex(columns: string[], field: string): number {
+  if (!field) return -1;
+  const lower = field.toLowerCase();
+  const idx = columns.findIndex((c) => c.toLowerCase() === lower);
+  return idx >= 0 ? idx : columns.indexOf(field);
+}
+
+type FilterOperator = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'contains';
+
 /**
- * Apply filters to data rows
+ * Evaluate a single filter condition for a cell value.
+ * Returns true if the row passes this filter.
+ */
+function passesFilter(
+  cellValue: unknown,
+  filterValue: unknown,
+  operator: FilterOperator,
+): boolean {
+  switch (operator) {
+    case 'eq':
+      return String(cellValue ?? '') === String(filterValue ?? '');
+    case 'ne':
+      return String(cellValue ?? '') !== String(filterValue ?? '');
+    case 'gt':
+      return Number(cellValue) > Number(filterValue);
+    case 'gte':
+      return Number(cellValue) >= Number(filterValue);
+    case 'lt':
+      return Number(cellValue) < Number(filterValue);
+    case 'lte':
+      return Number(cellValue) <= Number(filterValue);
+    case 'in': {
+      const inArray = Array.isArray(filterValue) ? filterValue : [filterValue];
+      return inArray.some((v) => String(cellValue ?? '') === String(v ?? ''));
+    }
+    case 'contains':
+      return String(cellValue ?? '')
+        .toLowerCase()
+        .includes(String(filterValue ?? '').toLowerCase());
+    default:
+      return true;
+  }
+}
+
+/**
+ * Apply filters to data rows.
+ * - Filters with empty value are skipped (not applied).
+ * - Column lookup is case-insensitive so "continent" matches "CONTINENT".
+ * - Multiple conditions on the SAME field are combined with OR (e.g. continent=Oceania OR continent=Asia).
+ * - Conditions on DIFFERENT fields are combined with AND.
  */
 function applyFilters(data: SqlResult, filters: PlotConfig['filters']): SqlResult {
   if (!filters || filters.length === 0) {
     return data;
   }
 
+  const withValue = filters.filter(
+    (f) => f.value !== undefined && f.value !== null && String(f.value).trim() !== '',
+  );
+  if (withValue.length === 0) {
+    return data;
+  }
+
+  // Group filters by field (case-insensitive) so we can OR conditions on the same field
+  const byField = new Map<string, typeof withValue>();
+  for (const f of withValue) {
+    const key = (f.field || '').toLowerCase();
+    if (!key) continue;
+    if (!byField.has(key)) byField.set(key, []);
+    byField.get(key)!.push(f);
+  }
+
   const filteredRows: SqlResult['rows'] = [];
 
   for (const row of data.rows) {
-    let passes = true;
+    let rowPasses = true;
 
-    for (const filter of filters) {
-      const colIndex = data.columns.indexOf(filter.field);
+    for (const [, fieldFilters] of byField) {
+      const colIndex = findColumnIndex(data.columns, fieldFilters[0].field);
       if (colIndex < 0) {
-        passes = false;
+        rowPasses = false;
         break;
       }
 
       const cellValue = row[colIndex];
-      const filterValue = filter.value;
-
-      switch (filter.operator) {
-        case 'eq':
-          passes = String(cellValue) === String(filterValue);
-          break;
-        case 'ne':
-          passes = String(cellValue) !== String(filterValue);
-          break;
-        case 'gt':
-          passes = Number(cellValue) > Number(filterValue);
-          break;
-        case 'gte':
-          passes = Number(cellValue) >= Number(filterValue);
-          break;
-        case 'lt':
-          passes = Number(cellValue) < Number(filterValue);
-          break;
-        case 'lte':
-          passes = Number(cellValue) <= Number(filterValue);
-          break;
-        case 'in':
-          const inArray = Array.isArray(filterValue) ? filterValue : [filterValue];
-          passes = inArray.some((v) => String(cellValue) === String(v));
-          break;
-        case 'contains':
-          passes = String(cellValue).toLowerCase().includes(String(filterValue).toLowerCase());
-          break;
-        default:
-          passes = true;
+      const passesThisField = fieldFilters.some((filter) =>
+        passesFilter(cellValue, filter.value, filter.operator),
+      );
+      if (!passesThisField) {
+        rowPasses = false;
+        break;
       }
-
-      if (!passes) break;
     }
 
-    if (passes) {
+    if (rowPasses) {
       filteredRows.push(row);
     }
   }

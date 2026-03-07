@@ -172,6 +172,12 @@ type BoardCanvasProps = {
   editingMap?: any; // YMap for editing presence (from Yjs)
   clientId?: string; // Client ID for cursor tracking
   userInfo?: { userId?: string; userName?: string }; // User information for cursor display
+  /** Called when a CSV node is added via spreadsheet upload; syncs dataset to Yjs so Load more / Plot work */
+  onCsvDatasetAdded?: (dataset: {
+    tableName: string;
+    columns: string[];
+    rows: Array<Array<string | number | null>>;
+  }) => void;
 };
 
 type NodeData = {
@@ -360,6 +366,7 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           <button
             onClick={data.onRun}
             disabled={status === 'running'}
+            title="Run this cell only (Shift+Enter)"
             className="rounded-md bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-200"
           >
             {status === 'running' ? 'Running…' : 'Run'}
@@ -367,6 +374,7 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           <button
             onClick={data.onRunDownstream}
             disabled={status === 'running'}
+            title="Run this cell and all cells below (Ctrl+Shift+Enter)"
             className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Run downstream
@@ -483,6 +491,7 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           <button
             onClick={data.onRun}
             disabled={status === 'running'}
+            title="Run this cell only (Shift+Enter)"
             className="rounded-md bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-200"
           >
             {status === 'running' ? 'Running…' : 'Run'}
@@ -490,6 +499,7 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
           <button
             onClick={data.onRunDownstream}
             disabled={status === 'running'}
+            title="Run this cell and all cells below (Ctrl+Shift+Enter)"
             className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Run downstream
@@ -675,6 +685,7 @@ export function BoardCanvas({
   cursorsMap,
   editingMap,
   clientId,
+  onCsvDatasetAdded,
 }: BoardCanvasProps) {
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
   const inspectorEntry = selectedNode ? executionEntries[selectedNode.id] : undefined;
@@ -722,6 +733,7 @@ export function BoardCanvas({
             editingMap={editingMap}
             clientId={clientId}
             userInfo={board.userInfo}
+            onCsvDatasetAdded={onCsvDatasetAdded}
           />
         {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
         <div
@@ -810,6 +822,7 @@ function InnerBoardCanvas({
   editingMap,
   clientId,
   userInfo,
+  onCsvDatasetAdded,
 }: InnerProps) {
   const canvasRootRef = useRef<HTMLDivElement>(null);
   const viewport = useViewport();
@@ -2149,6 +2162,7 @@ function InnerBoardCanvas({
                                   const isCsvSource =
                                     upstreamNode?.type === 'csv' ||
                                     upstreamNode?.type === 'csvNode';
+                                  const isSqlSource = upstreamNode?.type === 'sql';
                                   const upstreamPayload = upstreamNode?.payload as
                                     | { tableName?: string }
                                     | undefined;
@@ -2156,12 +2170,17 @@ function InnerBoardCanvas({
                                     isCsvSource && upstreamPayload?.tableName
                                       ? upstreamPayload.tableName
                                       : undefined;
+                                  const upstreamSqlNodeId =
+                                    isSqlSource && incomingEdge
+                                      ? incomingEdge.sourceId
+                                      : undefined;
                                   return {
                                     nodeId: node.id,
                                     payload: node.payload,
                                     edges: localEdges,
                                     width: storedWidth,
                                     upstreamCsvTableName,
+                                    upstreamSqlNodeId,
                                   };
                                 })()
                               : isCsv
@@ -3006,6 +3025,12 @@ function InnerBoardCanvas({
         console.log(
           `Registered table "${tableName}" with ${duckDbResult.rows} rows in DuckDB`,
         );
+        // Sync to Yjs datasetsMap so observer keeps localStorage in sync and table survives restoreDatasetsForBoard
+        onCsvDatasetAdded?.({
+          tableName,
+          columns: normalizedColumns,
+          rows: result.data.rows,
+        });
       } catch (err) {
         console.error('Failed to register dataset in DuckDB:', err);
         // Fallback table name
@@ -3063,7 +3088,7 @@ function InnerBoardCanvas({
       });
       onSelectNode?.(nodeId);
     },
-    [rf, emitNodesChange, onSelectNode, registerNode, board.id],
+    [rf, emitNodesChange, onSelectNode, registerNode, board.id, onCsvDatasetAdded],
   );
 
   const handleAddVoiceNode = useCallback(() => {

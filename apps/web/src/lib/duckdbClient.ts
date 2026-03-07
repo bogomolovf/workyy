@@ -580,8 +580,69 @@ export async function restoreDatasetsForBoard(boardId: string): Promise<void> {
         );
       }
     }
+    // Notify plot hooks so they can refetch after restore (e.g. post-reload when observer ran later)
+    if (typeof window !== 'undefined' && datasets.length > 0) {
+      window.dispatchEvent(
+        new CustomEvent('workyy:datasetsRestored', { detail: { boardId } }),
+      );
+    }
   } catch {
     // if restore fails, we just start with an empty DuckDB context
+  }
+}
+
+/** Same shape as PersistedDataset for restoring from in-memory Yjs data (avoids localStorage quota) */
+export type DatasetForRestore = {
+  tableName: string;
+  columns: string[];
+  rows: Array<Array<string | number | null>>;
+};
+
+/**
+ * Restore DuckDB tables from an in-memory datasets array.
+ * Used by the board observer when Yjs has synced datasets; ensures tables exist
+ * even if localStorage.setItem fails (quota) so the plot can refetch after reload.
+ */
+export async function restoreDatasetsFromBoardArray(
+  boardId: string,
+  datasets: DatasetForRestore[],
+): Promise<void> {
+  if (typeof window === 'undefined' || !datasets.length) return;
+  try {
+    const { connection } = await getDuckDbContext();
+    await resetUserTables(connection);
+    await ensureDemoDatasetForBoard(boardId, connection);
+    for (const dataset of datasets) {
+      const columnsDef = dataset.columns
+        .map((column) => `${quotedIdentifier(column)} TEXT`)
+        .join(', ');
+      await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(dataset.tableName)};`);
+      await connection.query(
+        `CREATE TABLE ${quotedIdentifier(dataset.tableName)} (${columnsDef});`,
+      );
+      if (dataset.rows.length) {
+        const rowsSql = dataset.rows
+          .map((row) => {
+            const values = row
+              .map((value) => {
+                if (value === null || value === undefined) return 'NULL';
+                const text = String(value).replace(/'/g, "''");
+                return `'${text}'`;
+              })
+              .join(', ');
+            return `(${values})`;
+          })
+          .join(', ');
+        await connection.query(
+          `INSERT INTO ${quotedIdentifier(dataset.tableName)} VALUES ${rowsSql};`,
+        );
+      }
+    }
+    window.dispatchEvent(
+      new CustomEvent('workyy:datasetsRestored', { detail: { boardId } }),
+    );
+  } catch (err) {
+    console.error('restoreDatasetsFromBoardArray failed', err);
   }
 }
 
@@ -634,17 +695,37 @@ export async function getTableRowCount(tableName: string): Promise<number> {
   return typeof count === 'bigint' ? Number(count) : (count ?? 0);
 }
 
-/** Max rows to fetch for plot visualizations (prevents UI freeze on huge datasets) */
-const PLOT_FULL_DATA_LIMIT = 100_000;
+/** Max rows to fetch for plot visualizations when using limited mode (optional cap) */
+export const PLOT_DATA_MAX_ROWS = 100_000;
 
 /**
- * Fetch full dataset from a DuckDB table for visualization.
- * Used when Plot node is connected to CSV - builds charts from entire dataset
- * without loading all rows into the canvas preview.
+ * Fetch a limited dataset from a DuckDB table for plot visualization.
+ * Used when Plot node is connected to CSV and a row cap is desired.
  */
-export async function queryTableFull(tableName: string): Promise<SqlResult> {
+export async function queryTableForPlot(
+  tableName: string,
+  maxRows: number = PLOT_DATA_MAX_ROWS,
+): Promise<SqlResult> {
   const { connection } = await getDuckDbContext();
-  const query = `SELECT * FROM ${quotedIdentifier(tableName)} LIMIT ${PLOT_FULL_DATA_LIMIT};`;
+  const query = `SELECT * FROM ${quotedIdentifier(tableName)} LIMIT ${maxRows};`;
   const table = await connection.query(query);
   return tableToSqlResult(table);
+}
+
+/**
+ * Fetch the full table from DuckDB for plot visualization (no row limit).
+ * Used when Plot is connected to CSV — chart is built from the full dataset volume.
+ */
+export async function queryTableFullForPlot(tableName: string): Promise<SqlResult> {
+  const { connection } = await getDuckDbContext();
+  const query = `SELECT * FROM ${quotedIdentifier(tableName)};`;
+  const table = await connection.query(query);
+  return tableToSqlResult(table);
+}
+
+/**
+ * @deprecated Use queryTableFullForPlot for full table, or queryTableForPlot for limited.
+ */
+export async function queryTableFull(tableName: string): Promise<SqlResult> {
+  return queryTableFullForPlot(tableName);
 }

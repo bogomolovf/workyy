@@ -220,10 +220,12 @@ if _sql_json:
         _sql_payload = json.loads(_sql_json)
         _df = pd.DataFrame(_sql_payload["rows"], columns=_sql_payload["columns"])
         if isinstance(_df, pd.DataFrame) and len(_df.columns) > 0:
-            # попытка автоматически привести числовые столбцы к числовому типу,
-            # чтобы операции вроде mean/sum/groupby работали даже если пришли строки
+            # попытка автоматически привести числовые столбцы к числовому типу
             for _col in _df.columns:
-                _df[_col] = pd.to_numeric(_df[_col], errors="ignore")
+                try:
+                    _df[_col] = pd.to_numeric(_df[_col])
+                except (TypeError, ValueError):
+                    pass
             sql_df = _df
     except Exception:
         sql_df = None
@@ -241,6 +243,14 @@ if "_workyy_last_plot" in globals():
 `);
 
       await pyodide.runPythonAsync(params.code);
+
+      // #region agent log
+      try {
+        const dfCols = pyodide.runPython('list(df.columns) if "df" in globals() and df is not None else []');
+        const dfShape = pyodide.runPython('df.shape if "df" in globals() and df is not None else (0,0)');
+        fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'python.worker.ts:afterCode',message:'After user code execution',data:{dfColumns:Array.isArray(dfCols)?dfCols:[],dfShape:Array.isArray(dfShape)?dfShape:[],hasDf:'df' in pyodide.runPython('"df" in globals()')},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+      } catch (_) {}
+      // #endregion
 
       let plotJson: string | null = null;
       try {
@@ -279,6 +289,39 @@ json.dumps({"has": _candidate is not None, "json": _candidate.to_json() if _cand
         payload?: unknown;
       } | null = null;
       try {
+        // Debug: check df state before candidate selection
+        const dfDebug = pyodide.runPython(`
+import json
+from pandas import DataFrame
+
+_debug_info = {}
+if "df" in globals():
+    _df = globals()["df"]
+    if _df is None:
+        _debug_info["df"] = "None"
+    elif isinstance(_df, DataFrame):
+        _debug_info["df"] = {"type": "DataFrame", "columns": list(_df.columns), "shape": _df.shape}
+    else:
+        _debug_info["df"] = {"type": str(type(_df))}
+else:
+    _debug_info["df"] = "not in globals"
+
+if "result" in globals():
+    _result = globals()["result"]
+    if _result is None:
+        _debug_info["result"] = "None"
+    elif isinstance(_result, DataFrame):
+        _debug_info["result"] = {"type": "DataFrame", "columns": list(_result.columns)}
+    else:
+        _debug_info["result"] = {"type": str(type(_result))}
+else:
+    _debug_info["result"] = "not in globals"
+
+json.dumps(_debug_info)
+`);
+        const dfDebugParsed = JSON.parse(dfDebug);
+        console.log('[WORKER DEBUG] df state:', dfDebugParsed);
+
         const candidateProbe = pyodide.runPython(`
 import json
 from pandas import DataFrame
@@ -291,19 +334,37 @@ if "result" in globals():
         _has_explicit = True
 if _candidate is None:
     _candidate = globals().get("__workyy_last_df")
+if _candidate is None and "df" in globals():
+    _candidate = globals()["df"]
 
 def _serialize_candidate(candidate, has_explicit_result):
     if candidate is None or str(candidate) == "None":
-        return {"hasCandidate": False, "hasExplicitResult": has_explicit_result}
+        return {"hasCandidate": False, "hasExplicitResult": has_explicit_result, "error": "candidate is None"}
     if isinstance(candidate, DataFrame):
-        return {
-            "hasCandidate": True,
-            "hasExplicitResult": has_explicit_result,
-            "table": {
-                "columns": list(candidate.columns),
-                "rows": candidate.values.tolist()
+        try:
+            _shape = candidate.shape
+            _max_rows = 100000
+            _df_to_serialize = candidate.head(_max_rows) if _shape[0] > _max_rows else candidate.copy()
+            # So that groupby().count() and other index-carrying results show index as columns in the UI,
+            # always flatten the index into columns (reset_index). to_json(orient='split') only exposes
+            # "columns" and "data", not the index.
+            _df_to_serialize = _df_to_serialize.reset_index()
+            _cols = list(_df_to_serialize.columns)
+            _json_str = _df_to_serialize.to_json(orient='split', date_format='iso', default_handler=str)
+            _parsed = json.loads(_json_str)
+            _rows = _parsed["data"]
+            return {
+                "hasCandidate": True,
+                "hasExplicitResult": has_explicit_result,
+                "table": {
+                    "columns": _cols,
+                    "rows": _rows
+                },
+                "originalRowCount": _shape[0],
+                "serializedRowCount": len(_rows)
             }
-        }
+        except Exception as e:
+            return {"hasCandidate": False, "hasExplicitResult": has_explicit_result, "error": str(e), "errorType": type(e).__name__}
     if hasattr(candidate, "to_dict"):
         try:
             return {
@@ -322,6 +383,22 @@ def _serialize_candidate(candidate, has_explicit_result):
 json.dumps(_serialize_candidate(_candidate, _has_explicit))
 `);
         resolvedResultPayload = JSON.parse(candidateProbe);
+
+        // #region agent log
+        if (resolvedResultPayload?.error) {
+          console.error('[WORKER ERROR] Serialization failed:', resolvedResultPayload.error);
+        }
+        // #endregion
+
+        // #region agent log
+        console.log('[WORKER DEBUG] candidate result:', {
+          hasCandidate: resolvedResultPayload?.hasCandidate,
+          hasExplicitResult: resolvedResultPayload?.hasExplicitResult,
+          tableColumns: resolvedResultPayload?.table?.columns,
+          tableRowsCount: resolvedResultPayload?.table?.rows?.length,
+        });
+        fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'python.worker.ts:candidate',message:'Candidate selection result',data:{hasCandidate:resolvedResultPayload?.hasCandidate,hasExplicitResult:resolvedResultPayload?.hasExplicitResult,tableColumns:resolvedResultPayload?.table?.columns,tableRowsCount:resolvedResultPayload?.table?.rows?.length,dfDebug:dfDebugParsed},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
       } catch (error) {
         console.warn('Failed to interpret python result payload', error);
       }
@@ -333,9 +410,14 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
         Array.isArray(resolvedResultPayload.table.rows)
       ) {
         tablePayload = resolvedResultPayload.table as WorkerTablePayload;
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'python.worker.ts:tablePayload',message:'Table payload created',data:{columns:tablePayload.columns,rowsCount:tablePayload.rows.length},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
       }
 
       if (tablePayload) {
+        console.log('[WORKER] Returning table columns:', tablePayload.columns);
         const cleanedStderr = cleanStderr(stderr);
         return {
           success: true,
