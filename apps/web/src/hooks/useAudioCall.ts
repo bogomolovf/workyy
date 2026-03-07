@@ -221,7 +221,7 @@ export function useAudioCall(
           const participantKey = `${PARTICIPANT_PREFIX}${from}`;
           const entry = map.get(participantKey) as ParticipantEntry | undefined;
           if (!entry) return;
-          pc = createPeerConnection(from, entry);
+          pc = createPeerConnection(from, entry) ?? undefined;
           if (!pc) return;
         }
 
