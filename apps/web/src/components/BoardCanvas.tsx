@@ -27,7 +27,13 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
+import { EditingPresenceProvider } from '../context/EditingPresenceContext';
+import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
 import { type UploadedFile } from '../lib/api';
+import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
+import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
+import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
+import { useBoardCanvasApiStore } from '../state/boardCanvasApiStore';
 import {
   getDefaultNodeWidth,
   useCanvasLayoutStore,
@@ -35,11 +41,13 @@ import {
   MAX_NODE_WIDTH,
   type CanvasLayoutState,
 } from '../state/canvasLayoutStore';
+import { DEFAULT_CURSOR, useCursorSettingsStore } from '../state/cursorSettingsStore';
 import type { ExecutionEntry, NodeStatus, ExecutionStoreState } from '../state/executionStore';
 import { useExecutionStore } from '../state/executionStore';
 import { useAddNode } from '../state/useAddNode';
 import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
 import { BoardInspector } from './BoardInspector';
+import CollaborativeCursors from './CollaborativeCursors';
 import { ConnectionArrow } from './ConnectionArrow';
 import {
   resolveConnectionEndpoints,
@@ -48,7 +56,9 @@ import {
 } from './connectionUtils';
 import { FileDropOverlay } from './FileDropOverlay';
 import CustomConnectionLine from './flowEdges/CustomConnectionLine';
+import { CsvNode } from './flowNodes/CsvNode';
 import { DatabaseNode } from './flowNodes/DatabaseNode';
+import { PlotNode } from './flowNodes/PlotNode';
 import { InteractiveResultTable } from './InteractiveResultTable';
 import { PlotPreview } from './PlotPreview';
 import { FreehandOverlay } from './pen/FreehandOverlay';
@@ -58,37 +68,40 @@ import { PenToolbar } from './pen/PenToolbar';
 import { EraserOverlay } from './pen/EraserOverlay';
 // Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
 import { TextNode } from './TextNode';
-import { PlotNode } from './flowNodes/PlotNode';
-import { CsvNode } from './flowNodes/CsvNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
+import { SHAPE_DEFAULTS, isLineType as isLineShapeType } from './shape/shapeEngine';
 import { VoiceNode } from './flowNodes/VoiceNode';
 import { ImageNode } from './flowNodes/ImageNode';
 import { VideoNode } from './flowNodes/VideoNode';
 import { DocumentNode } from './flowNodes/DocumentNode';
-import CollaborativeCursors from './CollaborativeCursors';
-import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
-import { EditingPresenceProvider } from '../context/EditingPresenceContext';
-import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
-import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
-import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
+import { PresentationViewer } from './PresentationViewer';
 
 // SessionStorage-backed cache for voice audio data
 // Persists across HMR, re-renders, and component remounts (until tab close)
 const VOICE_AUDIO_STORAGE_KEY = 'workyy_voice_audio_cache';
 
-const getVoiceAudioFromStorage = (nodeId: string): { audioData: string; duration: number; mimeType: string } | undefined => {
+const getVoiceAudioFromStorage = (
+  nodeId: string,
+): { audioData: string; duration: number; mimeType: string } | undefined => {
   if (typeof window === 'undefined') return undefined;
   try {
     const cached = sessionStorage.getItem(`${VOICE_AUDIO_STORAGE_KEY}_${nodeId}`);
     return cached ? JSON.parse(cached) : undefined;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 };
 
-const setVoiceAudioToStorage = (nodeId: string, data: { audioData: string; duration: number; mimeType: string }) => {
+const setVoiceAudioToStorage = (
+  nodeId: string,
+  data: { audioData: string; duration: number; mimeType: string },
+) => {
   if (typeof window === 'undefined') return;
   try {
     sessionStorage.setItem(`${VOICE_AUDIO_STORAGE_KEY}_${nodeId}`, JSON.stringify(data));
-  } catch { /* quota exceeded or other error */ }
+  } catch {
+    /* quota exceeded or other error */
+  }
 };
 
 const getVoiceAudioKeysFromStorage = (): string[] => {
@@ -102,7 +115,9 @@ const getVoiceAudioKeysFromStorage = (): string[] => {
       }
     }
     return keys;
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 };
 
 // Wrapper object to match previous API
@@ -110,7 +125,9 @@ const globalVoiceAudioCache = {
   get: getVoiceAudioFromStorage,
   set: setVoiceAudioToStorage,
   keys: getVoiceAudioKeysFromStorage,
-  get size() { return getVoiceAudioKeysFromStorage().length; }
+  get size() {
+    return getVoiceAudioKeysFromStorage().length;
+  },
 };
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
@@ -170,6 +187,8 @@ type BoardCanvasProps = {
   yjsOnEdgesChange?: (changes: EdgeChange[]) => void; // Direct Yjs handler for ReactFlow format
   cursorsMap?: any; // YMap for cursors (from Yjs)
   editingMap?: any; // YMap for editing presence (from Yjs)
+  presentationBroadcastsMap?: any; // YMap for presentation broadcasts (from Yjs)
+  ydoc?: { transact: (fn: () => void, origin?: unknown) => void } | null; // Yjs doc for broadcast transact
   clientId?: string; // Client ID for cursor tracking
   userInfo?: { userId?: string; userName?: string }; // User information for cursor display
   /** Called when a CSV node is added via spreadsheet upload; syncs dataset to Yjs so Load more / Plot work */
@@ -178,6 +197,7 @@ type BoardCanvasProps = {
     columns: string[];
     rows: Array<Array<string | number | null>>;
   }) => void;
+  onOpenPresentationViewer?: (nodeId: string, followMode?: boolean) => void; // Open presentation viewer (e.g. from document node click or Join broadcast)
 };
 
 type NodeData = {
@@ -424,8 +444,8 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
       {error && <ErrorMessage message={error} />}
       {result && (
         <div className="mt-3">
-          <InteractiveResultTable 
-            result={result} 
+          <InteractiveResultTable
+            result={result}
             compact
             totalCount={result.totalCount}
             isPreview={result.isPreview}
@@ -446,7 +466,7 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   const hiddenOutputs = execution?.hiddenOutputs ?? { error: false, warnings: false };
   const dismissError = useExecutionStore((state: ExecutionStoreState) => state.dismissError);
   const dismissWarnings = useExecutionStore((state: ExecutionStoreState) => state.dismissWarnings);
-  
+
   const codeLines = code.split('\n').length;
   const expandedHeight = Math.max(240, codeLines * 18 + 60);
   const editorHeight = data.isCodeCollapsed ? Math.min(220, expandedHeight) : expandedHeight;
@@ -684,6 +704,8 @@ export function BoardCanvas({
   yjsOnEdgesChange,
   cursorsMap,
   editingMap,
+  presentationBroadcastsMap,
+  ydoc,
   clientId,
   onCsvDatasetAdded,
 }: BoardCanvasProps) {
@@ -695,6 +717,15 @@ export function BoardCanvas({
       ? selectedNode.type
       : null;
   const [inspectorCollapsed, setInspectorCollapsed] = useState(true);
+  const [openPresentationNodeId, setOpenPresentationNodeId] = useState<string | null>(null);
+  const [openPresentationFollowMode, setOpenPresentationFollowMode] = useState(false);
+  const onOpenPresentationViewer = useCallback((nodeId: string, followMode?: boolean) => {
+    setOpenPresentationNodeId(nodeId);
+    setOpenPresentationFollowMode(followMode ?? false);
+  }, []);
+  const presentationNode = openPresentationNodeId
+    ? nodes.find((n) => n.id === openPresentationNodeId)
+    : null;
 
   // Сбрасываем состояние свернутости, когда инспектор закрывается (меняется выбранный узел)
   useEffect(() => {
@@ -731,71 +762,100 @@ export function BoardCanvas({
             yjsOnEdgesChange={yjsOnEdgesChange}
             cursorsMap={cursorsMap}
             editingMap={editingMap}
+            presentationBroadcastsMap={presentationBroadcastsMap}
+            ydoc={ydoc}
             clientId={clientId}
             userInfo={board.userInfo}
             onCsvDatasetAdded={onCsvDatasetAdded}
+            onOpenPresentationViewer={onOpenPresentationViewer}
           />
-        {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
-        <div
-          className="flex-none transition-all duration-200"
-          style={{
-            width: `${inspectorWidth}px`,
-            minWidth: `${inspectorWidth}px`,
-            maxWidth: `${inspectorWidth}px`,
-          }}
-        >
-          {inspectorKind && selectedNode ? (
-            <BoardInspector
-              nodeLabel={
-                (selectedNode.payload?.label as string | undefined) ??
-                `${inspectorKind === 'sql' ? 'SQL' : inspectorKind === 'python' ? 'Python' : 'Plot'} ${selectedNode.id.slice(0, 6)}`
-              }
-              kind={inspectorKind}
-              status={inspectorEntry?.status ?? 'idle'}
-              error={inspectorEntry?.error}
-              lastStartedAt={inspectorEntry?.startedAt}
-              lastFinishedAt={inspectorEntry?.finishedAt}
-              code={inspectorEntry?.code ?? ''}
-              onChange={(value) => onCodeChange(selectedNode.id, value ?? '')}
-              onCollapseChange={setInspectorCollapsed}
-              result={
-                inspectorKind === 'sql'
-                  ? inspectorEntry?.output?.kind === 'sql'
-                    ? inspectorEntry.output.result
-                    : undefined
-                  : inspectorKind === 'python'
-                    ? inspectorEntry?.output?.kind === 'python'
+          {presentationNode &&
+            presentationNode.type === 'document' &&
+            (() => {
+              const payload = (presentationNode.payload ?? {}) as Record<string, unknown>;
+              const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+              const url =
+                payload.url != null && String(payload.url).trim() !== ''
+                  ? String(payload.url)
+                  : payload.fileId
+                    ? `${apiBase}/api/files/${payload.fileId}`
+                    : '';
+              return (
+                <PresentationViewer
+                  nodeId={presentationNode.id}
+                  url={url}
+                  originalName={payload.originalName as string | undefined}
+                  mimeType={payload.mimeType as string | undefined}
+                  onClose={() => setOpenPresentationNodeId(null)}
+                  presentationBroadcastsMap={presentationBroadcastsMap ?? null}
+                  ydoc={ydoc ?? null}
+                  clientId={clientId ?? null}
+                  userInfo={board.userInfo ?? null}
+                  initialFollowMode={openPresentationFollowMode}
+                />
+              );
+            })()}
+          {/* Всегда резервируем фиксированную ширину для инспектора, чтобы тулбары не перескакивали */}
+          <div
+            className="flex-none transition-all duration-200"
+            style={{
+              width: `${inspectorWidth}px`,
+              minWidth: `${inspectorWidth}px`,
+              maxWidth: `${inspectorWidth}px`,
+            }}
+          >
+            {inspectorKind && selectedNode ? (
+              <BoardInspector
+                nodeLabel={
+                  (selectedNode.payload?.label as string | undefined) ??
+                  `${inspectorKind === 'sql' ? 'SQL' : inspectorKind === 'python' ? 'Python' : 'Plot'} ${selectedNode.id.slice(0, 6)}`
+                }
+                kind={inspectorKind}
+                status={inspectorEntry?.status ?? 'idle'}
+                error={inspectorEntry?.error}
+                lastStartedAt={inspectorEntry?.startedAt}
+                lastFinishedAt={inspectorEntry?.finishedAt}
+                code={inspectorEntry?.code ?? ''}
+                onChange={(value) => onCodeChange(selectedNode.id, value ?? '')}
+                onCollapseChange={setInspectorCollapsed}
+                result={
+                  inspectorKind === 'sql'
+                    ? inspectorEntry?.output?.kind === 'sql'
                       ? inspectorEntry.output.result
                       : undefined
+                    : inspectorKind === 'python'
+                      ? inspectorEntry?.output?.kind === 'python'
+                        ? inspectorEntry.output.result
+                        : undefined
+                      : undefined
+                }
+                nodeId={selectedNode.id}
+                nodes={nodes}
+                edges={edges}
+                executionEntries={executionEntries}
+                onPlotConfigChange={
+                  inspectorKind === 'plot'
+                    ? (nodeId, newPayload) => {
+                        // Update nodes through onNodesChange callback
+                        const updatedNodes = nodes.map((n) =>
+                          n.id === nodeId
+                            ? {
+                                ...n,
+                                payload: {
+                                  ...(n.payload ?? {}),
+                                  ...newPayload,
+                                },
+                              }
+                            : n,
+                        );
+                        onNodesChange?.(updatedNodes);
+                      }
                     : undefined
-              }
-              nodeId={selectedNode.id}
-              nodes={nodes}
-              edges={edges}
-              executionEntries={executionEntries}
-              onPlotConfigChange={
-                inspectorKind === 'plot'
-                  ? (nodeId, newPayload) => {
-                      // Update nodes through onNodesChange callback
-                      const updatedNodes = nodes.map((n) =>
-                        n.id === nodeId
-                          ? {
-                              ...n,
-                              payload: {
-                                ...(n.payload ?? {}),
-                                ...newPayload,
-                              },
-                            }
-                          : n,
-                      );
-                      onNodesChange?.(updatedNodes);
-                    }
-                  : undefined
-              }
-            />
-          ) : null}
+                }
+              />
+            ) : null}
+          </div>
         </div>
-      </div>
       </EditingPresenceProvider>
     </ReactFlowProvider>
   );
@@ -820,9 +880,12 @@ function InnerBoardCanvas({
   yjsOnEdgesChange,
   cursorsMap,
   editingMap,
+  presentationBroadcastsMap,
+  ydoc,
   clientId,
   userInfo,
   onCsvDatasetAdded,
+  onOpenPresentationViewer,
 }: InnerProps) {
   const canvasRootRef = useRef<HTMLDivElement>(null);
   const viewport = useViewport();
@@ -851,11 +914,16 @@ function InnerBoardCanvas({
   // Use cursor syncing hook (must be inside ReactFlowProvider)
   // Hide own cursor when hovering toolbars (like Miro behavior)
   // Also hide own cursor when using eraser (eraser has its own cursor indicator)
-  // Show own cursor normally, but hide it when hovering over toolbars or using eraser
-  const showOwnCursor = !isHoveringToolbar && tool !== 'eraser';
-  const [cursors, onMouseMove] = cursorsMap && clientId
-    ? useCursorStateSynced(cursorsMap, clientId, userInfo, { showOwnCursor })
-    : ([[], () => {}] as const);
+  // When 'default' cursor selected, user sees system cursor — never show overlay
+  const cursorColor = useCursorSettingsStore((s) => s.cursorColor);
+  const showOwnCursor = !isHoveringToolbar && tool !== 'eraser' && cursorColor !== DEFAULT_CURSOR;
+  const [cursors, onMouseMove, onPointerLeave] =
+    cursorsMap && clientId
+      ? useCursorStateSynced(cursorsMap, clientId, userInfo, {
+          showOwnCursor,
+          boardContainerRef: canvasRootRef,
+        })
+      : ([[], () => {}, () => {}] as const);
 
   // Editing presence is provided via EditingPresenceProvider context
   // Individual nodes use useNodeEditing hook to access editing state
@@ -884,6 +952,24 @@ function InnerBoardCanvas({
   /** Ids we just deleted locally; avoid restoring them when nodes prop is still stale (Yjs observer not yet applied). */
   const recentlyDeletedIdsRef = useRef<Set<string>>(new Set());
   const [localEdges, setLocalEdges] = useState(edges);
+
+  // Presentation broadcast: which document nodes have an active broadcast (for "Join broadcast" buttons)
+  const [broadcastingNodeIds, setBroadcastingNodeIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!presentationBroadcastsMap) return;
+    const update = () => {
+      const ids = new Set<string>();
+      presentationBroadcastsMap.forEach((value: unknown, key: string) => {
+        const state =
+          value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+        if (state && state.isActive === true && state.presenterUserId) ids.add(key);
+      });
+      setBroadcastingNodeIds(ids);
+    };
+    update();
+    presentationBroadcastsMap.observe(update);
+    return () => presentationBroadcastsMap.unobserve(update);
+  }, [presentationBroadcastsMap]);
   const textNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const shapeNodeResizeTimerRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
@@ -900,7 +986,7 @@ function InnerBoardCanvas({
       if (incomingNode.type === 'voice') {
         const incomingPayload = (incomingNode.payload ?? {}) as Record<string, unknown>;
         const cachedAudio = globalVoiceAudioCache.get(incomingNode.id);
-        
+
         // If incoming has audioData, update cache
         if (incomingPayload.audioData) {
           globalVoiceAudioCache.set(incomingNode.id, {
@@ -910,7 +996,7 @@ function InnerBoardCanvas({
           });
           return incomingNode;
         }
-        
+
         // If we have cached audioData but incoming doesn't, use cached
         if (cachedAudio && !incomingPayload.audioData) {
           return {
@@ -924,7 +1010,7 @@ function InnerBoardCanvas({
           };
         }
       }
-      
+
       return incomingNode;
     });
     // Don't restore nodes we just deleted: nodes prop can be stale (Yjs observer not yet applied).
@@ -1013,7 +1099,7 @@ function InnerBoardCanvas({
   const emitNodesChange = useCallback(
     (next: BoardCanvasProps['nodes'], shouldSaveToHistory = false) => {
       if (!onNodesChange) return;
-      
+
       // Inject audioData from ref before sanitizing - ensures audio is always saved
       const nodesWithAudio = next.map((node) => {
         if (node.type === 'voice') {
@@ -1032,10 +1118,10 @@ function InnerBoardCanvas({
         }
         return node;
       });
-      
+
       const sanitized = sanitizeExternalNodes(nodesWithAudio);
       const signature = JSON.stringify(sanitized);
-      
+
       if (signature === lastEmittedRef.current) return;
       lastEmittedRef.current = signature;
 
@@ -1050,7 +1136,10 @@ function InnerBoardCanvas({
   // This ensures that changes to node content (text, formatting, etc.) are synchronized
   // between all clients immediately, not just on auto-save
   const syncNodePayloadChange = useCallback(
-    (nodeId: string, payloadUpdate: (prevPayload: Record<string, unknown>) => Record<string, unknown>) => {
+    (
+      nodeId: string,
+      payloadUpdate: (prevPayload: Record<string, unknown>) => Record<string, unknown>,
+    ) => {
       // Update local state and sync through Yjs
       setLocalNodes((prev) => {
         const currentNode = prev.find((n) => n.id === nodeId);
@@ -1130,46 +1219,49 @@ function InnerBoardCanvas({
 
   // CRITICAL FIX for Bug 2: Force hide system cursor on all ReactFlow elements
   // This prevents the hand icon from appearing simultaneously with collaborative cursors
-  // Works in ALL modes, not just pen mode, because the bug can occur in any mode
-  // CRITICAL: Do NOT hide cursor on body - only hide it inside ReactFlow container
-  // This allows standard browser cursor to show outside the canvas area (header, buttons, etc.)
+  // SKIP when user selected "default" cursor — they want to see their system cursor
   useEffect(() => {
+    const useDefaultCursor = cursorColor === DEFAULT_CURSOR;
+    // When default: show system cursor (override rf-cursor-hidden from globals.css)
+    const canvasCursor = useDefaultCursor ? 'default' : 'none';
+
+    const applyCursorStyle = (el: HTMLElement, cursor: string) => {
+      (el as HTMLElement).style.setProperty('cursor', cursor, 'important');
+    };
+
     const forceHideCursor = () => {
       const reactFlowContainer = document.querySelector('.react-flow');
       const reactFlowPane = document.querySelector('.react-flow__pane');
       const reactFlowNodes = document.querySelectorAll('.react-flow__node');
       const reactFlowViewport = document.querySelector('.react-flow__viewport');
       const reactFlowRenderer = document.querySelector('.react-flow__renderer');
-      
-      // Force hide cursor ONLY on ReactFlow elements, NOT on body
-      // This allows standard cursor to show outside the canvas area
+
       if (reactFlowContainer) {
-        (reactFlowContainer as HTMLElement).style.setProperty('cursor', 'none', 'important');
+        applyCursorStyle(reactFlowContainer as HTMLElement, canvasCursor);
       }
       if (reactFlowPane) {
-        (reactFlowPane as HTMLElement).style.setProperty('cursor', 'none', 'important');
+        applyCursorStyle(reactFlowPane as HTMLElement, canvasCursor);
       }
       if (reactFlowViewport) {
-        (reactFlowViewport as HTMLElement).style.setProperty('cursor', 'none', 'important');
+        applyCursorStyle(reactFlowViewport as HTMLElement, canvasCursor);
       }
       if (reactFlowRenderer) {
-        (reactFlowRenderer as HTMLElement).style.setProperty('cursor', 'none', 'important');
+        applyCursorStyle(reactFlowRenderer as HTMLElement, canvasCursor);
       }
       reactFlowNodes.forEach((node) => {
-        (node as HTMLElement).style.setProperty('cursor', 'none', 'important');
-        // Also hide cursor on all children of nodes
+        applyCursorStyle(node as HTMLElement, canvasCursor);
         const children = node.querySelectorAll('*');
         children.forEach((child) => {
-          (child as HTMLElement).style.setProperty('cursor', 'none', 'important');
+          applyCursorStyle(child as HTMLElement, canvasCursor);
         });
       });
-      
+
       // Restore standard cursor for Controls and MiniMap (like toolbar)
       const controls = document.querySelector('.react-flow__controls');
       const minimap = document.querySelector('.react-flow__minimap');
       const penToolbar = document.querySelector('[data-pen-toolbar]');
       const commandBar = document.querySelector('[data-board-command-bar]');
-      
+
       if (controls) {
         (controls as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
         const controlButtons = controls.querySelectorAll('button');
@@ -1184,7 +1276,7 @@ function InnerBoardCanvas({
           (el as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
         });
       }
-      
+
       // Restore standard cursor for PenToolbar (pen settings palette)
       if (penToolbar) {
         (penToolbar as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
@@ -1193,7 +1285,7 @@ function InnerBoardCanvas({
           (el as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
         });
       }
-      
+
       // Restore standard cursor for BoardCommandBar
       if (commandBar) {
         (commandBar as HTMLElement).style.setProperty('cursor', 'pointer', 'important');
@@ -1238,7 +1330,7 @@ function InnerBoardCanvas({
       clearInterval(interval);
       // No need to restore cursor on body since we don't set it anymore
     };
-  }, []); // Remove isPenMode dependency - work in all modes
+  }, [cursorColor]);
 
   // CRITICAL FIX: Hide own cursor when hovering over toolbars (Controls, MiniMap, BoardCommandBar, PenToolbar)
   // This matches Miro behavior - cursor disappears for the user but stays visible for others
@@ -1308,7 +1400,7 @@ function InnerBoardCanvas({
     return () => {
       observer.disconnect();
       clearInterval(intervalId);
-      
+
       // Remove all listeners
       document.querySelectorAll('[data-cursor-listener]').forEach((el) => {
         el.removeEventListener('mouseenter', handleToolbarMouseEnter);
@@ -1316,7 +1408,6 @@ function InnerBoardCanvas({
       });
     };
   }, []);
-
 
   const selectedDataNode = useMemo(() => {
     if (!selectedNodeId) return null;
@@ -1766,6 +1857,9 @@ function InnerBoardCanvas({
                                 onSelectNode?.(null);
                               }
                             },
+                            onOpenViewer: onOpenPresentationViewer
+                              ? () => onOpenPresentationViewer(node.id)
+                              : undefined,
                           };
                         })()
                       : isShape || isNote
@@ -1896,16 +1990,15 @@ function InnerBoardCanvas({
                               const payload = node.payload as any;
                               return {
                                 shapeType: (payload?.shapeType ?? 'rectangle') as any,
-                                shapeColor: payload?.shapeColor ?? '#BFDBFE', // Legacy
+                                shapeColor: payload?.shapeColor ?? SHAPE_DEFAULTS.legacyShapeColor,
                                 shapeLabel: payload?.shapeLabel ?? 'Фигура',
-                                width: payload?.width ?? 160,
-                                height: payload?.height ?? 96,
-                                // New style properties
-                                fill: payload?.fill ?? 'transparent',
-                                stroke: payload?.stroke ?? '#1f1f1f',
-                                strokeWidth: payload?.strokeWidth ?? 2,
-                                opacity: payload?.opacity ?? 1.0,
-                                cornerRadius: payload?.cornerRadius ?? 0,
+                                width: payload?.width ?? SHAPE_DEFAULTS.defaultWidth,
+                                height: payload?.height ?? SHAPE_DEFAULTS.defaultHeight,
+                                fill: payload?.fill ?? SHAPE_DEFAULTS.fill,
+                                stroke: payload?.stroke ?? SHAPE_DEFAULTS.stroke,
+                                strokeWidth: payload?.strokeWidth ?? SHAPE_DEFAULTS.strokeWidth,
+                                opacity: payload?.opacity ?? SHAPE_DEFAULTS.opacity,
+                                cornerRadius: payload?.cornerRadius ?? SHAPE_DEFAULTS.cornerRadius,
                                 arrowHead: payload?.arrowHead,
                                 // For line/arrow types
                                 endX: payload?.endX,
@@ -2080,10 +2173,12 @@ function InnerBoardCanvas({
                                 mimeType: payload.mimeType ?? 'audio/webm',
                                 recordedBy: payload.recordedBy,
                                 recordedAt: payload.recordedAt,
-                                currentUser: board.userInfo ? {
-                                  id: board.userInfo.userId ?? '',
-                                  name: board.userInfo.userName ?? '',
-                                } : undefined,
+                                currentUser: board.userInfo
+                                  ? {
+                                      id: board.userInfo.userId ?? '',
+                                      name: board.userInfo.userName ?? '',
+                                    }
+                                  : undefined,
                                 onChangeAudio: (
                                   nid: string,
                                   audioPayload: {
@@ -2100,7 +2195,7 @@ function InnerBoardCanvas({
                                     duration: audioPayload.duration,
                                     mimeType: audioPayload.mimeType,
                                   });
-                                  
+
                                   setLocalNodes((prev) => {
                                     const next = prev.map((n) =>
                                       n.id === nid && n.type === 'voice'
@@ -2155,9 +2250,7 @@ function InnerBoardCanvas({
                                     (e) => e.targetId === node.id,
                                   );
                                   const upstreamNode = incomingEdge
-                                    ? localNodes.find(
-                                        (n) => n.id === incomingEdge.sourceId,
-                                      )
+                                    ? localNodes.find((n) => n.id === incomingEdge.sourceId)
                                     : null;
                                   const isCsvSource =
                                     upstreamNode?.type === 'csv' ||
@@ -2421,9 +2514,12 @@ function InnerBoardCanvas({
         // Для pen nodes используем тип из data или previous
         const isPenNode = (flowNode.data as any)?.points !== undefined;
         const isShapeNode = flowNode.type === 'shapeNode';
+        // Must match ShapeNode's isNote logic: note = (text|onChangeText) && !onChangeFormat
+        // Regular shapes have onChangeFormat from mapNodes, so they stay type 'shape'
         const isNoteNode =
           isShapeNode &&
-          ((flowNode.data as any)?.text !== undefined || (flowNode.data as any)?.onChangeText);
+          ((flowNode.data as any)?.text !== undefined || (flowNode.data as any)?.onChangeText) &&
+          !(flowNode.data as any)?.onChangeFormat;
         const nodeKind = isPenNode
           ? 'pen'
           : isShapeNode && isNoteNode
@@ -2494,19 +2590,25 @@ function InnerBoardCanvas({
                 },
               }
             : isShapeNode
-              ? {
-                  ...(previous?.payload ?? {}),
-                  ...((flowNode.data as any) ?? {}),
-                  // Сохраняем размеры из flowNode, если они есть
-                  width:
-                    typeof flowNode.width === 'number'
-                      ? flowNode.width
-                      : (previous?.payload as any)?.width,
-                  height:
-                    typeof flowNode.height === 'number'
-                      ? flowNode.height
-                      : (previous?.payload as any)?.height,
-                }
+              ? (() => {
+                  const fd = (flowNode.data as Record<string, unknown>) ?? {};
+                  const pp = previous?.payload as Record<string, unknown> | undefined;
+                  const prevPayload = pp ?? {};
+                  const merged = { ...prevPayload, ...fd } as Record<string, unknown>;
+                  // КРИТИЧНО: shapeType не должен быть перезаписан undefined при коммите
+                  if (merged.shapeType == null && prevPayload.shapeType != null) {
+                    merged.shapeType = prevPayload.shapeType;
+                  } else if (merged.shapeType == null) {
+                    merged.shapeType = 'rectangle';
+                  }
+                  const prevW = prevPayload['width'] as number | undefined;
+                  const prevH = prevPayload['height'] as number | undefined;
+                  return {
+                    ...merged,
+                    width: typeof flowNode.width === 'number' ? flowNode.width : prevW,
+                    height: typeof flowNode.height === 'number' ? flowNode.height : prevH,
+                  };
+                })()
               : (previous?.payload ?? {});
         // Проверяем изменения: position, type, или для shape nodes - размеры
         const positionChanged =
@@ -2518,8 +2620,8 @@ function InnerBoardCanvas({
           (isNoteNode
             ? ((previous.payload as any)?.ui as any)?.width !== (payload as any)?.ui?.width ||
               ((previous.payload as any)?.ui as any)?.height !== (payload as any)?.ui?.height
-            : (previous.payload as any)?.width !== payload.width ||
-              (previous.payload as any)?.height !== payload.height);
+            : (previous.payload as any)?.width !== (payload as any)?.width ||
+              (previous.payload as any)?.height !== (payload as any)?.height);
         if (positionChanged || typeChanged || shapeSizeChanged) {
           mutated = true;
         }
@@ -2535,18 +2637,18 @@ function InnerBoardCanvas({
       // This fixes the issue where deleted pen nodes reappear after deletion
       const nextIds = new Set(nextFlowNodes.map((n) => n.id));
       const nodesPropIds = new Set(nodes.map((n) => n.id));
-      
+
       // Only preserve notes that are still in nodes prop (not deleted through Yjs)
       const preservedNotes = prev.filter(
         (n) => n.type === 'note' && !nextIds.has(n.id) && nodesPropIds.has(n.id),
       );
-      
+
       // CRITICAL FIX: Don't preserve pen nodes that were deleted through Yjs
       // If a pen node is not in nodes prop, it was deleted through Yjs and should not be preserved
       const preservedPen = prev.filter(
         (n) => n.type === 'pen' && !nextIds.has(n.id) && nodesPropIds.has(n.id),
       );
-      
+
       const nextLocal = [...nextLocalCore, ...preservedNotes, ...preservedPen];
 
       if (mutated) {
@@ -2839,9 +2941,13 @@ function InnerBoardCanvas({
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      if (node.type === 'documentNode' && onOpenPresentationViewer) {
+        onOpenPresentationViewer(node.id);
+        return;
+      }
       onSelectNode?.(node.id);
     },
-    [onSelectNode],
+    [onSelectNode, onOpenPresentationViewer],
   );
 
   const handlePaneClick = useCallback(() => {
@@ -3046,13 +3152,13 @@ function InnerBoardCanvas({
       const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
 
       const nodeId = crypto.randomUUID();
-      
+
       // Table preview: default 100 rows (no user selector). Full data lives in DuckDB;
       // Plot nodes connected to this CSV use full dataset via useFullCsvDataForPlot.
       const PREVIEW_ROW_LIMIT = 100;
       const previewRows = result.data.rows.slice(0, PREVIEW_ROW_LIMIT);
       const columns = normalizedColumns.length > 0 ? normalizedColumns : result.data.columns;
-      
+
       const previewData = {
         columns,
         rows: previewRows,
@@ -3433,7 +3539,10 @@ function InnerBoardCanvas({
         id,
       }));
       yjsOnNodesChange(removeNodeChanges);
-      console.log('handleDeleteSelection: Synced node deletions through Yjs:', removeNodeChanges.length);
+      console.log(
+        'handleDeleteSelection: Synced node deletions through Yjs:',
+        removeNodeChanges.length,
+      );
     }
 
     // Also remove edges incident to removed nodes (they should be deleted automatically by Yjs,
@@ -3453,7 +3562,10 @@ function InnerBoardCanvas({
         id,
       }));
       yjsOnEdgesChange(removeEdgeChanges);
-      console.log('handleDeleteSelection: Synced edge deletions through Yjs:', removeEdgeChanges.length);
+      console.log(
+        'handleDeleteSelection: Synced edge deletions through Yjs:',
+        removeEdgeChanges.length,
+      );
     }
 
     // remove from localNodes (regular + mirrored notes + pen nodes)
@@ -3553,13 +3665,25 @@ function InnerBoardCanvas({
     flowInstance.fitView({ padding: 0.3, includeHiddenNodes: true, duration: 200 });
   }, [flowInstance]);
 
+  // Register fitView for board menu "Catch up" and other consumers
+  useEffect(() => {
+    if (!flowInstance) {
+      useBoardCanvasApiStore.getState().setFitView(null);
+      return;
+    }
+    const fn = () => {
+      flowInstance.fitView({ padding: 0.3, includeHiddenNodes: true, duration: 200 });
+    };
+    useBoardCanvasApiStore.getState().setFitView(fn);
+    return () => useBoardCanvasApiStore.getState().setFitView(null);
+  }, [flowInstance]);
+
   const pendingStickyRef = useRef<{ x: number; y: number } | null>(null);
   const uuidv4 = useCallback(() => {
     try {
       // Most environments
-       
+
       if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
-         
         return (crypto as any).randomUUID() as string;
       }
     } catch {}
@@ -3698,9 +3822,10 @@ function InnerBoardCanvas({
         className="board-canvas-root relative flex h-full min-h-0 w-full flex-1 overflow-hidden"
         style={{ position: 'relative' }}
       >
-        <div 
-          className="relative h-full w-full overflow-hidden" 
+        <div
+          className="relative h-full w-full overflow-hidden"
           onPointerMoveCapture={onMouseMove}
+          onPointerLeaveCapture={onPointerLeave}
         >
           <div className="relative h-full w-full">
             <ReactFlow
@@ -3708,7 +3833,14 @@ function InnerBoardCanvas({
               edges={flowEdges}
               fitView
               fitViewOptions={{ padding: 0.2, duration: 0 }}
-              panOnDrag={!isSelectMode && !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
+              panOnDrag={
+                !isSelectMode &&
+                !isStickyMode &&
+                !isPenMode &&
+                !isTextMode &&
+                !isShapeMode &&
+                !isVoiceMode
+              }
               panOnScroll={false}
               zoomOnScroll
               selectionOnDrag={isSelectMode}
@@ -3875,9 +4007,51 @@ function InnerBoardCanvas({
                   return;
                 }
 
-                // Создание фигур теперь через drag-to-create (ShapeDragOverlay)
-                // Убираем создание по клику, оставляем только drag
-                // if (isShapeMode && selectedShape) { ... }
+                // Создаем фигуру по клику (как в Miro — click-to-place, центр фигуры в точке клика)
+                if (isShapeMode && selectedShape) {
+                  const isLine = isLineShapeType(selectedShape);
+                  const defaultW = isLine
+                    ? SHAPE_DEFAULTS.lineDefaultWidth
+                    : SHAPE_DEFAULTS.defaultWidth;
+                  const defaultH = isLine
+                    ? SHAPE_DEFAULTS.lineDefaultHeight
+                    : SHAPE_DEFAULTS.defaultHeight;
+                  const position = { x: p.x - defaultW / 2, y: p.y - defaultH / 2 };
+                  const shapePayload: Record<string, unknown> = {
+                    shapeType: selectedShape,
+                    fill: SHAPE_DEFAULTS.fill,
+                    stroke: SHAPE_DEFAULTS.stroke,
+                    strokeWidth: SHAPE_DEFAULTS.strokeWidth,
+                    opacity: SHAPE_DEFAULTS.opacity,
+                    cornerRadius:
+                      selectedShape === 'round-rectangle'
+                        ? SHAPE_DEFAULTS.roundRectCornerRadius
+                        : SHAPE_DEFAULTS.cornerRadius,
+                    arrowHead: selectedShape === 'arrow' ? true : undefined,
+                  };
+                  if (isLine) {
+                    shapePayload.startX = 0;
+                    shapePayload.startY = 0;
+                    shapePayload.endX = defaultW;
+                    shapePayload.endY = 0;
+                  }
+                  const shapeNode = addNodeHelpers.createShapeNode(
+                    position,
+                    defaultW,
+                    defaultH,
+                    shapePayload,
+                  ) as BoardCanvasProps['nodes'][number];
+                  const reactFlowNode = canvasNodeToReactFlowNode(shapeNode);
+                  if (yjsOnNodesChange) yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+                  setLocalNodes((prev) => {
+                    const next = [...prev, shapeNode];
+                    queueMicrotask(() => emitNodesChange(next));
+                    return next;
+                  });
+                  onSelectNode?.(shapeNode.id);
+                  setTool('select');
+                  return;
+                }
 
                 // Создаем новую заметку в режиме стикеров (как shape node с типом rectangle и текстом)
                 if (!isStickyMode) return;
@@ -3953,26 +4127,51 @@ function InnerBoardCanvas({
                 style={{ left: 0, bottom: 0 }}
               />
               <ConnectionArrowsOverlay edges={flowEdges} />
+              {onOpenPresentationViewer &&
+                presentationBroadcastsMap &&
+                flowNodes
+                  .filter((n) => n.type === 'documentNode' && broadcastingNodeIds.has(n.id))
+                  .map((n) => {
+                    const w = (n.style?.width as number) ?? 400;
+                    const h = (n.style?.height as number) ?? 500;
+                    return (
+                      <div
+                        key={n.id}
+                        className="nodrag nopan absolute z-10"
+                        style={{
+                          left: n.position.x + w / 2 - 90,
+                          top: n.position.y + h + 8,
+                          width: 180,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onOpenPresentationViewer(n.id, true)}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500 bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-md hover:bg-emerald-500"
+                        >
+                          <span>Подключиться к трансляции</span>
+                        </button>
+                      </div>
+                    );
+                  })}
               {isShapeMode && selectedShape && (
                 <ShapeDragOverlay
                   selectedShape={selectedShape}
                   onAddShapeNode={(node) => {
-                    console.log('onAddShapeNode called with:', node);
-                    // Создаем shape node через useAddNode с новыми параметрами
+                    // Создаем shape node через useAddNode (с shapeType из payload для ellipse, diamond и т.д.)
                     const shapeNode = addNodeHelpers.createShapeNode(
                       node.position,
                       node.width,
                       node.height,
                       node.payload,
                     ) as BoardCanvasProps['nodes'][number];
+                    const reactFlowNode = canvasNodeToReactFlowNode(shapeNode);
+                    if (yjsOnNodesChange) yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
                     setLocalNodes((prev) => {
                       const next = [...prev, shapeNode];
-                      queueMicrotask(() => {
-                        emitNodesChange(next);
-                      });
+                      queueMicrotask(() => emitNodesChange(next));
                       return next;
                     });
-                    // Автоматически выделяем созданный узел и сбрасываем tool в select (как в Miro)
                     onSelectNode?.(shapeNode.id);
                     setTool('select');
                   }}
@@ -4030,8 +4229,8 @@ function InnerBoardCanvas({
                   }}
                 />
               )}
-              {/* Collaborative cursors overlay */}
-              <CollaborativeCursors cursors={cursors} />
+              {/* Collaborative cursors overlay — labels only for other users */}
+              <CollaborativeCursors cursors={cursors} ownClientId={clientId} />
             </ReactFlow>
           </div>
         </div>

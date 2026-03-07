@@ -21,6 +21,7 @@ import {
 } from '@phosphor-icons/react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from '../hooks/useTranslation';
 import type { NodeStatus } from '../state/executionStore';
 import type { ShapeType } from './flowNodes/ShapeNode';
 import { ShapePalette } from './ShapePalette';
@@ -50,21 +51,26 @@ type BoardCommandBarProps = {
   portalRoot?: HTMLElement | null;
 };
 
-type CanvasToolConfig = {
-  id: CanvasTool;
-  label: string;
-  icon: typeof Cursor;
-  hotkey: string;
-};
-
-const canvasTools: CanvasToolConfig[] = [
-  { id: 'select', label: 'Select', icon: Cursor, hotkey: 'V' },
-  { id: 'note', label: 'Sticky', icon: NotePencil, hotkey: 'N' },
-  { id: 'pen', label: 'Pen', icon: PencilSimple, hotkey: 'P' },
-  { id: 'text', label: 'Text', icon: TextT, hotkey: 'T' },
-  { id: 'shape', label: 'Shape', icon: SquaresFour, hotkey: 'S' },
-  { id: 'voice', label: 'Voice', icon: Microphone, hotkey: 'M' },
+const canvasToolIds: Array<{ id: CanvasTool; icon: typeof Cursor; hotkey: string }> = [
+  { id: 'select', icon: Cursor, hotkey: 'V' },
+  { id: 'note', icon: NotePencil, hotkey: 'N' },
+  { id: 'pen', icon: PencilSimple, hotkey: 'P' },
+  { id: 'text', icon: TextT, hotkey: 'T' },
+  { id: 'shape', icon: SquaresFour, hotkey: 'S' },
+  { id: 'voice', icon: Microphone, hotkey: 'M' },
 ];
+
+const TOOL_LABEL_KEYS: Record<
+  string,
+  'toolSelect' | 'toolSticky' | 'toolPen' | 'toolText' | 'toolShape' | 'toolVoice'
+> = {
+  select: 'toolSelect',
+  note: 'toolSticky',
+  pen: 'toolPen',
+  text: 'toolText',
+  shape: 'toolShape',
+  voice: 'toolVoice',
+};
 
 const statusToneClasses: Record<NodeStatus, string> = {
   idle: 'bg-slate-100 text-slate-600 border border-slate-200',
@@ -73,13 +79,23 @@ const statusToneClasses: Record<NodeStatus, string> = {
   error: 'bg-rose-100 text-rose-700 border border-rose-200',
 };
 
-function StatusPill({ status }: { status: NodeStatus }) {
+const STATUS_LABEL_KEYS: Record<
+  NodeStatus,
+  'statusIdle' | 'statusRunning' | 'statusSuccess' | 'statusError'
+> = {
+  idle: 'statusIdle',
+  running: 'statusRunning',
+  success: 'statusSuccess',
+  error: 'statusError',
+};
+
+function StatusPill({ status, label }: { status: NodeStatus; label: string }) {
   return (
     <span
       className={`flex h-7 items-center gap-1 rounded-full px-2.5 text-[10px] font-semibold uppercase tracking-wide ${statusToneClasses[status]}`}
     >
       {status === 'running' && <SpinnerGap className="animate-spin" size={12} weight="bold" />}
-      {status.toUpperCase()}
+      {label}
     </span>
   );
 }
@@ -107,6 +123,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   hasSelection,
   portalRoot,
 }: BoardCommandBarProps) {
+  const { t } = useTranslation();
   const [root, setRoot] = useState<HTMLElement | null>(null);
   const [isShapePaletteOpen, setIsShapePaletteOpen] = useState(false);
   const shapeButtonRef = useRef<HTMLButtonElement>(null);
@@ -197,10 +214,11 @@ export const BoardCommandBar = memo(function BoardCommandBar({
     <div className={`pointer-events-none ${positioningClass}`} data-board-command-bar="true">
       <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-[0_12px_30px_rgba(15,23,42,0.15)]">
         <div className="flex items-center gap-1.5">
-          {canvasTools.map((tool) => {
+          {canvasToolIds.map((tool) => {
             const Icon = tool.icon;
             const isActive = currentTool === tool.id;
             const isShapeTool = tool.id === 'shape';
+            const label = TOOL_LABEL_KEYS[tool.id] ? t[TOOL_LABEL_KEYS[tool.id]] : tool.id;
 
             return (
               <div key={tool.id} className="relative">
@@ -234,7 +252,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                     }
                     setIsShapePaletteOpen(false);
                   }}
-                  title={`${tool.label} (${tool.hotkey.toUpperCase()})`}
+                  title={`${label} (${tool.hotkey.toUpperCase()})`}
                   data-delay={TOOLTIP_DELAY}
                 >
                   <Icon size={18} weight={isActive ? 'fill' : 'regular'} />
@@ -265,7 +283,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               }
               setIsShapePaletteOpen(false);
             }}
-            title="Eraser (E)"
+            title={`${t.toolEraser} (E)`}
           >
             <Eraser size={18} weight={currentTool === 'eraser' ? 'fill' : 'regular'} />
           </button>
@@ -277,7 +295,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               type="button"
               className={`${baseButtonClass} ${ghostButtonClass} relative`}
               onClick={onAddSqlNode}
-              title="Add SQL node"
+              title={t.addSqlNode}
             >
               <Database size={18} weight="regular" />
               <Plus
@@ -292,7 +310,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               type="button"
               className={`${baseButtonClass} ${ghostButtonClass} relative`}
               onClick={onAddPythonNode}
-              title="Add Python node"
+              title={t.addPythonNode}
             >
               <Terminal size={18} weight="regular" />
               <Plus
@@ -307,7 +325,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               type="button"
               className={`${baseButtonClass} ${ghostButtonClass} relative`}
               onClick={onAddDatabaseNode}
-              title="Add Database node (D)"
+              title={t.addDatabaseNode}
             >
               <Cylinder size={18} weight="regular" />
               <Plus
@@ -322,7 +340,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               type="button"
               className={`${baseButtonClass} ${ghostButtonClass} relative`}
               onClick={onAddPlotNode}
-              title="Add Plot node (P)"
+              title={t.addPlotNode}
             >
               <ChartBar size={18} weight="regular" />
               <Plus
@@ -345,7 +363,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                 type="button"
                 className={`${baseButtonClass} ${ghostButtonClass} relative`}
                 onClick={handleFileUploadClick}
-                title="Upload CSV/Excel"
+                title={t.uploadCsvExcel}
               >
                 <FileArrowUp size={18} weight="regular" />
                 <Plus
@@ -361,7 +379,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               type="button"
               className={`${baseButtonClass} ${dangerButtonClass}`}
               onClick={onDeleteSelection}
-              title="Delete selection (Delete)"
+              title={t.deleteSelection}
             >
               <Trash size={18} weight="regular" />
             </button>
@@ -374,18 +392,21 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               {NodeTypeIcon && (
                 <span
                   className={`${baseButtonClass} ${ghostButtonClass}`}
-                  title={selectedNodeType === 'sql' ? 'SQL cell' : 'Python cell'}
+                  title={selectedNodeType === 'sql' ? t.sqlCell : t.pythonCell}
                 >
                   <NodeTypeIcon size={16} weight="regular" />
                 </span>
               )}
-              <StatusPill status={selectedNodeStatus} />
+              <StatusPill
+                status={selectedNodeStatus}
+                label={t[STATUS_LABEL_KEYS[selectedNodeStatus]]}
+              />
               <button
                 type="button"
                 className={`${baseButtonClass} ${dataRunDisabled ? disabledButtonClass : ''}`}
                 onClick={onRunSelectedNode}
                 disabled={dataRunDisabled}
-                title="Run cell (Shift+Enter)"
+                title={t.runCell}
               >
                 <Play size={18} weight={selectedNodeStatus === 'running' ? 'fill' : 'regular'} />
               </button>
@@ -395,7 +416,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                   className={`${baseButtonClass} ${downstreamDisabled ? disabledButtonClass : ''}`}
                   onClick={onRunDownstreamSelectedNode}
                   disabled={downstreamDisabled}
-                  title="Run downstream (Ctrl+Shift+Enter)"
+                  title={t.runDownstream}
                 >
                   <ArrowRight size={18} weight="regular" />
                 </button>

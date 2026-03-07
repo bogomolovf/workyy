@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME ?? 'auth_token';
+const AUTH_COOKIE_DOMAIN = process.env.AUTH_COOKIE_DOMAIN || undefined; // e.g. "localhost" for dev (3000 ↔ 4000)
 // Поддерживаем как строку ("1h") так и число (3600)
 const AUTH_TOKEN_EXPIRES_IN_RAW = process.env.AUTH_TOKEN_EXPIRES_IN ?? '3600';
 const AUTH_TOKEN_EXPIRES_IN = isNaN(Number(AUTH_TOKEN_EXPIRES_IN_RAW))
@@ -46,18 +47,23 @@ export function setAuthCookie(
 
   const secure = process.env.AUTH_COOKIE_SECURE === 'true';
 
-  reply.setCookie(AUTH_COOKIE_NAME, token, {
+  const cookieOptions: Parameters<FastifyReply['setCookie']>[2] = {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
     secure,
     maxAge: AUTH_TOKEN_EXPIRES_IN_SECONDS,
-  });
+  };
+  if (AUTH_COOKIE_DOMAIN) {
+    cookieOptions.domain = AUTH_COOKIE_DOMAIN;
+  }
+  reply.setCookie(AUTH_COOKIE_NAME, token, cookieOptions);
 }
 
 export function clearAuthCookie(reply: FastifyReply) {
-  const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME ?? 'auth_token';
-  reply.clearCookie(AUTH_COOKIE_NAME, {
-    path: '/',
-  });
+  const opts: { path: string; domain?: string } = { path: '/' };
+  if (AUTH_COOKIE_DOMAIN) {
+    opts.domain = AUTH_COOKIE_DOMAIN;
+  }
+  reply.clearCookie(AUTH_COOKIE_NAME, opts);
 }

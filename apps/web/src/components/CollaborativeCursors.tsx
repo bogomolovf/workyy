@@ -1,15 +1,22 @@
-import { EdgeLabelRenderer, useViewport } from 'reactflow';
 import { useEffect, useRef } from 'react';
+import { EdgeLabelRenderer, useViewport } from 'reactflow';
 import type { Cursor } from '../hooks/useCursorStateSynced';
 
 // Scale factors - cursor and label are independent
-const CURSOR_SCALE = 0.9;  // Smaller cursor
-const LABEL_SCALE = 1.3;   // Bigger label
+const CURSOR_SCALE = 0.9; // Smaller cursor
+const LABEL_SCALE = 1.3; // Bigger label
 
-function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
+function CollaborativeCursors({
+  cursors,
+  ownClientId,
+}: {
+  cursors: Cursor[];
+  /** Current user's client ID — label (nickname) is hidden for own cursor, shown only for others */
+  ownClientId?: string;
+}) {
   const viewport = useViewport();
   const animatedLabelsRef = useRef<Set<string>>(new Set());
-  
+
   // Track which cursors have completed their animation
   useEffect(() => {
     // After animation duration (300ms), mark all visible cursors as animated
@@ -18,15 +25,16 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
         animatedLabelsRef.current.add(id);
       });
     }, 350); // Slightly longer than animation duration (300ms)
-    
+
     return () => clearTimeout(timer);
   }, [cursors]);
 
   return (
     <>
       {/* Global styles for cursor animations */}
-      <style dangerouslySetInnerHTML={{
-        __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
           @keyframes collaborativeCursorFadeIn {
             from {
               opacity: 0;
@@ -75,9 +83,10 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
             animation: none;
             opacity: 1;
           }
-        `
-      }} />
-      
+        `,
+        }}
+      />
+
       <EdgeLabelRenderer>
         <div
           style={{
@@ -106,74 +115,70 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
                   willChange: 'transform', // Optimize rendering for frequent transform updates
                 }}
               >
-              <g style={{ transform: scale, transformOrigin: '0 0' }}>
-                {/* Cursor icon - user color fill with bold black outline */}
-                <g
-                  className="collaborative-cursor-icon"
-                  style={{
-                    transform: `translate(-8px, -2px) scale(${CURSOR_SCALE})`,
-                    transformOrigin: '0 0',
-                  }}
-                >
-                  {/* Black outline layer */}
-                  <path
-                    d={cursorPath}
-                    fill="#000000"
-                    stroke="#000000"
-                    strokeWidth={2}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                  />
-                  {/* User color fill layer on top */}
-                  <path
-                    d={cursorPath}
-                    fill={color}
-                    className="collaborative-cursor-path"
-                  />
-                </g>
-                
-                {/* User name label - bigger size */}
-                {userName && (
+                <g style={{ transform: scale, transformOrigin: '0 0' }}>
+                  {/* Cursor icon - user color fill with bold black outline */}
                   <g
-                    className={`collaborative-cursor-label-group ${
-                      animatedLabelsRef.current.has(id) ? 'animation-complete' : ''
-                    }`}
+                    className="collaborative-cursor-icon"
                     style={{
-                      transform: `translate(10px, 14px) scale(${LABEL_SCALE})`,
+                      transform: `translate(-8px, -2px) scale(${CURSOR_SCALE})`,
                       transformOrigin: '0 0',
                     }}
                   >
-                    <rect
-                      x={-3}
-                      y={-8}
-                      width={Math.min(Math.max(userName.length * 5.5 + 10, 45), 120)}
-                      height={16}
-                      rx={4}
-                      fill={color}
-                      opacity={0.95}
+                    {/* Black outline layer */}
+                    <path
+                      d={cursorPath}
+                      fill="#000000"
+                      stroke="#000000"
+                      strokeWidth={2}
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
                     />
-                    <text
-                      x={0}
-                      y={0}
-                      fill="white"
-                      fontSize={10}
-                      fontWeight="600"
+                    {/* User color fill layer on top */}
+                    <path d={cursorPath} fill={color} className="collaborative-cursor-path" />
+                  </g>
+
+                  {/* User name label - only for other users, not for own cursor */}
+                  {userName && (!ownClientId || id !== ownClientId) && (
+                    <g
+                      className={`collaborative-cursor-label-group ${
+                        animatedLabelsRef.current.has(id) ? 'animation-complete' : ''
+                      }`}
                       style={{
-                        pointerEvents: 'none',
-                        userSelect: 'none',
-                        fontFamily: 'Inter, system-ui, sans-serif',
-                        dominantBaseline: 'central',
-                        textAnchor: 'start',
+                        transform: `translate(10px, 14px) scale(${LABEL_SCALE})`,
+                        transformOrigin: '0 0',
                       }}
                     >
-                      {userName.length > 14 ? `${userName.substring(0, 11)}...` : userName}
-                    </text>
-                  </g>
-                )}
-              </g>
-            </svg>
-          );
-        })}
+                      <rect
+                        x={-3}
+                        y={-8}
+                        width={Math.min(Math.max(userName.length * 5.5 + 10, 45), 120)}
+                        height={16}
+                        rx={4}
+                        fill={color}
+                        opacity={0.95}
+                      />
+                      <text
+                        x={0}
+                        y={0}
+                        fill="white"
+                        fontSize={10}
+                        fontWeight="600"
+                        style={{
+                          pointerEvents: 'none',
+                          userSelect: 'none',
+                          fontFamily: 'Inter, system-ui, sans-serif',
+                          dominantBaseline: 'central',
+                          textAnchor: 'start',
+                        }}
+                      >
+                        {userName.length > 14 ? `${userName.substring(0, 11)}...` : userName}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              </svg>
+            );
+          })}
         </div>
       </EdgeLabelRenderer>
     </>
@@ -184,4 +189,3 @@ function CollaborativeCursors({ cursors }: { cursors: Cursor[] }) {
 const cursorPath = `M0 0 L0 16 L4 12 L7 18 L10 17 L7 11 L12 11 Z`;
 
 export default CollaborativeCursors;
-

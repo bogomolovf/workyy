@@ -8,6 +8,31 @@
   color-scheme: dark;
 }
 
+/* Theme: light mode (data-theme="light") */
+[data-theme='light'] {
+  color-scheme: light;
+}
+
+[data-theme='light'] body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* Reduce motion: when user enables reduce-motion setting */
+[data-reduce-motion='true'] * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+/* System preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Hand mode cursor styles - показываем grab/grabbing курсор как в Miro */
 .rf-hand-mode .react-flow__pane {
   cursor: grab !important;

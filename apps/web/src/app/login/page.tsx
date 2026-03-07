@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuthStore } from '../../state/authStore';
+import { useState } from 'react';
 import { LANDING_URL } from '../../lib/appConfig';
+import { useAuthStore } from '../../state/authStore';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -59,7 +59,23 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && <p className="text-sm text-rose-600">{error}</p>}
+          {error && (
+            <div className="space-y-1">
+              <p className="text-sm text-rose-600">{error}</p>
+              {error.includes('подключиться к серверу') && (
+                <p className="text-xs text-slate-500">
+                  Запустите из корня проекта:{' '}
+                  <code className="bg-slate-100 px-1 rounded">pnpm dev</code> или{' '}
+                  <code className="bg-slate-100 px-1 rounded">./start.sh</code>. Откройте приложение
+                  по{' '}
+                  <a href="http://localhost:3000/login" className="text-indigo-600">
+                    http://localhost:3000
+                  </a>
+                  .
+                </p>
+              )}
+            </div>
+          )}
 
           <button
             type="submit"

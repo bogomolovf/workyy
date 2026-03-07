@@ -42,6 +42,20 @@ const API_URL =
       process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ??
       'http://localhost:4000');
 
+const NETWORK_ERROR_MESSAGE =
+  'Не удалось подключиться к серверу. Убедитесь, что бэкенд запущен (./start.sh или pnpm dev).';
+
+function isNetworkError(err: unknown): boolean {
+  if (err instanceof TypeError) return true;
+  const msg = (err as Error)?.message ?? '';
+  return (
+    msg === 'Load failed' ||
+    msg === 'Failed to fetch' ||
+    msg === 'NetworkError when attempting to fetch resource' ||
+    /^fetch failed$/i.test(msg)
+  );
+}
+
 export function isValidUuid(value: string | null | undefined): value is string {
   return (
     !!value &&
@@ -271,7 +285,10 @@ export async function registerUser(payload: { email: string; password: string; n
   try {
     const res = await fetch(`${API_URL}/api/auth/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
       credentials: 'include',
       body: JSON.stringify(payload),
     });
@@ -291,30 +308,46 @@ export async function registerUser(payload: { email: string; password: string; n
     }
 
     return res.json();
-  } catch (err: any) {
-    if (err.message) {
-      throw err;
+  } catch (err: unknown) {
+    if (isNetworkError(err)) {
+      console.error('Registration network error:', err);
+      throw new Error(NETWORK_ERROR_MESSAGE);
     }
-    // Network error or other issues
-    console.error('Registration network error:', err);
-    throw new Error(
-      'Failed to connect to server. Make sure backend is running on http://localhost:4000',
-    );
+    if (err instanceof Error && err.message) throw err;
+    console.error('Registration error:', err);
+    throw new Error(NETWORK_ERROR_MESSAGE);
   }
 }
 
 export async function loginUser(payload: { email: string; password: string }) {
-  const res = await fetch(`${API_URL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || 'Login failed');
+  try {
+    const res = await fetch(`${API_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      let errorDetail = 'Login failed';
+      try {
+        const error = (await res.json()) as { detail?: string; title?: string };
+        errorDetail = error.detail ?? error.title ?? errorDetail;
+      } catch {
+        // non-JSON response
+      }
+      throw new Error(errorDetail);
+    }
+    return res.json();
+  } catch (err: unknown) {
+    if (isNetworkError(err)) {
+      console.error('Login network error:', err);
+      throw new Error(NETWORK_ERROR_MESSAGE);
+    }
+    throw err;
   }
-  return res.json();
 }
 
 export async function logoutUser() {

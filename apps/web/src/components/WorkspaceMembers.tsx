@@ -1,26 +1,20 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, UserPlus, Trash, User } from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useCallback } from 'react';
+import { useTranslation } from '../hooks/useTranslation';
 import {
   fetchWorkspaceMembers,
   addWorkspaceMember,
   removeWorkspaceMember,
   updateWorkspaceMemberRole,
-  type WorkspaceMember,
 } from '../lib/api';
 import { useAuthStore } from '../state/authStore';
 
 type WorkspaceMembersProps = {
   workspaceId: string;
   onClose?: () => void;
-};
-
-const roleLabels: Record<'owner' | 'editor' | 'viewer', string> = {
-  owner: 'Владелец',
-  editor: 'Редактор',
-  viewer: 'Наблюдатель',
 };
 
 const roleColors: Record<'owner' | 'editor' | 'viewer', string> = {
@@ -32,9 +26,16 @@ const roleColors: Record<'owner' | 'editor' | 'viewer', string> = {
 export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps) {
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [selectedRole, setSelectedRole] = useState<'owner' | 'editor' | 'viewer'>('viewer');
   const [error, setError] = useState<string | null>(null);
+
+  const roleLabels: Record<'owner' | 'editor' | 'viewer', string> = {
+    owner: t.roleOwner,
+    editor: t.roleEditor,
+    viewer: t.roleViewer,
+  };
 
   const {
     data: members,
@@ -54,7 +55,7 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
       queryClient.invalidateQueries({ queryKey: ['workspace-members', workspaceId] });
     },
     onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Не удалось добавить участника');
+      setError(err instanceof Error ? err.message : t.addMemberError);
     },
   });
 
@@ -64,7 +65,7 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
       queryClient.invalidateQueries({ queryKey: ['workspace-members', workspaceId] });
     },
     onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Не удалось удалить участника');
+      setError(err instanceof Error ? err.message : t.removeMemberError);
     },
   });
 
@@ -80,7 +81,7 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
       queryClient.invalidateQueries({ queryKey: ['workspace-members', workspaceId] });
     },
     onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Не удалось обновить роль');
+      setError(err instanceof Error ? err.message : t.updateRoleError);
     },
   });
 
@@ -88,21 +89,21 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
     (e: React.FormEvent) => {
       e.preventDefault();
       if (!email.trim()) {
-        setError('Введите email');
+        setError(t.enterEmail);
         return;
       }
       addMemberMutation.mutate({ email: email.trim(), role: selectedRole });
     },
-    [email, selectedRole, addMemberMutation],
+    [email, selectedRole, addMemberMutation, t],
   );
 
   const handleRemoveMember = useCallback(
     (memberUserId: string) => {
-      if (confirm('Вы уверены, что хотите удалить этого участника из workspace?')) {
+      if (confirm(t.removeMemberConfirm)) {
         removeMemberMutation.mutate(memberUserId);
       }
     },
-    [removeMemberMutation],
+    [removeMemberMutation, t],
   );
 
   const handleRoleChange = useCallback(
@@ -122,7 +123,7 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
       <div className="relative w-full max-w-2xl rounded-xl bg-white shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-xl font-semibold text-slate-900">Участники workspace</h2>
+          <h2 className="text-xl font-semibold text-slate-900">{t.workspaceMembersTitle}</h2>
           {onClose && (
             <button
               type="button"
@@ -138,8 +139,11 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
         <div className="max-h-[calc(100vh-200px)] overflow-y-auto px-6 py-4">
           {/* Add member form */}
           {canManageMembers && (
-            <form onSubmit={handleAddMember} className="mb-6 rounded-lg border border-slate-200 p-4">
-              <h3 className="mb-3 text-sm font-medium text-slate-700">Добавить участника</h3>
+            <form
+              onSubmit={handleAddMember}
+              className="mb-6 rounded-lg border border-slate-200 p-4"
+            >
+              <h3 className="mb-3 text-sm font-medium text-slate-700">{t.addMember}</h3>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <input
                   type="email"
@@ -151,15 +155,13 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
                 />
                 <select
                   value={selectedRole}
-                  onChange={(e) =>
-                    setSelectedRole(e.target.value as 'owner' | 'editor' | 'viewer')
-                  }
+                  onChange={(e) => setSelectedRole(e.target.value as 'owner' | 'editor' | 'viewer')}
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                   disabled={addMemberMutation.isPending}
                 >
-                  <option value="viewer">Наблюдатель</option>
-                  <option value="editor">Редактор</option>
-                  <option value="owner">Владелец</option>
+                  <option value="viewer">{t.roleViewer}</option>
+                  <option value="editor">{t.roleEditor}</option>
+                  <option value="owner">{t.roleOwner}</option>
                 </select>
                 <button
                   type="submit"
@@ -167,7 +169,7 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-200"
                 >
                   <UserPlus size={18} />
-                  {addMemberMutation.isPending ? 'Добавляем…' : 'Добавить'}
+                  {addMemberMutation.isPending ? t.addMemberPending : t.addMember}
                 </button>
               </div>
               {error && (
@@ -180,19 +182,17 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
 
           {/* Members list */}
           {isLoading && (
-            <div className="py-8 text-center text-sm text-slate-500">Загрузка участников…</div>
+            <div className="py-8 text-center text-sm text-slate-500">{t.loadingMembers}</div>
           )}
 
           {isError && (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
-              Не удалось загрузить список участников
+              {t.loadMembersError}
             </div>
           )}
 
           {members && members.length === 0 && (
-            <div className="py-8 text-center text-sm text-slate-500">
-              В workspace пока нет участников
-            </div>
+            <div className="py-8 text-center text-sm text-slate-500">{t.noMembers}</div>
           )}
 
           {members && members.length > 0 && (
@@ -228,9 +228,9 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
                         className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                         disabled={updateRoleMutation.isPending}
                       >
-                        <option value="viewer">Наблюдатель</option>
-                        <option value="editor">Редактор</option>
-                        <option value="owner">Владелец</option>
+                        <option value="viewer">{t.roleViewer}</option>
+                        <option value="editor">{t.roleEditor}</option>
+                        <option value="owner">{t.roleOwner}</option>
                       </select>
                     ) : (
                       <span
@@ -247,7 +247,7 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
                         onClick={() => handleRemoveMember(member.userId)}
                         disabled={removeMemberMutation.isPending}
                         className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed"
-                        title="Удалить участника"
+                        title={t.removeMemberTitle}
                       >
                         <Trash size={18} />
                       </button>
@@ -261,14 +261,9 @@ export function WorkspaceMembers({ workspaceId, onClose }: WorkspaceMembersProps
 
         {/* Footer */}
         <div className="border-t border-slate-200 px-6 py-3">
-          <p className="text-xs text-slate-500">
-            Участники workspace могут видеть и работать с досками в этом workspace. Для
-            тестирования коллаборации добавьте другого пользователя и откройте одну и ту же доску
-            в разных браузерах.
-          </p>
+          <p className="text-xs text-slate-500">{t.membersFooter}</p>
         </div>
       </div>
     </div>
   );
 }
-

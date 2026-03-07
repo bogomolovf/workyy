@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 // Predefined cursor colors palette - vibrant and distinguishable
+export const DEFAULT_CURSOR = 'default' as const;
+
 export const CURSOR_COLORS = [
   '#EF4444', // Red
   '#F97316', // Orange
@@ -15,7 +17,7 @@ export const CURSOR_COLORS = [
   '#06B6D4', // Cyan
 ] as const;
 
-export type CursorColor = (typeof CURSOR_COLORS)[number];
+export type CursorColor = (typeof CURSOR_COLORS)[number] | typeof DEFAULT_CURSOR;
 
 type CursorSettingsState = {
   cursorColor: CursorColor;
@@ -26,10 +28,10 @@ export const useCursorSettingsStore = create<CursorSettingsState>()(
   persist(
     (set) => ({
       cursorColor: CURSOR_COLORS[5], // Default to blue
-      setCursorColor: (color) => set({ cursorColor: color }),
+      setCursorColor: (color: CursorColor) => set({ cursorColor: color }),
     }),
     {
       name: 'workyy-cursor-settings',
-    }
-  )
+    },
+  ),
 );

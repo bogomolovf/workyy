@@ -25,8 +25,9 @@ async function bootstrap() {
       serializers: {
         req(request) {
           const url = request.url || '';
-          const isNodesUpdate = url.includes('/boards/') && url.includes('/nodes') && request.method === 'PUT';
-          
+          const isNodesUpdate =
+            url.includes('/boards/') && url.includes('/nodes') && request.method === 'PUT';
+
           // For PUT /boards/:boardId/nodes - never log body to avoid CSV data in logs
           if (isNodesUpdate) {
             return {
@@ -36,7 +37,7 @@ async function bootstrap() {
               remoteAddress: request.ip,
             };
           }
-          
+
           return {
             method: request.method,
             url: request.url,
@@ -56,9 +57,21 @@ async function bootstrap() {
   // CORS configuration: allow requests from landing page and product app
   const landingOrigin = process.env.LANDING_ORIGIN ?? 'http://localhost:5173';
   const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:3000';
+  const allowedOrigins = [
+    landingOrigin,
+    appOrigin,
+    landingOrigin.replace('localhost', '127.0.0.1'),
+    appOrigin.replace('localhost', '127.0.0.1'),
+  ].filter((o, i, arr) => arr.indexOf(o) === i);
 
   await fastify.register(cors, {
-    origin: [landingOrigin, appOrigin],
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      // In development, allow any localhost/127.0.0.1 origin so CORS never blocks
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
+      cb(null, false);
+    },
     credentials: true,
   });
 
