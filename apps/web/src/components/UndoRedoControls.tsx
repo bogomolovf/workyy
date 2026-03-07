@@ -1,7 +1,8 @@
 'use client';
 
-import { memo } from 'react';
 import { ArrowCounterClockwise, ArrowClockwise } from '@phosphor-icons/react';
+import { memo } from 'react';
+import { useTranslation } from '../hooks/useTranslation';
 
 type UndoRedoControlsProps = {
   onUndo: () => void;
@@ -12,7 +13,7 @@ type UndoRedoControlsProps = {
 
 /**
  * Undo/Redo controls for the board header
- * 
+ *
  * Key features:
  * - Per-user undo/redo (only undoes your own changes)
  * - Positioned in the top area of the board
@@ -24,6 +25,7 @@ export const UndoRedoControls = memo(function UndoRedoControls({
   canUndo,
   canRedo,
 }: UndoRedoControlsProps) {
+  const { t } = useTranslation();
   const baseButtonClass = `
     flex items-center justify-center
     w-8 h-8 rounded-md
@@ -56,8 +58,8 @@ export const UndoRedoControls = memo(function UndoRedoControls({
         }}
         disabled={!canUndo}
         className={`${baseButtonClass} ${canUndo ? enabledClass : disabledClass}`}
-        title="Undo your last change (Ctrl+Z)"
-        aria-label="Undo"
+        title={t.undoTitle}
+        aria-label={t.undoLabel}
       >
         <ArrowCounterClockwise size={16} weight="bold" />
       </button>
@@ -70,8 +72,8 @@ export const UndoRedoControls = memo(function UndoRedoControls({
         }}
         disabled={!canRedo}
         className={`${baseButtonClass} ${canRedo ? enabledClass : disabledClass}`}
-        title="Redo your last undone change (Ctrl+Shift+Z)"
-        aria-label="Redo"
+        title={t.redoTitle}
+        aria-label={t.redoLabel}
       >
         <ArrowClockwise size={16} weight="bold" />
       </button>

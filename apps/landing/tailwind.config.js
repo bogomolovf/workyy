@@ -4,14 +4,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        'wy-bg': '#ffffff',
-        'wy-bg-subtle': '#f0f9ff',
-        'wy-primary': '#2563eb',
-        'wy-primary-soft': '#dbeafe',
-        'wy-secondary': '#60a5fa',
-        'wy-text': '#0f172a',
-        'wy-muted': '#64748b',
-        'wy-border': '#e0f2fe',
+        'wy-page': 'var(--page)',
+        'wy-surface': 'var(--surface-solid)',
+        'wy-text': 'var(--text)',
+        'wy-text-hero': 'var(--text-on-hero)',
+        'wy-muted': 'var(--text-muted)',
+        'wy-primary': 'var(--primary)',
+        'wy-primary-contrast': 'var(--primary-contrast)',
+        'wy-border': 'var(--border)',
+        'wy-accent-cyan': 'var(--accent-cyan)',
+        'wy-accent-blue': 'var(--accent-blue)',
+        'wy-accent-violet': 'var(--accent-violet)',
       },
       spacing: {
         18: '4.5rem',
@@ -27,13 +30,12 @@ export default {
       boxShadow: {
         'theme-sm': 'var(--shadow-sm)',
         'theme-md': 'var(--shadow-md)',
-        'theme-lg': 'var(--shadow-lg)',
-        soft: 'var(--shadow-soft)',
+        ring: 'var(--ring)',
       },
       borderRadius: {
-        card: 'var(--radius-card)',
-        pill: 'var(--radius-pill)',
-        button: 'var(--radius-button)',
+        'r-sm': 'var(--r-sm)',
+        'r-md': 'var(--r-md)',
+        'r-lg': 'var(--r-lg)',
       },
     },
   },

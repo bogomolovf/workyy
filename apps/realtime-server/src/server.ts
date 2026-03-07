@@ -5,6 +5,15 @@ import { setupCollaborationWS } from './services/collaborationService';
 export async function createServer(app: FastifyInstance) {
   app.register(createServiceRouter, { prefix: '/api' });
 
+  app.get('/', async (_request, reply) => {
+    return reply.code(200).send({
+      name: 'workyy-realtime',
+      message: 'Workyy API server. Use the app at http://localhost:3000',
+      docs: '/api',
+      health: '/health',
+    });
+  });
+
   app.get('/health', async () => ({ status: 'ok' }));
 
   // WebSocket route with boardId parameter in path
@@ -20,7 +29,7 @@ export async function createServer(app: FastifyInstance) {
           url: request.url,
           params: request.params,
         },
-        'WebSocket route handler error'
+        'WebSocket route handler error',
       );
       // Don't close connection here - setupCollaborationWS handles it
     }

@@ -4,10 +4,12 @@ export interface Content {
   home: {
     hero: {
       tagline: string;
+      eyebrow: string;
       title: string;
       description: string;
       ctaPrimary: string;
       ctaSecondary: string;
+      trust: string;
     };
     benefits: Array<{
       title: string;
@@ -68,6 +70,29 @@ export interface Content {
         detail: string;
       }>;
       cta: string;
+    };
+    proofStats: Array<{ label: string }>;
+    flowSteps: Array<{ title: string; description: string }>;
+    faq: Array<{ question: string; answer: string }>;
+    heroPreview: {
+      sql: { title: string; description: string; steps: string[] };
+      python: { title: string; description: string; steps: string[] };
+      chart: { title: string; description: string; steps: string[] };
+      collab: {
+        title: string;
+        description: string;
+        steps: string[];
+        blocks: Array<{ title: string; description: string; bullets?: string[] }>;
+      };
+    };
+    featureCards: Array<{ title: string; description: string }>;
+    featureCardDemos: {
+      aiQuestion: string;
+      aiAnswer: string;
+      filesName: string;
+      sqlFileName: string;
+      collabUser1: string;
+      collabUser2: string;
     };
   };
   product: {
@@ -183,11 +208,13 @@ export const content: Record<Language, Content> = {
     home: {
       hero: {
         tagline: 'Workyy',
-        title: 'Business Analytics for Everyone.',
+        eyebrow: 'Analytics Canvas',
+        title: 'SQL, Python, and visualizations on one infinite canvas',
         description:
-          'Workyy is a collaborative analytics platform that combines the power of notebooks with the simplicity of BI tools. On a flexible canvas, teams can run live SQL or Python, build charts, and add insights side-by-side. No more switching between code, spreadsheets, and dashboard tools – Workyy unifies everything in one place.',
-        ctaPrimary: 'Try Workyy for free today',
-        ctaSecondary: 'View Canvas',
+          'Build data pipelines, create visualizations, and collaborate with your team—all in one place.',
+        ctaPrimary: 'Start for free',
+        ctaSecondary: 'See demo boards',
+        trust: 'No credit card required',
       },
       benefits: [
         {
@@ -350,6 +377,158 @@ export const content: Record<Language, Content> = {
           },
         ],
         cta: 'Transform the way you work with data – with Workyy, your next big insight is just a drag, drop, or query away.',
+      },
+      proofStats: [
+        { label: 'Realtime collaboration' },
+        { label: 'Infinite canvas' },
+        { label: 'SQL + Python nodes' },
+        { label: 'Templates' },
+      ],
+      flowSteps: [
+        {
+          title: 'Connect data',
+          description:
+            'Connect databases or upload CSV/Parquet files. Your data is ready in seconds.',
+        },
+        {
+          title: 'Query (SQL/Python)',
+          description: 'Build data flows with code cells and queries. See results instantly.',
+        },
+        {
+          title: 'Share & collaborate',
+          description: 'Invite teammates and work together in real time on the same canvas.',
+        },
+      ],
+      faq: [
+        {
+          question: 'Is my data secure?',
+          answer:
+            'Yes. Workyy encrypts data in transit and at rest, and follows SOC 2–ready practices.',
+        },
+        {
+          question: 'Which databases are supported?',
+          answer: 'Snowflake, BigQuery, Redshift, Postgres, MySQL, plus CSV and Parquet uploads.',
+        },
+        {
+          question: 'Can I control who edits a board?',
+          answer: 'Set per-board roles (view, comment, edit) and audit every interaction.',
+        },
+        {
+          question: 'Do you offer a free trial?',
+          answer: 'Starter is free forever. Team and Pro plans include a 14-day trial.',
+        },
+        {
+          question: 'How does collaboration work?',
+          answer: 'Multi-cursor editing, comments, and real-time updates keep everyone in sync.',
+        },
+      ],
+      heroPreview: {
+        sql: {
+          title: 'SQL node',
+          description:
+            'Run queries against your databases or uploaded files. Results appear instantly as tables below the cell.',
+          steps: ['Connect database or CSV', 'Write SQL query', 'See results in a table'],
+        },
+        python: {
+          title: 'Python node',
+          description:
+            'Use Python for transformations, analytics, and custom visualizations. Import libraries and run code right on the canvas.',
+          steps: [
+            'Add Python cell',
+            'Import libraries & transform data',
+            'Output tables or charts',
+          ],
+        },
+        chart: {
+          title: 'Chart node',
+          description:
+            'Build charts and dashboards from your data. Drag dimensions and metrics—charts update live as you change queries.',
+          steps: ['Select data source', 'Choose chart type', 'Drag & drop to visualize'],
+        },
+        collab: {
+          title: 'Collaboration',
+          description:
+            'Work together on one canvas: real-time cursors, comments, drawing, voice notes, file uploads, and AI-assisted insights.',
+          steps: [
+            'Invite team to the board',
+            'See live cursors & edits',
+            'Comment and discuss in context',
+          ],
+          blocks: [
+            {
+              title: 'Drawing',
+              description:
+                'Draw and annotate directly on the canvas. Highlight key insights and sketch ideas with your team.',
+            },
+            {
+              title: 'Voice notes',
+              description:
+                'Leave voice comments on any node or area. Quick feedback without typing.',
+              bullets: [
+                'Comment on any node or area',
+                'Record short voice messages',
+                'Play back without leaving the canvas',
+                'Quick feedback without typing',
+              ],
+            },
+            {
+              title: 'File uploads',
+              description:
+                'Upload CSVs, PDFs, and images to the board. Attach context next to your analysis.',
+              bullets: [
+                'Upload CSV, PDF, images',
+                'Drag & drop onto the canvas',
+                'Attach next to your analysis',
+                'Files stay linked to the board',
+              ],
+            },
+            {
+              title: 'AI functions',
+              description:
+                'Get summaries, suggestions, and next steps. AI helps interpret data and draft insights.',
+              bullets: [
+                'One-click summaries of data',
+                'Suggestions for next steps',
+                'Draft insights and conclusions',
+                'Interpret charts and tables',
+              ],
+            },
+          ],
+        },
+      },
+      featureCards: [
+        {
+          title: 'Drawing & Annotation',
+          description: 'Sketch ideas, highlight insights, and annotate directly on the canvas.',
+        },
+        {
+          title: 'Voice Notes',
+          description: 'Record voice comments on any node or area. Quick feedback without typing.',
+        },
+        {
+          title: 'AI Assistant',
+          description: 'Get summaries, suggestions, and next-step insights powered by AI.',
+        },
+        {
+          title: 'Real-time Collaboration',
+          description: 'Work together with live cursors, comments, and instant sync.',
+        },
+        {
+          title: 'File Uploads',
+          description: 'Upload CSV, PDF, and images to the board. Context next to analysis.',
+        },
+        {
+          title: 'SQL Queries',
+          description: 'Run queries against databases or uploaded files. Instant table results.',
+        },
+      ],
+      featureCardDemos: {
+        aiQuestion: "What's the best board for work?",
+        aiAnswer: "It's Workyy.",
+        filesName: 'Penguins in Antarctica.pptx',
+        sqlFileName: 'query.sp',
+        collabUser1: 'Fedya',
+        collabUser2: 'Max',
       },
     },
     product: {
@@ -583,11 +762,13 @@ export const content: Record<Language, Content> = {
     home: {
       hero: {
         tagline: 'Workyy',
-        title: 'Бизнес-аналитика для всех.',
+        eyebrow: 'Analytics Canvas',
+        title: 'SQL, Python и визуализации на одной бесконечной канве',
         description:
-          'Workyy — это совместная платформа аналитики, сочетающая возможности аналитических блокнотов с простотой BI-инструментов. На гибком холсте команды могут в реальном времени выполнять SQL- и Python-запросы, создавать диаграммы и добавлять инсайты бок о бок.',
-        ctaPrimary: 'Попробуйте Workyy бесплатно уже сегодня',
-        ctaSecondary: 'Посмотреть канву',
+          'Стройте пайплайны данных, создавайте визуализации и работайте с командой в одном месте.',
+        ctaPrimary: 'Попробовать бесплатно',
+        ctaSecondary: 'Смотреть демо-доски',
+        trust: 'Без банковской карты',
       },
       benefits: [
         {
@@ -753,6 +934,160 @@ export const content: Record<Language, Content> = {
           },
         ],
         cta: 'Преобразуйте способ работы с данными — с Workyy ваш следующий большой инсайт всего в перетаскивании, капле или запросе.',
+      },
+      proofStats: [
+        { label: 'Коллаборация в реальном времени' },
+        { label: 'Бесконечная канва' },
+        { label: 'Узлы SQL + Python' },
+        { label: 'Шаблоны' },
+      ],
+      flowSteps: [
+        {
+          title: 'Подключите данные',
+          description: 'Подключите БД или загрузите CSV/Parquet. Данные готовы за секунды.',
+        },
+        {
+          title: 'Запросы (SQL/Python)',
+          description: 'Стройте потоки данных с ячейками кода и запросами. Результаты сразу.',
+        },
+        {
+          title: 'Делитесь и работайте вместе',
+          description: 'Приглашайте команду и работайте в реальном времени на одной канве.',
+        },
+      ],
+      faq: [
+        {
+          question: 'Безопасны ли мои данные?',
+          answer: 'Да. Workyy шифрует данные при передаче и хранении и следует практикам SOC 2.',
+        },
+        {
+          question: 'Какие БД поддерживаются?',
+          answer: 'Snowflake, BigQuery, Redshift, Postgres, MySQL, а также загрузка CSV и Parquet.',
+        },
+        {
+          question: 'Могу ли я контролировать доступ к доске?',
+          answer:
+            'Назначайте роли на доску (просмотр, комментарии, редактирование) и ведите аудит.',
+        },
+        {
+          question: 'Есть ли бесплатный пробный период?',
+          answer:
+            'Starter бесплатен навсегда. Планы Team и Pro включают 14-дневный пробный период.',
+        },
+        {
+          question: 'Как работает коллаборация?',
+          answer:
+            'Многокурсорное редактирование, комментарии и обновления в реальном времени синхронизируют всех.',
+        },
+      ],
+      heroPreview: {
+        sql: {
+          title: 'Узел SQL',
+          description:
+            'Выполняйте запросы к базам или загруженным файлам. Результаты сразу отображаются таблицей под ячейкой.',
+          steps: ['Подключите БД или CSV', 'Напишите SQL-запрос', 'Результат в виде таблицы'],
+        },
+        python: {
+          title: 'Узел Python',
+          description:
+            'Используйте Python для трансформаций, аналитики и своих визуализаций. Импортируйте библиотеки и запускайте код на канве.',
+          steps: [
+            'Добавьте ячейку Python',
+            'Импорт библиотек и трансформация',
+            'Таблицы и графики на выходе',
+          ],
+        },
+        chart: {
+          title: 'Узел Chart',
+          description:
+            'Стройте графики и дашборды по вашим данным. Перетаскивайте измерения и метрики — графики обновляются в реальном времени.',
+          steps: ['Выберите источник данных', 'Тип графика', 'Перетащите поля для визуализации'],
+        },
+        collab: {
+          title: 'Коллаборация',
+          description:
+            'Работайте вместе на одной канве: курсоры в реальном времени, комментарии, рисование, голосовые заметки, загрузка файлов и AI-подсказки.',
+          steps: [
+            'Пригласите команду на доску',
+            'Курсоры и правки в реальном времени',
+            'Комментарии и обсуждение в контексте',
+          ],
+          blocks: [
+            {
+              title: 'Рисование',
+              description:
+                'Рисуйте и оставляйте аннотации прямо на канве. Выделяйте важное и набрасывайте идеи с командой.',
+            },
+            {
+              title: 'Голосовые заметки',
+              description:
+                'Оставляйте голосовые комментарии к любому узлу или области. Быстрая обратная связь без набора текста.',
+              bullets: [
+                'Комментарий к любому узлу или области',
+                'Запись короткого голосового сообщения',
+                'Воспроизведение прямо на канве',
+                'Быстрая обратная связь без набора текста',
+              ],
+            },
+            {
+              title: 'Загрузка файлов',
+              description:
+                'Загружайте CSV, PDF и изображения на доску. Прикрепляйте контекст рядом с анализом.',
+              bullets: [
+                'Загрузка CSV, PDF, изображений',
+                'Перетаскивание на канву',
+                'Вложение рядом с анализом',
+                'Файлы привязаны к доске',
+              ],
+            },
+            {
+              title: 'AI-функции',
+              description:
+                'Получайте саммари, подсказки и следующие шаги. AI помогает интерпретировать данные и формулировать инсайты.',
+              bullets: [
+                'Саммари данных в один клик',
+                'Подсказки следующих шагов',
+                'Черновики выводов и инсайтов',
+                'Интерпретация графиков и таблиц',
+              ],
+            },
+          ],
+        },
+      },
+      featureCards: [
+        {
+          title: 'Рисование и аннотации',
+          description: 'Рисуйте идеи, выделяйте инсайты и аннотируйте прямо на канве.',
+        },
+        {
+          title: 'Голосовые заметки',
+          description:
+            'Записывайте голосовые комментарии к любому узлу. Обратная связь без набора текста.',
+        },
+        {
+          title: 'AI-ассистент',
+          description: 'Получайте саммари, подсказки и инсайты с помощью AI.',
+        },
+        {
+          title: 'Совместная работа',
+          description: 'Работайте вместе: курсоры, комментарии и синхронизация в реальном времени.',
+        },
+        {
+          title: 'Загрузка файлов',
+          description: 'Перетаскивайте CSV, PDF и изображения на канву. Контекст рядом с анализом.',
+        },
+        {
+          title: 'SQL-запросы',
+          description: 'Выполняйте запросы к БД или загруженным файлам. Мгновенные результаты.',
+        },
+      ],
+      featureCardDemos: {
+        aiQuestion: 'Какая лучшая доска для работы?',
+        aiAnswer: 'Это Workyy.',
+        filesName: 'Пингвины в Антарктиде.pptx',
+        sqlFileName: 'query.sp',
+        collabUser1: 'Федя',
+        collabUser2: 'Макс',
       },
     },
     product: {

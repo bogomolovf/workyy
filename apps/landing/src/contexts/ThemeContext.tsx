@@ -1,34 +1,36 @@
-import { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext, ReactNode, useEffect, useState } from 'react';
 
-export type Theme = 'workyy-blue';
+export type Theme = 'light' | 'dark';
 
 interface ThemeContextValue {
   theme: Theme;
   setTheme: (theme: Theme) => void;
-  toggleTheme: () => void; // Keep for backward compatibility, but does nothing
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
+const THEME_KEY = 'workyy-landing-theme';
+
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-  const theme: Theme = 'workyy-blue';
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window === 'undefined') return 'light';
+    const stored = window.localStorage.getItem(THEME_KEY) as Theme | null;
+    if (stored === 'light' || stored === 'dark') return stored;
+    return 'light';
+  });
 
-  const setTheme = () => {
-    // No-op: only one theme available
-  };
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.backgroundColor = theme === 'dark' ? 'var(--page)' : '';
+    window.localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
 
-  const toggleTheme = () => {
-    // No-op: only one theme available
-  };
+  const setTheme = (t: Theme) => setThemeState(t);
+  const toggleTheme = () => setThemeState((prev) => (prev === 'light' ? 'dark' : 'light'));
 
   return (
-    <ThemeContext.Provider
-      value={{
-        theme,
-        setTheme,
-        toggleTheme,
-      }}
-    >
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

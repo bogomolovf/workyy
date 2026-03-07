@@ -1,4 +1,6 @@
 // file: apps/web/src/state/useAddNode.ts
+import { SHAPE_DEFAULTS } from '../components/shape/shapeEngine';
+
 type Position = { x: number; y: number };
 
 type NodeKind =
@@ -177,9 +179,8 @@ export function useAddNode() {
       endY?: number;
     },
   ): NewNode {
-    // Shape узлы: width = 160, height = 96 (дефолтные размеры) или переданные значения
-    const nodeWidth = width ?? 160;
-    const nodeHeight = height ?? 96;
+    const nodeWidth = width ?? SHAPE_DEFAULTS.defaultWidth;
+    const nodeHeight = height ?? SHAPE_DEFAULTS.defaultHeight;
     const centeredPosition =
       width && height ? position : centerPosition(position, nodeWidth, nodeHeight);
     return {
@@ -188,18 +189,18 @@ export function useAddNode() {
       position: centeredPosition,
       payload: {
         shapeType: payload?.shapeType ?? 'rectangle',
-        shapeColor: '#BFDBFE', // Legacy
+        shapeColor: SHAPE_DEFAULTS.legacyShapeColor,
         shapeLabel: 'Фигура',
-        // New style properties (Miro-like defaults)
-        fill: payload?.fill ?? 'transparent',
-        stroke: payload?.stroke ?? '#1f1f1f',
-        strokeWidth: payload?.strokeWidth ?? 2,
-        opacity: payload?.opacity ?? 1.0,
-        cornerRadius: payload?.cornerRadius ?? 0,
+        fill: payload?.fill ?? SHAPE_DEFAULTS.fill,
+        stroke: payload?.stroke ?? SHAPE_DEFAULTS.stroke,
+        strokeWidth: payload?.strokeWidth ?? SHAPE_DEFAULTS.strokeWidth,
+        opacity: payload?.opacity ?? SHAPE_DEFAULTS.opacity,
+        cornerRadius: payload?.cornerRadius ?? SHAPE_DEFAULTS.cornerRadius,
         arrowHead: payload?.arrowHead,
-        // For line/arrow types
         endX: payload?.endX,
         endY: payload?.endY,
+        width: nodeWidth,
+        height: nodeHeight,
       },
     };
   }
