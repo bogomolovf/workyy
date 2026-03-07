@@ -38,3 +38,5 @@ coverage/
 reports/
 *.tsbuildinfo
 
+# Large binaries / disk images
+*.dmg
