@@ -5,6 +5,8 @@ import { Handle, Position, type NodeProps } from 'reactflow';
 import { ChartRenderer } from '../visualizations/ChartRenderer';
 import { usePlotData } from '../../hooks/usePlotData';
 import { useFullCsvDataForPlot } from '../../hooks/useFullCsvDataForPlot';
+import { useFullSqlDataForPlot } from '../../hooks/useFullSqlDataForPlot';
+import { usePlotSnapshot } from '../../hooks/usePlotSnapshot';
 import type { PlotNodePayload } from '../../lib/visualization/chartTypes';
 import { validatePlotConfig } from '../../lib/visualization/dataAnalyzer';
 import { DATA_NODE_HANDLE_CLASS } from '../BoardCanvas';
@@ -15,8 +17,10 @@ type PlotNodeData = {
   payload?: Record<string, unknown>;
   edges: Array<{ sourceId: string; targetId: string }>;
   width: number;
-  /** When Plot is connected to CSV node - use full data from DuckDB for visualization */
+  /** When Plot is connected to CSV node - use limited data from DuckDB for visualization */
   upstreamCsvTableName?: string;
+  /** When Plot is connected to SQL node - fetch up to PLOT_DATA_MAX_ROWS without loading into store */
+  upstreamSqlNodeId?: string;
 };
 
 function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
@@ -50,16 +54,28 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
     [data.edges, data.nodeId],
   );
 
-  // When connected to CSV: fetch full dataset from DuckDB (not limited to first 100 rows)
+  // When connected to CSV: fetch limited dataset from DuckDB (not first 100 rows only)
   const { data: fullCsvData, loading: fullCsvLoading } = useFullCsvDataForPlot(
     data.upstreamCsvTableName,
   );
-  // Fallback: data from executionStore (SQL, Python, or partial CSV)
+  // When connected to SQL: fetch up to PLOT_DATA_MAX_ROWS without putting in executionStore
+  const { data: fullSqlData, loading: fullSqlLoading } = useFullSqlDataForPlot(
+    data.upstreamSqlNodeId,
+  );
+  // Snapshot: persisted inputData of this Plot node (up to 10k rows),
+  // restored from payload.execution.output on page reload.
+  const snapshotData = usePlotSnapshot(data.nodeId);
+  // Fallback: data from executionStore for non-CSV/SQL chains (e.g. plot→plot, python)
   const storeData = usePlotData(data.nodeId, incomingEdges);
-  // Prefer full CSV data when available; otherwise use store data
-  const plotData = data.upstreamCsvTableName
-    ? fullCsvData ?? storeData
-    : storeData;
+  // Prefer dedicated full datasets, then snapshot; for CSV/SQL мы никогда не
+  // откатываемся к превью, только к сохранённому снапшоту.
+  const plotData =
+    data.upstreamCsvTableName
+      ? fullCsvData ?? snapshotData
+      : data.upstreamSqlNodeId
+        ? fullSqlData ?? snapshotData
+        : snapshotData ?? storeData;
+
   const echartsInstanceRef = useRef<any>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -210,9 +226,10 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
                 Config needed
               </span>
             )}
-            {data.upstreamCsvTableName && fullCsvLoading && (
+            {((data.upstreamCsvTableName && fullCsvLoading) ||
+              (data.upstreamSqlNodeId && fullSqlLoading)) && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                Loading full data…
+                Loading chart data…
               </span>
             )}
             {/* Export button - always visible when status is ready, regardless of selection */}
@@ -323,6 +340,8 @@ export const PlotNode = memo(PlotNodeComponent, (prevProps, nextProps) => {
   if (prevIncomingKey !== nextIncomingKey) return false;
 
   if (prevProps.data.upstreamCsvTableName !== nextProps.data.upstreamCsvTableName)
+    return false;
+  if (prevProps.data.upstreamSqlNodeId !== nextProps.data.upstreamSqlNodeId)
     return false;
 
   return true; // Props are equal, skip re-render

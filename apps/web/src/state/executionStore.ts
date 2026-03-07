@@ -119,15 +119,17 @@ function normalizeMultiline(value?: string) {
   return value.replace(/\r\n/g, '\n').replace(/\\n/g, '\n');
 }
 
+type ExecutionNodeLike = {
+  id: string;
+  type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
+  payload?: Record<string, unknown>;
+};
+
 export type ExecutionStoreState = {
   entries: Record<string, ExecutionEntry>;
-  initFromNodes: (
-    nodes: Array<{
-      id: string;
-      type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
-      payload?: Record<string, unknown>;
-    }>,
-  ) => void;
+  initFromNodes: (nodes: ExecutionNodeLike[]) => void;
+  /** Merges payload.execution from server nodes into store (only when node has execution). */
+  mergeExecutionFromNodes: (nodes: ExecutionNodeLike[]) => void;
   registerNode: (node: {
     id: string;
     type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
@@ -216,6 +218,42 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
       };
     }
     set({ entries });
+  },
+  mergeExecutionFromNodes: (nodes) => {
+    const existing = get().entries;
+    let next = existing;
+    for (const node of nodes) {
+      const savedExecution = (node.payload as Record<string, unknown> | undefined)?.execution as
+        | {
+            status?: NodeStatus;
+            output?: NodeExecutionOutput;
+            error?: string | null;
+            hiddenOutputs?: HiddenOutputs;
+          }
+        | undefined;
+      if (!savedExecution) continue;
+      const prev = existing[node.id];
+      const hiddenOutputs = resolveInitialHiddenOutputs(node.id, savedExecution.hiddenOutputs);
+      const entry: ExecutionEntry = prev
+        ? {
+            ...prev,
+            status: savedExecution.status ?? prev.status,
+            error: savedExecution.error ?? prev.error ?? null,
+            output: savedExecution.output ?? prev.output,
+            hiddenOutputs,
+          }
+        : {
+            nodeType: node.type,
+            status: savedExecution.status ?? 'idle',
+            code: getInitialCode(node),
+            error: savedExecution.error ?? null,
+            output: savedExecution.output,
+            hiddenOutputs,
+          };
+      if (next === existing) next = { ...existing };
+      next[node.id] = entry;
+    }
+    if (next !== existing) set({ entries: next });
   },
   registerNode: (node) => {
     const entries = get().entries;

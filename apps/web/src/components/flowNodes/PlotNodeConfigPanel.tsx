@@ -28,46 +28,102 @@ type PlotNodeConfigPanelProps = {
   onChange: (nodeId: string, payload: Partial<PlotNodePayload>) => void;
 };
 
+// Локализация панели настроек графика (русский)
+const T = {
+  sectionDataSource: 'Источник данных',
+  rowsColumns: (rows: number, cols: number) => `${rows} строк × ${cols} столбцов`,
+  more: (n: number) => `+${n} ещё`,
+  suggestedConfigTitle: 'Применена предложенная конфигурация',
+  suggestedConfigDesc:
+    'Тип графика и сопоставление полей настроены автоматически по вашим данным. Вы можете изменить их ниже.',
+  chartType: 'Тип графика',
+  recommended: 'Рекомендуемые',
+  fieldMapping: 'Сопоставление полей',
+  xAxis: 'Ось X',
+  selectXAxis: 'Выберите ось X',
+  yAxis: 'Ось Y',
+  selectYAxis: 'Выберите ось Y',
+  colorOptional: 'Цвет (необязательно)',
+  none: 'Нет',
+  yFieldsRequired: 'Поля Y (нужно минимум 2)',
+  selectYField: 'Выберите поле Y',
+  addYField: 'Добавить поле Y',
+  facetByOptional: 'Группировка (необязательно)',
+  facetHint: 'Будут созданы малые кратные по значению категории. Не более 12 категорий.',
+  transformations: 'Преобразования',
+  aggregateData: 'Агрегировать данные',
+  aggregationType: 'Тип агрегации',
+  groupBy: 'Группировка',
+  filters: 'Фильтры',
+  addFilter: 'Добавить фильтр',
+  value: 'Значение',
+  addSort: 'Добавить сортировку',
+  sort: 'Сортировка',
+  ascending: 'По возрастанию',
+  descending: 'По убыванию',
+  stylingInteractivity: 'Оформление и интерактивность',
+  title: 'Заголовок',
+  chartTitlePlaceholder: 'Название графика',
+  theme: 'Тема',
+  light: 'Светлая',
+  dark: 'Тёмная',
+  showLegend: 'Показать легенду',
+  legendPosition: 'Положение легенды',
+  top: 'Сверху',
+  bottom: 'Снизу',
+  left: 'Слева',
+  right: 'Справа',
+  showGrid: 'Показать сетку',
+  enableZoomPan: 'Масштаб и панорама',
+  enableTooltips: 'Всплывающие подсказки',
+  columnType: {
+    numeric: 'числовой',
+    categorical: 'категориальный',
+    temporal: 'временной',
+    unknown: 'неизвестный',
+  },
+} as const;
+
 const CHART_TYPES: Array<{ value: ChartType; label: string; icon?: string; description?: string }> =
   [
-    { value: 'bar', label: 'Bar', icon: '📊', description: 'Vertical bars' },
+    { value: 'bar', label: 'Гистограмма', icon: '📊', description: 'Вертикальные столбцы' },
     {
       value: 'bar-horizontal',
-      label: 'Horizontal Bar',
+      label: 'Горизонтальная гистограмма',
       icon: '📊',
-      description: 'Horizontal bars',
+      description: 'Горизонтальные столбцы',
     },
-    { value: 'line', label: 'Line', icon: '📈', description: 'Line chart' },
-    { value: 'area', label: 'Area', icon: '📈', description: 'Area chart' },
-    { value: 'scatter', label: 'Scatter', icon: '⚫', description: 'Scatter plot' },
-    { value: 'pie', label: 'Pie', icon: '🥧', description: 'Pie chart' },
-    { value: 'doughnut', label: 'Doughnut', icon: '🍩', description: 'Doughnut chart' },
+    { value: 'line', label: 'Линейный', icon: '📈', description: 'Линейный график' },
+    { value: 'area', label: 'Областной', icon: '📈', description: 'График с заливкой' },
+    { value: 'scatter', label: 'Точечный', icon: '⚫', description: 'Точечная диаграмма' },
+    { value: 'pie', label: 'Круговая', icon: '🥧', description: 'Круговая диаграмма' },
+    { value: 'doughnut', label: 'Кольцевая', icon: '🍩', description: 'Кольцевая диаграмма' },
     {
       value: 'histogram',
-      label: 'Histogram',
+      label: 'Гистограмма распределения',
       icon: '📊',
-      description: 'Distribution of numeric values',
+      description: 'Распределение числовых значений',
     },
-    { value: 'heatmap', label: 'Heatmap', icon: '🔥', description: 'Intensity by 2 dimensions' },
-    { value: 'treemap', label: 'Treemap', icon: '🌳', description: 'Hierarchical size encoding' },
-    { value: 'boxplot', label: 'Box Plot', icon: '📦', description: 'Distribution statistics' },
-    { value: 'radar', label: 'Radar', icon: '🕸️', description: 'Multi-metric comparison' },
-    { value: 'sankey', label: 'Sankey', icon: '🌊', description: 'Flow diagram' },
+    { value: 'heatmap', label: 'Тепловая карта', icon: '🔥', description: 'Интенсивность по 2 измерениям' },
+    { value: 'treemap', label: 'Древовидная карта', icon: '🌳', description: 'Иерархия по размеру' },
+    { value: 'boxplot', label: 'Ящик с усами', icon: '📦', description: 'Статистика распределения' },
+    { value: 'radar', label: 'Радар', icon: '🕸️', description: 'Сравнение метрик' },
+    { value: 'sankey', label: 'Санки', icon: '🌊', description: 'Диаграмма потоков' },
     {
       value: 'combo-bar-line',
-      label: 'Combo (Bar + Line)',
+      label: 'Комбинированный (гистограмма + линия)',
       icon: '📊',
-      description: 'Combined bar and line chart',
+      description: 'Гистограмма и линейный график',
     },
   ];
 
 const AGGREGATION_TYPES: Array<{ value: AggregationType; label: string }> = [
-  { value: 'sum', label: 'Sum' },
-  { value: 'avg', label: 'Average' },
-  { value: 'count', label: 'Count' },
-  { value: 'min', label: 'Min' },
-  { value: 'max', label: 'Max' },
-  { value: 'median', label: 'Median' },
+  { value: 'sum', label: 'Сумма' },
+  { value: 'avg', label: 'Среднее' },
+  { value: 'count', label: 'Количество' },
+  { value: 'min', label: 'Минимум' },
+  { value: 'max', label: 'Максимум' },
+  { value: 'median', label: 'Медиана' },
 ];
 
 const FILTER_OPERATORS: Array<{
@@ -80,8 +136,8 @@ const FILTER_OPERATORS: Array<{
   { value: 'gte', label: '≥' },
   { value: 'lt', label: '<' },
   { value: 'lte', label: '≤' },
-  { value: 'contains', label: 'contains' },
-  { value: 'in', label: 'in' },
+  { value: 'contains', label: 'содержит' },
+  { value: 'in', label: 'в списке' },
 ];
 
 function getColumnIcon(analysis: ColumnAnalysis): string {
@@ -95,6 +151,54 @@ function getColumnIcon(analysis: ColumnAnalysis): string {
     default:
       return '?';
   }
+}
+
+function getColumnTypeLabel(type: ColumnAnalysis['type']): string {
+  return T.columnType[type] ?? type;
+}
+
+/** Переводит сообщения валидации с английского на русский */
+function translateValidationMessage(en: string): string {
+  const map: Record<string, string> = {
+    'No data available': 'Нет данных',
+    'No columns available in data': 'В данных нет столбцов',
+    'X axis is required for this chart type': 'Для этого типа графика нужна ось X',
+    'Y axis is required for this chart type': 'Для этого типа графика нужна ось Y',
+    'X axis must be numeric for scatter plots': 'Для точечного графика ось X должна быть числовой',
+    'X field is required for heatmap': 'Для тепловой карты нужно поле X',
+    'Combo chart requires at least 2 Y fields': 'Комбинированному графику нужно минимум 2 поля Y',
+    'Histogram requires at least one numeric or temporal field':
+      'Для гистограммы нужно хотя бы одно числовое или временное поле',
+    'Heatmap requires both X and Y fields': 'Тепловой карте нужны поля X и Y',
+    'Treemap requires groupBy fields or X field': 'Древовидной карте нужна группировка или поле X',
+    'Treemap requires a numeric size field (Y)': 'Древовидной карте нужно числовое поле размера (Y)',
+    'Boxplot requires at least one numeric field': 'Ящику с усами нужно хотя бы одно числовое поле',
+    'Sankey requires source (X) and target (Y) fields': 'Диаграмме Санки нужны поля источника (X) и цели (Y)',
+    'Radar chart requires numeric metric columns': 'Радарному графику нужны числовые метрики',
+    'Color field should be categorical for this chart type':
+      'Поле цвета для этого типа графика должно быть категориальным',
+  };
+  if (map[en]) return map[en];
+  const notFoundX = /^X field "([^"]+)" not found in data$/;
+  const notFoundY = /^Y field "([^"]+)" not found in data$/;
+  const yMustBeNumeric = /^Y field "([^"]+)" must be numeric for this chart type$/;
+  const yMustBeNumericTemporal = /^Y field "([^"]+)" must be numeric or temporal for histogram$/;
+  const xMustBeNumericTemporal = /^X field "([^"]+)" must be numeric or temporal for histogram$/;
+  const yMustBeNumericTemporal2 = /^Y field "([^"]+)" must be numeric or temporal for histogram$/;
+  const tooManyFacet = /^Too many facet values \((\d+)\)\. Please filter to 12 or fewer\.$/;
+  let m = en.match(notFoundX);
+  if (m) return `Поле X «${m[1]}» не найдено в данных`;
+  m = en.match(notFoundY);
+  if (m) return `Поле Y «${m[1]}» не найдено в данных`;
+  m = en.match(yMustBeNumeric);
+  if (m) return `Поле Y «${m[1]}» должно быть числовым для этого типа графика`;
+  m = en.match(yMustBeNumericTemporal) ?? en.match(yMustBeNumericTemporal2);
+  if (m) return `Поле Y «${m[1]}» должно быть числовым или временным для гистограммы`;
+  m = en.match(xMustBeNumericTemporal);
+  if (m) return `Поле X «${m[1]}» должно быть числовым или временным для гистограммы`;
+  m = en.match(tooManyFacet);
+  if (m) return `Слишком много значений группировки (${m[1]}). Оставьте 12 или меньше.`;
+  return en;
 }
 
 function ColumnChip({
@@ -120,7 +224,7 @@ function ColumnChip({
       <span>{icon}</span>
       <span>{analysis.name}</span>
       {analysis.type !== 'unknown' && (
-        <span className="text-[10px] text-slate-400">({analysis.type})</span>
+        <span className="text-[10px] text-slate-400">({getColumnTypeLabel(analysis.type)})</span>
       )}
     </button>
   );
@@ -298,10 +402,10 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Data Source
+              {T.sectionDataSource}
             </h3>
             <span className="text-xs text-slate-600">
-              {data.rows.length} rows × {data.columns.length} columns
+              {T.rowsColumns(data.rows.length, data.columns.length)}
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -309,7 +413,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
               <ColumnChip key={analysis.name} analysis={analysis} onClick={() => {}} />
             ))}
             {columnAnalyses.length > 8 && (
-              <span className="text-xs text-slate-400">+{columnAnalyses.length - 8} more</span>
+              <span className="text-xs text-slate-400">{T.more(columnAnalyses.length - 8)}</span>
             )}
           </div>
         </div>
@@ -318,18 +422,15 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
       {/* Auto-configuration indicator */}
       {payload.autoConfigured && (
         <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
-          <span className="font-medium">✨ Suggested configuration applied</span>
-          <p className="mt-1 text-indigo-600">
-            Chart type and field mappings were automatically configured based on your data. You can
-            modify them below.
-          </p>
+          <span className="font-medium">✨ {T.suggestedConfigTitle}</span>
+          <p className="mt-1 text-indigo-600">{T.suggestedConfigDesc}</p>
         </div>
       )}
 
       {/* Chart Type & Recommendations */}
       <div>
         <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Chart Type
+          {T.chartType}
         </label>
         <div className="grid grid-cols-2 gap-2">
           {CHART_TYPES.map((type) => {
@@ -357,7 +458,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
         </div>
         {recommendations.length > 0 && (
           <p className="mt-2 text-xs text-slate-500">
-            Recommended:{' '}
+            {T.recommended}:{' '}
             {recommendations
               .slice(0, 3)
               .map((r) => CHART_TYPES.find((t) => t.value === r)?.label || r)
@@ -370,25 +471,25 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
       {columns.length > 0 && (
         <div>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Field Mapping
+            {T.fieldMapping}
           </label>
           <div className="space-y-3">
             {/* X Axis */}
             {payload.chartType !== 'pie' && payload.chartType !== 'doughnut' && (
               <div>
-                <label className="mb-1 block text-xs text-slate-600">X Axis</label>
+                <label className="mb-1 block text-xs text-slate-600">{T.xAxis}</label>
                 <div className="flex items-center gap-2">
                   <select
                     value={payload.mapping.x || ''}
                     onChange={(e) => handleMappingChange('x', e.target.value)}
                     className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                   >
-                    <option value="">-- Select X axis --</option>
+                    <option value="">-- {T.selectXAxis} --</option>
                     {columns.map((col) => {
                       const analysis = columnAnalyses.find((a) => a.name === col);
                       return (
                         <option key={col} value={col}>
-                          {col} {analysis ? `(${analysis.type})` : ''}
+                          {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
                         </option>
                       );
                     })}
@@ -409,7 +510,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
             {/* Y Axis */}
             {payload.chartType !== 'pie' && payload.chartType !== 'doughnut' && (
               <div>
-                <label className="mb-1 block text-xs text-slate-600">Y Axis</label>
+                <label className="mb-1 block text-xs text-slate-600">{T.yAxis}</label>
                 <div className="flex items-center gap-2">
                   <select
                     value={
@@ -420,12 +521,12 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                     onChange={(e) => handleMappingChange('y', e.target.value)}
                     className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                   >
-                    <option value="">-- Select Y axis --</option>
+                    <option value="">-- {T.selectYAxis} --</option>
                     {columns.map((col) => {
                       const analysis = columnAnalyses.find((a) => a.name === col);
                       return (
                         <option key={col} value={col}>
-                          {col} {analysis ? `(${analysis.type})` : ''}
+                          {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
                         </option>
                       );
                     })}
@@ -448,19 +549,19 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
               payload.chartType === 'bar' ||
               payload.chartType === 'line') && (
               <div>
-                <label className="mb-1 block text-xs text-slate-600">Color (optional)</label>
+                <label className="mb-1 block text-xs text-slate-600">{T.colorOptional}</label>
                 <div className="flex items-center gap-2">
                   <select
                     value={payload.mapping.color || ''}
                     onChange={(e) => handleMappingChange('color', e.target.value)}
                     className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                   >
-                    <option value="">-- None --</option>
+                    <option value="">-- {T.none} --</option>
                     {columns.map((col) => {
                       const analysis = columnAnalyses.find((a) => a.name === col);
                       return (
                         <option key={col} value={col}>
-                          {col} {analysis ? `(${analysis.type})` : ''}
+                          {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
                         </option>
                       );
                     })}
@@ -481,9 +582,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
             {/* Multiple Y fields for combo charts */}
             {payload.chartType === 'combo-bar-line' && (
               <div>
-                <label className="mb-1 block text-xs text-slate-600">
-                  Y Fields (at least 2 required)
-                </label>
+                <label className="mb-1 block text-xs text-slate-600">{T.yFieldsRequired}</label>
                 <div className="space-y-2">
                   {(Array.isArray(payload.mapping.y)
                     ? payload.mapping.y
@@ -506,12 +605,12 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                         }}
                         className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                       >
-                        <option value="">-- Select Y field --</option>
+                        <option value="">-- {T.selectYField} --</option>
                         {columns.map((col) => {
                           const analysis = columnAnalyses.find((a) => a.name === col);
                           return (
                             <option key={col} value={col}>
-                              {col} {analysis ? `(${analysis.type})` : ''}
+                              {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
                             </option>
                           );
                         })}
@@ -546,7 +645,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                     className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
                   >
                     <Plus size={14} />
-                    Add Y field
+                    {T.addYField}
                   </button>
                 </div>
               </div>
@@ -555,19 +654,19 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
             {/* Facet (for small multiples) */}
             {['bar', 'bar-horizontal', 'line', 'area', 'scatter'].includes(payload.chartType) && (
               <div>
-                <label className="mb-1 block text-xs text-slate-600">Facet by (optional)</label>
+                <label className="mb-1 block text-xs text-slate-600">{T.facetByOptional}</label>
                 <div className="flex items-center gap-2">
                   <select
                     value={payload.mapping.facet || ''}
                     onChange={(e) => handleMappingChange('facet', e.target.value || undefined)}
                     className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                   >
-                    <option value="">-- None --</option>
+                    <option value="">-- {T.none} --</option>
                     {columns.map((col) => {
                       const analysis = columnAnalyses.find((a) => a.name === col);
                       return (
                         <option key={col} value={col}>
-                          {col} {analysis ? `(${analysis.type})` : ''}
+                          {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
                         </option>
                       );
                     })}
@@ -583,9 +682,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                   )}
                 </div>
                 {payload.mapping.facet && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Faceting will create small multiples per category value. Max 12 categories.
-                  </p>
+                  <p className="mt-1 text-xs text-slate-500">{T.facetHint}</p>
                 )}
               </div>
             )}
@@ -597,13 +694,13 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
       {columns.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Transformations
+            {T.transformations}
           </h3>
 
           {/* Aggregation */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs text-slate-600">Aggregate data</label>
+              <label className="text-xs text-slate-600">{T.aggregateData}</label>
               <input
                 type="checkbox"
                 checked={!!payload.aggregation}
@@ -614,7 +711,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
             {payload.aggregation && (
               <div className="ml-4 space-y-2 rounded-md border border-slate-200 bg-white p-3">
                 <div>
-                  <label className="mb-1 block text-xs text-slate-600">Aggregation Type</label>
+                  <label className="mb-1 block text-xs text-slate-600">{T.aggregationType}</label>
                   <select
                     value={payload.aggregation.type}
                     onChange={(e) => handleAggregationTypeChange(e.target.value as AggregationType)}
@@ -628,7 +725,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-600">Group By</label>
+                  <label className="mb-1 block text-xs text-slate-600">{T.groupBy}</label>
                   <div className="flex flex-wrap gap-1.5">
                     {columns.map((col) => {
                       const isSelected = payload.aggregation?.groupBy?.includes(col);
@@ -656,14 +753,14 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
           {/* Filters */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs text-slate-600">Filters</label>
+              <label className="text-xs text-slate-600">{T.filters}</label>
               <button
                 type="button"
                 onClick={handleAddFilter}
                 className="flex items-center gap-1 rounded px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
               >
                 <Plus size={12} />
-                Add Filter
+                {T.addFilter}
               </button>
             </div>
             {payload.filters && payload.filters.length > 0 && (
@@ -703,7 +800,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                       type="text"
                       value={String(filter.value ?? '')}
                       onChange={(e) => handleFilterChange(index, { value: e.target.value })}
-                      placeholder="Value"
+                      placeholder={T.value}
                       className="flex-1 min-w-0 max-w-[120px] rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
                     />
                     <button
@@ -722,14 +819,14 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
           {/* Sort */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs text-slate-600">Sort</label>
+              <label className="text-xs text-slate-600">{T.sort}</label>
               <button
                 type="button"
                 onClick={handleAddSort}
                 className="flex items-center gap-1 rounded px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
               >
                 <Plus size={12} />
-                Add Sort
+                {T.addSort}
               </button>
             </div>
             {payload.sort && payload.sort.length > 0 && (
@@ -757,8 +854,8 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                       }
                       className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
                     >
-                      <option value="asc">Ascending</option>
-                      <option value="desc">Descending</option>
+                      <option value="asc">{T.ascending}</option>
+                      <option value="desc">{T.descending}</option>
                     </select>
                     <button
                       type="button"
@@ -778,23 +875,23 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
       {/* Styling & Interactivity */}
       <div className="space-y-4">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Styling & Interactivity
+          {T.stylingInteractivity}
         </h3>
 
         <div>
-          <label className="mb-1 block text-xs text-slate-600">Title</label>
+          <label className="mb-1 block text-xs text-slate-600">{T.title}</label>
           <input
             type="text"
             value={payload.styling.title || ''}
             onChange={(e) => handleTitleChange(e.target.value)}
-            placeholder="Chart title"
+            placeholder={T.chartTitlePlaceholder}
             className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
           />
         </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">Theme</label>
+            <label className="text-xs text-slate-600">{T.theme}</label>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -805,7 +902,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                Light
+                {T.light}
               </button>
               <button
                 type="button"
@@ -816,13 +913,13 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                Dark
+                {T.dark}
               </button>
             </div>
           </div>
 
           <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">Show Legend</label>
+            <label className="text-xs text-slate-600">{T.showLegend}</label>
             <input
               type="checkbox"
               checked={payload.styling.showLegend !== false}
@@ -833,7 +930,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
 
           {payload.styling.showLegend !== false && (
             <div>
-              <label className="mb-1 block text-xs text-slate-600">Legend Position</label>
+              <label className="mb-1 block text-xs text-slate-600">{T.legendPosition}</label>
               <select
                 value={payload.styling.legendPosition || 'top'}
                 onChange={(e) =>
@@ -843,16 +940,16 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
                 }
                 className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
               >
-                <option value="top">Top</option>
-                <option value="bottom">Bottom</option>
-                <option value="left">Left</option>
-                <option value="right">Right</option>
+                <option value="top">{T.top}</option>
+                <option value="bottom">{T.bottom}</option>
+                <option value="left">{T.left}</option>
+                <option value="right">{T.right}</option>
               </select>
             </div>
           )}
 
           <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">Show Grid</label>
+            <label className="text-xs text-slate-600">{T.showGrid}</label>
             <input
               type="checkbox"
               checked={payload.styling.showGrid !== false}
@@ -862,7 +959,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
           </div>
 
           <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">Enable Zoom/Pan</label>
+            <label className="text-xs text-slate-600">{T.enableZoomPan}</label>
             <input
               type="checkbox"
               checked={payload.styling.enableZoomPan === true}
@@ -872,7 +969,7 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
           </div>
 
           <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">Enable Tooltips</label>
+            <label className="text-xs text-slate-600">{T.enableTooltips}</label>
             <input
               type="checkbox"
               checked={payload.styling.enableTooltips !== false}
@@ -884,9 +981,9 @@ export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNod
       </div>
 
       {/* Validation Message */}
-      {!validation.valid && (
+      {!validation.valid && validation.message && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
-          {validation.message}
+          {translateValidationMessage(validation.message)}
         </div>
       )}
     </div>

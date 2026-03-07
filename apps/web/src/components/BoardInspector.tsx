@@ -6,8 +6,10 @@ import type { SqlResult, PythonResult, NodeStatus, ExecutionEntry } from '../sta
 import { PlotPreview } from './PlotPreview';
 import { InteractiveResultTable } from './InteractiveResultTable';
 import { PlotNodeConfigPanel } from './flowNodes/PlotNodeConfigPanel';
-import { usePlotData } from '../hooks/usePlotData';
 import { useFullCsvDataForPlot } from '../hooks/useFullCsvDataForPlot';
+import { useFullSqlDataForPlot } from '../hooks/useFullSqlDataForPlot';
+import { usePlotData } from '../hooks/usePlotData';
+import { usePlotSnapshot } from '../hooks/usePlotSnapshot';
 import type { PlotNodePayload } from '../lib/visualization/chartTypes';
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
@@ -63,10 +65,18 @@ const statusStyles: Record<NodeStatus, string> = {
   error: 'bg-rose-100 text-rose-600 border border-rose-300',
 };
 
-function StatusBadge({ status }: { status: NodeStatus }) {
+const STATUS_LABELS_RU: Record<NodeStatus, string> = {
+  idle: 'Ожидание',
+  running: 'Выполняется',
+  success: 'Успех',
+  error: 'Ошибка',
+};
+
+function StatusBadge({ status, locale = 'en' }: { status: NodeStatus; locale?: 'en' | 'ru' }) {
+  const label = locale === 'ru' ? STATUS_LABELS_RU[status] : status.toUpperCase();
   return (
     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles[status]}`}>
-      {status.toUpperCase()}
+      {label}
     </span>
   );
 }
@@ -117,22 +127,32 @@ function PythonOutput({ result }: { result: PythonResult }) {
   );
 }
 
-type StatusSummaryProps = Pick<InspectorProps, 'status' | 'lastFinishedAt'>;
+type StatusSummaryProps = Pick<InspectorProps, 'status' | 'lastFinishedAt'> & {
+  locale?: 'en' | 'ru';
+};
 
-function StatusSummary({ status, lastFinishedAt }: StatusSummaryProps) {
+function StatusSummary({ status, lastFinishedAt, locale = 'en' }: StatusSummaryProps) {
   const lastRunText = useMemo(() => {
-    if (!lastFinishedAt) return 'Not run yet';
+    if (!lastFinishedAt) return locale === 'ru' ? 'Ещё не запускался' : 'Not run yet';
     const diff = Date.now() - lastFinishedAt;
-    if (diff < 1000) return 'Just now';
-    if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`;
+    if (diff < 1000) return locale === 'ru' ? 'Только что' : 'Just now';
+    if (diff < 60_000) {
+      const s = Math.round(diff / 1000);
+      return locale === 'ru' ? `${s} с назад` : `${s}s ago`;
+    }
     const minutes = Math.round(diff / 60_000);
-    return `${minutes}m ago`;
-  }, [lastFinishedAt]);
+    return locale === 'ru' ? `${minutes} мин назад` : `${minutes}m ago`;
+  }, [lastFinishedAt, locale]);
+
+  const lastRunLabel = locale === 'ru' ? 'Последний запуск: ' : 'Last run: ';
 
   return (
     <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <StatusBadge status={status} />
-      <span className="text-xs text-slate-500">Last run: {lastRunText}</span>
+      <StatusBadge status={status} locale={locale} />
+      <span className="text-xs text-slate-500">
+        {lastRunLabel}
+        {lastRunText}
+      </span>
     </div>
   );
 }
@@ -159,8 +179,9 @@ export function BoardInspector(props: InspectorProps) {
   // Pass valid nodeId and edges even for non-plot nodes (result will be ignored)
   const plotNodeId = props.kind === 'plot' ? props.nodeId : '';
   const plotData = usePlotData(plotNodeId, plotEdges);
+  const plotSnapshot = usePlotSnapshot(plotNodeId);
 
-  // When Plot is connected to CSV: fetch full dataset for config panel (not limited to 100 rows)
+  // When Plot is connected to CSV: fetch limited dataset for config panel (not only 100 rows)
   const upstreamCsvTableName = useMemo(() => {
     if (props.kind !== 'plot') return undefined;
     const edge = props.edges.find((e) => e.targetId === props.nodeId);
@@ -171,8 +192,22 @@ export function BoardInspector(props: InspectorProps) {
     if (!isCsv) return undefined;
     return (sourceNode.payload as { tableName?: string })?.tableName;
   }, [props.kind, props.nodeId, props.edges, props.nodes]);
+  const upstreamSqlNodeId = useMemo(() => {
+    if (props.kind !== 'plot') return undefined;
+    const edge = props.edges.find((e) => e.targetId === props.nodeId);
+    if (!edge) return undefined;
+    const sourceNode = props.nodes.find((n) => n.id === edge.sourceId);
+    return sourceNode?.type === 'sql' ? edge.sourceId : undefined;
+  }, [props.kind, props.nodeId, props.edges, props.nodes]);
   const { data: fullCsvData } = useFullCsvDataForPlot(upstreamCsvTableName);
-  const plotDataForConfig = upstreamCsvTableName ? (fullCsvData ?? plotData) : plotData;
+  const { data: fullSqlData } = useFullSqlDataForPlot(upstreamSqlNodeId);
+  // For config panel mirror chart behavior: CSV/SQL → full data or snapshot; иначе → snapshot/preview.
+  const plotDataForConfig =
+    upstreamCsvTableName
+      ? fullCsvData ?? plotSnapshot
+      : upstreamSqlNodeId
+        ? fullSqlData ?? plotSnapshot
+        : plotSnapshot ?? plotData;
 
   // Handle plot node configuration
   if (props.kind === 'plot') {
@@ -230,7 +265,7 @@ export function BoardInspector(props: InspectorProps) {
       >
         <div className="flex items-start justify-between gap-2">
           <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Selected node</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">Выбранный узел</span>
             <h2 className="text-lg font-semibold text-slate-900">{props.nodeLabel}</h2>
           </div>
           <button
@@ -254,7 +289,7 @@ export function BoardInspector(props: InspectorProps) {
             </svg>
           </button>
         </div>
-        <StatusSummary status={props.status} lastFinishedAt={props.lastFinishedAt} />
+        <StatusSummary status={props.status} lastFinishedAt={props.lastFinishedAt} locale="ru" />
         <PlotNodeConfigPanel
           nodeId={props.nodeId}
           payload={payload}

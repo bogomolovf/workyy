@@ -114,10 +114,12 @@ export default function DemoBoardPage() {
           const upstreamEdge = data.edges.find((edge) => edge.targetId === nodeId);
           const latestEntries = useExecutionStore.getState().entries;
           const upstreamEntry = upstreamEdge ? latestEntries[upstreamEdge.sourceId] : undefined;
-          const upstreamResult =
-            upstreamEntry?.output?.kind === 'sql'
-              ? (upstreamEntry.output.result as import('../../../state/executionStore').SqlResult)
-              : undefined;
+          let upstreamResult: import('../../../state/executionStore').SqlResult | undefined;
+          if (upstreamEntry?.output?.kind === 'sql') {
+            upstreamResult = upstreamEntry.output.result as import('../../../state/executionStore').SqlResult;
+          } else if (upstreamEntry?.output?.kind === 'python' && upstreamEntry.output.result?.table) {
+            upstreamResult = upstreamEntry.output.result.table;
+          }
 
           const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
           if (!pythonOutput.success) {

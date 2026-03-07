@@ -57,6 +57,7 @@ const nodeTypeSchema = z.enum([
   'python',
   'table',
   'plot',
+  'csv',
   'note',
   'text',
   'shape',

@@ -28,6 +28,7 @@ import {
   loadFileIntoDuckDb,
   restoreDatasetsForBoard,
   registerDatasetFromCsvNode,
+  queryTableForPlot,
 } from '../../../lib/duckdbClient';
 import { runPython } from '../../../lib/pythonExecutor';
 import type { SqlResult, PlotResult } from '../../../state/executionStore';
@@ -117,6 +118,9 @@ function BoardPageContent({ params }: BoardPageProps) {
 
   const entries = useExecutionStore((state: ExecutionStoreState) => state.entries);
   const initFromNodes = useExecutionStore((state: ExecutionStoreState) => state.initFromNodes);
+  const mergeExecutionFromNodes = useExecutionStore(
+    (state: ExecutionStoreState) => state.mergeExecutionFromNodes,
+  );
   const setCodeStore = useExecutionStore((state: ExecutionStoreState) => state.setCode);
   const setStatus = useExecutionStore((state: ExecutionStoreState) => state.setStatus);
   const setSuccess = useExecutionStore((state: ExecutionStoreState) => state.setSuccess);
@@ -322,10 +326,27 @@ function BoardPageContent({ params }: BoardPageProps) {
         });
       }
       
+      // Don't overwrite local code with empty from Yjs: if Yjs has empty payload but executionStore
+      // has code for this node, keep the store code in the merged nodes so we never "lose" code.
+      const entries = useExecutionStore.getState().entries;
+      const mergedNodes = collaboration.canvasNodes.map((yjsNode) => {
+        if (yjsNode.type !== 'sql' && yjsNode.type !== 'python') return yjsNode;
+        const yjsCode =
+          yjsNode.type === 'sql'
+            ? ((yjsNode.payload as any)?.sql ?? '')
+            : ((yjsNode.payload as any)?.python ?? '');
+        const storeCode = entries[yjsNode.id]?.code ?? '';
+        if (yjsCode.trim() === '' && storeCode.trim() !== '') {
+          const payload = { ...(yjsNode.payload ?? {}), [yjsNode.type === 'sql' ? 'sql' : 'python']: storeCode };
+          return { ...yjsNode, payload };
+        }
+        return yjsNode;
+      });
+
       // Type assertion: collaboration.canvasNodes uses CanvasNode from yjs/adapters (type: string)
       // but we need the local CanvasNode type (with specific union type)
       // This is safe because all valid node types are included in the union
-      setNodesState(collaboration.canvasNodes as CanvasNode[]);
+      setNodesState(mergedNodes as CanvasNode[]);
       
       // CRITICAL FIX: Trigger auto-save when nodes are added/updated through Yjs
       // This ensures that new nodes added via yjsOnNodesChange are saved to DB
@@ -363,6 +384,9 @@ function BoardPageContent({ params }: BoardPageProps) {
   const previousBoardIdRef = useRef<string | null>(null);
   const nodesStateRef = useRef(nodesState);
   const edgesStateRef = useRef(edgesState);
+  // Keep latest Yjs-synced canvas state for reliable persistence on unload
+  const yjsNodesRef = useRef<CanvasNode[]>([]);
+  const yjsEdgesRef = useRef<CanvasEdge[]>([]);
 
   useEffect(() => {
     nodesStateRef.current = nodesState;
@@ -371,6 +395,15 @@ function BoardPageContent({ params }: BoardPageProps) {
   useEffect(() => {
     edgesStateRef.current = edgesState;
   }, [edgesState]);
+
+  // Track latest Yjs canvas state for beforeunload persistence
+  useEffect(() => {
+    yjsNodesRef.current = collaboration.canvasNodes;
+  }, [collaboration.canvasNodes]);
+
+  useEffect(() => {
+    yjsEdgesRef.current = collaboration.canvasEdges;
+  }, [collaboration.canvasEdges]);
 
   function nodesEqual(a: typeof nodesStateRef.current, b: BoardResponse['nodes']): boolean {
     if (a.length !== b.length) return false;
@@ -425,22 +458,38 @@ function BoardPageContent({ params }: BoardPageProps) {
 
     const observer = async () => {
       try {
-        const { restoreDatasetsForBoard, getDatasetsKey } = await import('../../../lib/duckdbClient');
-        const datasets: Array<{ tableName: string; columns: string[]; rows: Array<Array<string | number | null>> }> = [];
-        
+        const {
+          restoreDatasetsForBoard,
+          restoreDatasetsFromBoardArray,
+          getDatasetsKey,
+        } = await import('../../../lib/duckdbClient');
+        const datasets: Array<{
+          tableName: string;
+          columns: string[];
+          rows: Array<Array<string | number | null>>;
+        }> = [];
+
         // Collect all datasets from Yjs map
         datasetsMap.forEach((dataset: any) => {
           datasets.push(dataset);
         });
 
-        // Save datasets to localStorage (for compatibility with restoreDatasetsForBoard)
-        // Always update localStorage, even if empty (to handle deletions)
         const key = getDatasetsKey(boardId);
-        window.localStorage.setItem(key, JSON.stringify(datasets));
-        
-        // Restore datasets in local DuckDB (this will clear tables if datasets is empty)
-        await restoreDatasetsForBoard(boardId);
-        
+
+        if (datasets.length > 0) {
+          // Best-effort sync to localStorage (may fail on quota for large boards)
+          try {
+            window.localStorage.setItem(key, JSON.stringify(datasets));
+          } catch {
+            // quota or other; tables still restored from in-memory below
+          }
+          // Restore DuckDB tables from in-memory Yjs data so plot can refetch after reload
+          await restoreDatasetsFromBoardArray(boardId, datasets);
+        } else {
+          // No Yjs data: restore from localStorage (e.g. initial load from cache)
+          await restoreDatasetsForBoard(boardId);
+        }
+
         // Refresh table list
         await refreshTables();
       } catch (error) {
@@ -493,6 +542,8 @@ function BoardPageContent({ params }: BoardPageProps) {
         initFromNodes(executionNodes);
       }
     }
+    // Всегда применяем payload.execution с сервера (в т.ч. для plot после reload)
+    mergeExecutionFromNodes(executionNodes);
 
     // Обновляем состояние только если оно действительно изменилось
     // При первой загрузке это всегда произойдет, но markDirty не сработает из-за isLoadingRef.current = true
@@ -526,7 +577,7 @@ function BoardPageContent({ params }: BoardPageProps) {
         setSaveError(null);
       });
     });
-  }, [data, initFromNodes, resetLayout, setNodeWidth]);
+  }, [data, initFromNodes, mergeExecutionFromNodes, resetLayout, setNodeWidth]);
 
   // Дополнительный эффект для гарантированного сброса isDirty после загрузки данных
   useEffect(() => {
@@ -603,8 +654,11 @@ function BoardPageContent({ params }: BoardPageProps) {
         if (!payload?.data || !payload?.filename) continue;
         const rowCount = payload.data.rows?.length ?? 0;
         const totalCount = payload.totalRowCount ?? rowCount;
-        // Skip when payload is partial AND we have full data in localStorage
-        if (totalCount > rowCount && hasStoredDatasets) continue;
+        // Never register partial payload (preview-only rows) — would overwrite full data in DuckDB/localStorage.
+        // Full data must come from Yjs → localStorage → restoreDatasetsForBoard.
+        if (totalCount > rowCount) continue;
+        // Skip when we already have full data in localStorage (e.g. from Yjs sync)
+        if (hasStoredDatasets) continue;
         try {
           await registerDatasetFromCsvNode(payload.filename, payload.data, boardId);
           console.log(`Registered CSV "${payload.filename}" as table in DuckDB`);
@@ -798,42 +852,97 @@ function BoardPageContent({ params }: BoardPageProps) {
         if (node.type === 'python') {
           const ancestors = getAncestors(nodeId);
           let upstreamResult: SqlResult | undefined;
-          // ensure immediate parents are executed if needed
-          const immediateParents = reverseAdjacency.get(nodeId) ?? [];
-          for (const parentId of immediateParents) {
-            const parentEntry = useExecutionStore.getState().entries[parentId];
+
+          // 1. CSV upstream: fetch table from DuckDB so Python gets full (or capped) dataset
+          const directParents = edgesState
+            .filter((e) => e.targetId === nodeId)
+            .map((e) => e.sourceId);
+          for (const parentId of directParents) {
             const parentNode = nodesState.find((n) => n.id === parentId);
-            if (parentNode?.type === 'sql' && parentEntry?.output?.kind !== 'sql') {
-              // run parent SQL to produce output for downstream
-              await handleRunNode(parentId);
+            if (parentNode?.type === 'csv' || parentNode?.type === 'csvNode') {
+              const tableName = (parentNode.payload as { tableName?: string } | undefined)
+                ?.tableName;
+              if (tableName) {
+                try {
+                  upstreamResult = await queryTableForPlot(tableName);
+                  break;
+                } catch (err) {
+                  console.warn('Python: failed to fetch CSV data from DuckDB', err);
+                }
+              }
             }
           }
-          for (const ancestorId of ancestors) {
-            const output = useExecutionStore.getState().entries[ancestorId]?.output;
-            if (output?.kind === 'sql') {
-              upstreamResult = output.result;
-              break;
-            }
-          }
-          // Fallback: if ancestor traversal didn't find SQL, scan edges for direct parents
+
+          // 2. Python upstream: use previous Python node's output table (Jupyter-like chained cells)
           if (!upstreamResult) {
-            const directParents = edgesState
-              .filter((e) => e.targetId === nodeId)
-              .map((e) => e.sourceId);
             for (const parentId of directParents) {
               const parentNode = nodesState.find((n) => n.id === parentId);
-              if (parentNode?.type !== 'sql') continue;
-              const parentEntry = useExecutionStore.getState().entries[parentId];
-              if (parentEntry?.output?.kind !== 'sql') {
+              if (parentNode?.type !== 'python') continue;
+              let parentEntry = useExecutionStore.getState().entries[parentId];
+              const hasValidOutput =
+                parentEntry?.output?.kind === 'python' &&
+                parentEntry.output.result?.table?.columns?.length;
+              const outputStale =
+                hasValidOutput &&
+                (parentEntry?.code ?? '') !== (parentEntry?.output?.code ?? '');
+              if (!hasValidOutput || outputStale) {
                 await handleRunNode(parentId);
+                parentEntry = useExecutionStore.getState().entries[parentId];
               }
-              const out = useExecutionStore.getState().entries[parentId]?.output;
-              if (out?.kind === 'sql') {
-                upstreamResult = out.result;
+              const table = parentEntry?.output?.kind === 'python' ? parentEntry.output.result?.table : null;
+
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:pythonUpstream',message:'Python upstream table check',data:{nodeId,parentId,hasTable:!!table,tableColumns:table?.columns,tableRowsCount:table?.rows?.length},timestamp:Date.now(),hypothesisId:'C,D'})}).catch(()=>{});
+              // #endregion
+
+              if (table?.columns?.length) {
+                upstreamResult = table;
                 break;
               }
             }
           }
+
+          // 3. If no CSV/Python upstream, use SQL from executionStore (run SQL parents if needed, then ancestors/fallback)
+          if (!upstreamResult) {
+            const immediateParents = reverseAdjacency.get(nodeId) ?? [];
+            for (const parentId of immediateParents) {
+              const parentEntry = useExecutionStore.getState().entries[parentId];
+              const parentNode = nodesState.find((n) => n.id === parentId);
+              if (parentNode?.type === 'sql' && parentEntry?.output?.kind !== 'sql') {
+                await handleRunNode(parentId);
+              }
+            }
+            for (const ancestorId of ancestors) {
+              const output = useExecutionStore.getState().entries[ancestorId]?.output;
+              if (output?.kind === 'sql') {
+                upstreamResult = output.result;
+                break;
+              }
+              if (output?.kind === 'python' && output.result?.table?.columns?.length) {
+                upstreamResult = output.result.table;
+                break;
+              }
+            }
+            if (!upstreamResult) {
+              for (const parentId of directParents) {
+                const parentNode = nodesState.find((n) => n.id === parentId);
+                if (parentNode?.type !== 'sql') continue;
+                const parentEntry = useExecutionStore.getState().entries[parentId];
+                if (parentEntry?.output?.kind !== 'sql') {
+                  await handleRunNode(parentId);
+                }
+                const out = useExecutionStore.getState().entries[parentId]?.output;
+                if (out?.kind === 'sql') {
+                  upstreamResult = out.result;
+                  break;
+                }
+              }
+            }
+          }
+
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:beforeRunPython',message:'About to call runPython',data:{nodeId,hasUpstreamResult:!!upstreamResult,upstreamColumns:upstreamResult?.columns,upstreamRowsCount:upstreamResult?.rows?.length},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
 
           const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
           if (!pythonOutput.success) {
@@ -876,8 +985,18 @@ function BoardPageContent({ params }: BoardPageProps) {
             },
             code,
           };
+
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:afterPythonSuccess',message:'Python execution success, saving output',data:{nodeId,hasTable:!!pythonOutput.table,tableColumns:pythonOutput.table?.columns,tableRowsCount:pythonOutput.table?.rows?.length,outputTableColumns:output.result.table?.columns},timestamp:Date.now(),hypothesisId:'B,C'})}).catch(()=>{});
+          // #endregion
+
           setSuccess(nodeId, output);
           const latestEntry = useExecutionStore.getState().entries[nodeId];
+
+          // #region agent log
+          const savedEntry = useExecutionStore.getState().entries[nodeId];
+          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:afterSetSuccess',message:'After setSuccess, checking saved entry',data:{nodeId,hasOutput:!!savedEntry?.output,outputKind:savedEntry?.output?.kind,hasResultTable:!!savedEntry?.output?.result?.table,savedTableColumns:savedEntry?.output?.result?.table?.columns},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
 
           // Сохраняем результаты выполнения в payload узла и синхронизируем через Yjs
           setNodesState((prev) => {
@@ -912,6 +1031,21 @@ function BoardPageContent({ params }: BoardPageProps) {
 
           for (const edge of upstreamEdges) {
             const upstreamEntry = useExecutionStore.getState().entries[edge.sourceId];
+            const upstreamNode = nodesState.find((n) => n.id === edge.sourceId);
+
+            // CSV upstream: use full dataset from DuckDB (up to 10k rows) as snapshot input
+            if (upstreamNode?.type === 'csv' || upstreamNode?.type === 'csvNode') {
+              const tableName = (upstreamNode.payload as { tableName?: string } | undefined)
+                ?.tableName;
+              if (tableName) {
+                try {
+                  inputData = await queryTableForPlot(tableName);
+                } catch (err) {
+                  console.warn('Plot: failed to fetch full CSV data for snapshot', err);
+                }
+              }
+              if (inputData) break;
+            }
 
             if (upstreamEntry?.output?.kind === 'sql') {
               // SQL upstream: fetch full result for visualization (not preview limit)
@@ -1156,19 +1290,21 @@ function BoardPageContent({ params }: BoardPageProps) {
   // Ref to store triggerAutoSave function to avoid dependency issues
   const triggerAutoSaveRef = useRef<(() => void) | null>(null);
 
-  // Auto-save function that uses Yjs data
-  // CRITICAL FIX: Moved before first useEffect to fix initialization order
-  const autoSaveBoard = useCallback(async () => {
+  // Auto-save function that uses latest canvas state
+  // CRITICAL FIX: Accepts optional override of nodes/edges to avoid saving stale state
+  // (e.g. when the last node is deleted and refs are not yet updated)
+  const autoSaveBoard = useCallback(
+    async (override?: { nodes?: CanvasNode[]; edges?: CanvasEdge[] }) => {
     if (isAutoSavingRef.current || !dataLoadedRef.current || isLoadingRef.current) {
       console.log('[AutoSave] Skipping - isAutoSaving:', isAutoSavingRef.current, 'dataLoaded:', dataLoadedRef.current, 'isLoading:', isLoadingRef.current);
       return;
     }
 
-    // CRITICAL FIX: Use nodesState as source of truth for auto-save
-    // Yjs is for real-time sync, but auto-save should use local state
-    // This ensures that even if Yjs sync fails, auto-save still works
-    const currentNodes = nodesStateRef.current.length > 0 ? nodesStateRef.current : nodesState;
-    const currentEdges = edgesState.length > 0 ? edgesState : [];
+    // CRITICAL FIX: Prefer explicit override when provided (e.g. immediate delete)
+    // Fallback to nodesState / edgesState as source of truth for auto-save.
+    const currentNodes =
+      override?.nodes ?? (nodesStateRef.current.length > 0 ? nodesStateRef.current : nodesState);
+    const currentEdges = override?.edges ?? (edgesState.length > 0 ? edgesState : []);
     
     console.log('[AutoSave] Saving nodes:', currentNodes.length, 'edges:', currentEdges.length);
 
@@ -1176,8 +1312,9 @@ function BoardPageContent({ params }: BoardPageProps) {
     const nodes = currentNodes.map((node) => {
       const payload: Record<string, unknown> = { ...(node.payload ?? {}) };
       if (node.type === 'sql') {
-        payload.sql = (payload.sql as string | undefined) ?? '';
         const entry = useExecutionStore.getState().entries[node.id];
+        const sqlFromPayload = (payload.sql as string | undefined) ?? '';
+        payload.sql = sqlFromPayload.trim() !== '' ? sqlFromPayload : (entry?.code ?? '');
         if (entry?.status === 'success' && entry.output) {
           payload.execution = {
             status: entry.status,
@@ -1192,8 +1329,9 @@ function BoardPageContent({ params }: BoardPageProps) {
           };
         }
       } else if (node.type === 'python') {
-        payload.python = (payload.python as string | undefined) ?? '';
         const entry = useExecutionStore.getState().entries[node.id];
+        const pythonFromPayload = (payload.python as string | undefined) ?? '';
+        payload.python = pythonFromPayload.trim() !== '' ? pythonFromPayload : (entry?.code ?? '');
         if (entry?.status === 'success' && entry.output) {
           payload.execution = {
             status: entry.status,
@@ -1244,6 +1382,15 @@ function BoardPageContent({ params }: BoardPageProps) {
           showGrid: true,
         };
         payload.version = (payload as any).version ?? '1';
+        // Persist last successful plot execution (10k snapshot) so visualizations survive reload
+        const entry = useExecutionStore.getState().entries[node.id];
+        if (entry?.status === 'success' && entry.output && entry.output.kind === 'plot') {
+          payload.execution = {
+            status: entry.status,
+            output: entry.output,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        }
       }
       const existingUi = (payload.ui as Record<string, unknown> | undefined) ?? {};
       const ui: Record<string, unknown> = { ...existingUi };
@@ -1358,7 +1505,8 @@ function BoardPageContent({ params }: BoardPageProps) {
     } finally {
       isAutoSavingRef.current = false;
     }
-  }, [boardId, persistBoard, queryClient, nodeSizes, collaboration.canvasNodes, collaboration.canvasEdges, nodesState, edgesState]);
+  },
+  [boardId, persistBoard, queryClient, nodeSizes, collaboration.canvasNodes, collaboration.canvasEdges, nodesState, edgesState]);
 
   // Debounced auto-save trigger
   // CRITICAL FIX: Moved before first useEffect to fix initialization order
@@ -1379,15 +1527,32 @@ function BoardPageContent({ params }: BoardPageProps) {
   }, [triggerAutoSave]);
 
   // Flush debounce and save immediately (e.g. on delete so refresh loads correct state)
-  const triggerImmediateSave = useCallback(() => {
+  // Accepts optional override of nodes/edges to guarantee we persist exactly the state
+  // that was just produced by the user action (important for deletions).
+  const triggerImmediateSave = useCallback((override?: { nodes?: CanvasNode[]; edges?: CanvasEdge[] }) => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
     // Run after React has applied setState so nodesStateRef is up to date
     setTimeout(() => {
-      void autoSaveBoard();
+      void autoSaveBoard(override);
     }, 0);
+  }, [autoSaveBoard]);
+
+  // Ensure latest Yjs state is persisted when user closes tab / reloads page.
+  // This avoids situations where new nodes disappear or deleted nodes reappear
+  // because debounced auto-save didn't run before navigation.
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      void autoSaveBoard({
+        nodes: yjsNodesRef.current.length > 0 ? yjsNodesRef.current : nodesStateRef.current,
+        edges: yjsEdgesRef.current.length > 0 ? yjsEdgesRef.current : edgesStateRef.current,
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [autoSaveBoard]);
 
   const buildPersistPayload = useCallback((): SaveBoardStructureInput => {
@@ -1470,6 +1635,22 @@ function BoardPageContent({ params }: BoardPageProps) {
           showGrid: true,
         };
         payload.version = (payload as any).version ?? '1';
+        // И главное: сохраняем последний успешный снэпшот выполнения plot-узла,
+        // чтобы визуализации (10k строк) поднимались после полного reload/перезахода.
+        const entry = useExecutionStore.getState().entries[node.id];
+        if (entry?.status === 'success' && entry.output && entry.output.kind === 'plot') {
+          payload.execution = {
+            status: entry.status,
+            output: entry.output,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        } else if (entry?.status === 'error') {
+          payload.execution = {
+            status: entry.status,
+            error: entry.error,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        }
       }
       const existingUi = (payload.ui as Record<string, unknown> | undefined) ?? {};
       const ui: Record<string, unknown> = { ...existingUi };
@@ -1614,10 +1795,11 @@ function BoardPageContent({ params }: BoardPageProps) {
           }
         });
         setNodesState(updated);
-        // CRITICAL FIX: Trigger auto-save even for Yjs updates to ensure new nodes are saved
+        // CRITICAL FIX: Trigger auto-save even for Yjs updates to ensure new nodes are saved.
+        // Pass explicit snapshot of updated nodes to avoid persisting stale state.
         triggerAutoSave();
         if (isDeletionFromYjs) {
-          triggerImmediateSave();
+          triggerImmediateSave({ nodes: updated, edges: edgesStateRef.current });
         }
         return;
       }
@@ -1672,7 +1854,7 @@ function BoardPageContent({ params }: BoardPageProps) {
       triggerAutoSave();
       // On deletion, save immediately so refresh loads correct state (debounce may run too late)
       if (isDeletion) {
-        triggerImmediateSave();
+        triggerImmediateSave({ nodes: updated, edges: edgesStateRef.current });
       }
     },
     [removeExecutionEntry, collaboration, triggerAutoSave, triggerImmediateSave],
@@ -1765,6 +1947,18 @@ function BoardPageContent({ params }: BoardPageProps) {
   const handleDatasetButtonClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  /** Sync CSV dataset to Yjs when added via canvas (spreadsheet drop). Prevents "table does not exist" on Load more. */
+  const handleCsvDatasetAdded = useCallback(
+    (dataset: {
+      tableName: string;
+      columns: string[];
+      rows: Array<Array<string | number | null>>;
+    }) => {
+      collaboration.datasetsMap.set(dataset.tableName, dataset);
+    },
+    [collaboration.datasetsMap],
+  );
 
   const handleLogout = useCallback(async () => {
     try {
@@ -1927,6 +2121,7 @@ function BoardPageContent({ params }: BoardPageProps) {
               cursorsMap={collaboration.cursorsMap}
               editingMap={collaboration.editingMap}
               clientId={collaboration.clientId}
+              onCsvDatasetAdded={handleCsvDatasetAdded}
             />
           </div>
         )}
