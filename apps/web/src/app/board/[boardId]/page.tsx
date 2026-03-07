@@ -5,12 +5,14 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { AudioCallPanel } from '../../../components/AudioCallPanel';
 import { BoardMenuButton } from '../../../components/BoardMenu';
 import { LanguageSwitcher } from '../../../components/LanguageSwitcher';
 import { RequireAuth } from '../../../components/RequireAuth';
 import { ToastContainer } from '../../../components/Toast';
 import { UndoRedoControls } from '../../../components/UndoRedoControls';
 import { UserPresenceIndicator } from '../../../components/UserPresenceIndicator';
+import { useAudioCall } from '../../../hooks/useAudioCall';
 import { useBoardCollaboration } from '../../../hooks/useBoardCollaboration';
 import { useBoardPresence } from '../../../hooks/useBoardPresence';
 import { useYjsUndoManager } from '../../../hooks/useYjsUndoManager';
@@ -25,10 +27,10 @@ import {
   type SaveBoardStructureInput,
 } from '../../../lib/api';
 import { useAuthStore } from '../../../state/authStore';
+import { useBoardSettingsStore } from '../../../state/boardSettingsStore';
 import { useCanvasLayoutStore, type CanvasLayoutState } from '../../../state/canvasLayoutStore';
 import { useExecutionStore, type ExecutionStoreState } from '../../../state/executionStore';
-import { useBoardSettingsStore } from '../../../state/boardSettingsStore';
-import type { SqlResult, PlotResult } from '../../../state/executionStore';
+import type { PlotResult, SqlResult } from '../../../state/executionStore';
 import { useSettingsStore } from '../../../state/settingsStore';
 import { useTranslation } from '../../../hooks/useTranslation';
 import {
@@ -163,6 +165,13 @@ function BoardPageContent({ params }: BoardPageProps) {
 
   // Get list of users on the board for presence indicator
   const presenceUsers = useBoardPresence(collaboration.cursorsMap, collaboration.clientId);
+
+  // Audio call — uses Yjs audioCallMap for signaling
+  const audioCall = useAudioCall(
+    collaboration.audioCallMap,
+    collaboration.clientId,
+    user ? { userId: user.id, userName: user.name || user.email } : undefined,
+  );
 
   // Per-user undo/redo using Yjs UndoManager
   // Only tracks changes made by the current user
@@ -2114,8 +2123,21 @@ function BoardPageContent({ params }: BoardPageProps) {
             </div>
           </div>
 
-          {/* Right: Presence indicator + Language switcher + Back to home */}
+          {/* Right: Call + Presence indicator + Language switcher + Back to home */}
           <div className="flex items-center gap-3">
+            <AudioCallPanel
+              inCall={audioCall.inCall}
+              localMuted={audioCall.localMuted}
+              participants={audioCall.participants}
+              panelOpen={audioCall.panelOpen}
+              error={audioCall.error}
+              currentUserName={user?.name || user?.email}
+              activeCallParticipantCount={audioCall.activeCallParticipantCount}
+              onJoin={audioCall.join}
+              onLeave={audioCall.leave}
+              onToggleMute={audioCall.toggleMute}
+              onTogglePanel={audioCall.togglePanel}
+            />
             <LanguageSwitcher />
             <UserPresenceIndicator users={presenceUsers} currentUserId={user?.id} />
             <Link

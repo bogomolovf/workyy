@@ -58,6 +58,8 @@ import { FileDropOverlay } from './FileDropOverlay';
 import CustomConnectionLine from './flowEdges/CustomConnectionLine';
 import { CsvNode } from './flowNodes/CsvNode';
 import { DatabaseNode } from './flowNodes/DatabaseNode';
+import { DocumentNode } from './flowNodes/DocumentNode';
+import { ImageNode } from './flowNodes/ImageNode';
 import { PlotNode } from './flowNodes/PlotNode';
 import { InteractiveResultTable } from './InteractiveResultTable';
 import { PlotPreview } from './PlotPreview';
@@ -71,9 +73,7 @@ import { TextNode } from './TextNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
 import { SHAPE_DEFAULTS, isLineType as isLineShapeType } from './shape/shapeEngine';
 import { VoiceNode } from './flowNodes/VoiceNode';
-import { ImageNode } from './flowNodes/ImageNode';
 import { VideoNode } from './flowNodes/VideoNode';
-import { DocumentNode } from './flowNodes/DocumentNode';
 import { PresentationViewer } from './PresentationViewer';
 
 // SessionStorage-backed cache for voice audio data
@@ -1236,6 +1236,8 @@ function InnerBoardCanvas({
       const reactFlowViewport = document.querySelector('.react-flow__viewport');
       const reactFlowRenderer = document.querySelector('.react-flow__renderer');
 
+      // Force hide cursor ONLY on ReactFlow elements, NOT on body
+      // This allows standard cursor to show outside the canvas area
       if (reactFlowContainer) {
         applyCursorStyle(reactFlowContainer as HTMLElement, canvasCursor);
       }
@@ -2328,24 +2330,28 @@ function InnerBoardCanvas({
             // Text nodes draggable только когда не в режиме text (в режиме select можно перетаскивать)
             // Shape nodes и заметки draggable всегда (как обычные элементы канвы), кроме режимов создания других элементов
             // Остальные ноды draggable всегда (если не в режиме создания sticky/pen/text)
-            draggable: isPen
-              ? !isPenMode
-              : isText
-                ? !isTextMode
-                : isVoice
-                  ? !isVoiceMode
-                  : isShape || isNote
-                    ? !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
-                    : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
-            selectable: isPen
-              ? !isPenMode
-              : isText
-                ? !isTextMode
-                : isVoice
-                  ? !isVoiceMode
-                  : isShape || isNote
-                    ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
-                    : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
+            draggable: isEraserMode
+              ? false
+              : isPen
+                ? !isPenMode
+                : isText
+                  ? !isTextMode
+                  : isVoice
+                    ? !isVoiceMode
+                    : isShape || isNote
+                      ? !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                      : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
+            selectable: isEraserMode
+              ? false
+              : isPen
+                ? !isPenMode
+                : isText
+                  ? !isTextMode
+                  : isVoice
+                    ? !isVoiceMode
+                    : isShape || isNote
+                      ? !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                      : !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode,
             // Служебное поле для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
             _sortOrder: isDataNode ? 0 : isCanvasNode ? 1 : 0,
           } as Node & { _sortOrder: number };
@@ -2364,6 +2370,7 @@ function InnerBoardCanvas({
     onRunDownstream,
     toggleCodeCollapsed,
     isPenMode,
+    isEraserMode,
     isTextMode,
     isVoiceMode,
     emitNodesChange,
@@ -3828,6 +3835,7 @@ function InnerBoardCanvas({
           onPointerLeaveCapture={onPointerLeave}
         >
           <div className="relative h-full w-full">
+            {isPenMode && <PenToolbar />}
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
@@ -3837,6 +3845,7 @@ function InnerBoardCanvas({
                 !isSelectMode &&
                 !isStickyMode &&
                 !isPenMode &&
+                !isEraserMode &&
                 !isTextMode &&
                 !isShapeMode &&
                 !isVoiceMode
@@ -3844,12 +3853,24 @@ function InnerBoardCanvas({
               panOnScroll={false}
               zoomOnScroll
               selectionOnDrag={isSelectMode}
-              nodesDraggable={!isPenMode && !isTextMode && !isShapeMode && !isVoiceMode}
+              nodesDraggable={
+                !isPenMode && !isEraserMode && !isTextMode && !isShapeMode && !isVoiceMode
+              }
               nodesConnectable={
-                !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                !isStickyMode &&
+                !isPenMode &&
+                !isEraserMode &&
+                !isTextMode &&
+                !isShapeMode &&
+                !isVoiceMode
               }
               elementsSelectable={
-                !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isVoiceMode
+                !isStickyMode &&
+                !isPenMode &&
+                !isEraserMode &&
+                !isTextMode &&
+                !isShapeMode &&
+                !isVoiceMode
               }
               proOptions={{ hideAttribution: true }}
               className="h-full bg-white"
@@ -4177,6 +4198,13 @@ function InnerBoardCanvas({
                   }}
                 />
               )}
+              {isEraserMode && (
+                <EraserOverlay
+                  eraserSize={20}
+                  onDeleteNodes={handleDeleteNodes}
+                  onCursorMove={onMouseMove}
+                />
+              )}
               {isPenMode && (
                 <FreehandOverlay
                   onAddPenNode={(node) => {
@@ -4189,6 +4217,11 @@ function InnerBoardCanvas({
                       payload: {
                         points: node.data.points,
                         initialSize: node.data.initialSize,
+                        color: node.data.color,
+                        strokeWidth: node.data.strokeWidth,
+                        opacity: node.data.opacity,
+                        smoothing: node.data.smoothing,
+                        thinning: node.data.thinning,
                       },
                     };
                     console.log('Adding to localNodes:', externalNode);

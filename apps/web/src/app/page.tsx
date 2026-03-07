@@ -1,6 +1,6 @@
 'use client';
 
-import { CaretRight, DotsThree, Users, Star, SquaresFour, List } from '@phosphor-icons/react';
+import { CaretRight, DotsThree, List, MagnifyingGlass, SquaresFour, Star, Users, X } from '@phosphor-icons/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -33,6 +33,7 @@ function HomePageContent() {
   const [title, setTitle] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [showWorkspaceMembers, setShowWorkspaceMembers] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const toggleStarred = useBoardSettingsStore((s) => s.toggleStarred);
   const starredBoardIds = useBoardSettingsStore((s) => s.starredBoardIds);
   const lastVisitedAtByBoardId = useBoardSettingsStore((s) => s.lastVisitedAtByBoardId);
@@ -76,6 +77,13 @@ function HomePageContent() {
     }
     return null;
   }, [boards, user]);
+
+  const filteredBoards = useMemo(() => {
+    if (!sortedBoards) return undefined;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return sortedBoards;
+    return sortedBoards.filter((board) => board.title.toLowerCase().includes(q));
+  }, [sortedBoards, searchQuery]);
 
   const createBoardMutation = useMutation({
     mutationFn: ({ workspaceId, title }: { workspaceId: string; title: string }) =>
@@ -554,7 +562,42 @@ function HomePageContent() {
             </div>
           )}
 
-          <div className="mt-8">{renderBoards(sortedBoards)}</div>
+          {/* Search / filter boards */}
+          {sortedBoards && sortedBoards.length > 1 && (
+            <div className="relative mt-6">
+              <MagnifyingGlass
+                size={16}
+                weight="bold"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск по доскам…"
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  title="Очистить поиск"
+                >
+                  <X size={14} weight="bold" />
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="mt-8">
+            {searchQuery && filteredBoards && filteredBoards.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-500 shadow-sm">
+                {`Ничего не найдено по запросу «${searchQuery}»`}
+              </div>
+            ) : (
+              renderBoards(filteredBoards ?? sortedBoards)
+            )}
+          </div>
         </div>
 
         <p className="mt-10 text-center text-xs text-slate-400">{t.demoDataNote}</p>
