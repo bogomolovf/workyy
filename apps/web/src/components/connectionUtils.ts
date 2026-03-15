@@ -55,7 +55,9 @@ export function findNearestHandleId(
     node.type === 'sqlNode' ||
     node.type === 'pythonNode' ||
     node.type === 'plotNode' ||
-    node.type === 'databaseNode';
+    node.type === 'databaseNode' ||
+    node.type === 'csvNode' ||
+    node.type === 'notebookNode';
 
   if (!isDataNode) {
     return undefined;

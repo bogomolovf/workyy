@@ -3,12 +3,14 @@
 import {
   ArrowRight,
   ChartBar,
+  Code,
   Cursor,
   Cylinder,
   Database,
   Eraser,
   FileArrowUp,
   Microphone,
+  Notebook,
   NotePencil,
   PencilSimple,
   Play,
@@ -44,7 +46,11 @@ type BoardCommandBarProps = {
   onAddDatabaseNode?: () => void;
   onAddPlotNode?: () => void;
   onAddVoiceNode?: () => void;
+  onAddPythonCell?: () => void;
+  onAddSqlCell?: () => void;
+  onAddMarkdownCell?: () => void;
   onUploadSpreadsheet?: (file: File) => void;
+  onUploadNotebook?: (file: File) => void;
   onDeleteSelection?: () => void;
   hasSelection?: boolean;
   // Undo/Redo moved to UndoRedoControls in board header
@@ -118,7 +124,11 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   onAddDatabaseNode,
   onAddPlotNode,
   onAddVoiceNode,
+  onAddPythonCell,
+  onAddSqlCell,
+  onAddMarkdownCell,
   onUploadSpreadsheet,
+  onUploadNotebook,
   onDeleteSelection,
   hasSelection,
   portalRoot,
@@ -128,6 +138,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   const [isShapePaletteOpen, setIsShapePaletteOpen] = useState(false);
   const shapeButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const notebookInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUploadClick = () => {
     fileInputRef.current?.click();
@@ -138,7 +149,18 @@ export const BoardCommandBar = memo(function BoardCommandBar({
     if (file && onUploadSpreadsheet) {
       onUploadSpreadsheet(file);
     }
-    // Reset input to allow re-uploading same file
+    e.target.value = '';
+  };
+
+  const handleNotebookUploadClick = () => {
+    notebookInputRef.current?.click();
+  };
+
+  const handleNotebookFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUploadNotebook) {
+      onUploadNotebook(file);
+    }
     e.target.value = '';
   };
 
@@ -320,6 +342,36 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               />
             </button>
           )}
+          {onAddPythonCell && (
+            <button
+              type="button"
+              className={`${baseButtonClass} ${ghostButtonClass} relative`}
+              onClick={onAddPythonCell}
+              title="Python Cell"
+            >
+              <Code size={18} weight="regular" className="text-blue-600" />
+              <Plus
+                size={10}
+                weight="bold"
+                className="absolute -top-0.5 -right-0.5 bg-blue-600 text-white rounded-full p-0.5"
+              />
+            </button>
+          )}
+          {onAddSqlCell && (
+            <button
+              type="button"
+              className={`${baseButtonClass} ${ghostButtonClass} relative`}
+              onClick={onAddSqlCell}
+              title="SQL Cell"
+            >
+              <Database size={18} weight="regular" className="text-emerald-600" />
+              <Plus
+                size={10}
+                weight="bold"
+                className="absolute -top-0.5 -right-0.5 bg-emerald-600 text-white rounded-full p-0.5"
+              />
+            </button>
+          )}
           {onAddDatabaseNode && (
             <button
               type="button"
@@ -370,6 +422,30 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                   size={10}
                   weight="bold"
                   className="absolute -top-0.5 -right-0.5 bg-emerald-600 text-white rounded-full p-0.5"
+                />
+              </button>
+            </>
+          )}
+          {onUploadNotebook && (
+            <>
+              <input
+                ref={notebookInputRef}
+                type="file"
+                accept=".ipynb,application/x-ipynb+json"
+                onChange={handleNotebookFileChange}
+                style={{ display: 'none' }}
+              />
+              <button
+                type="button"
+                className={`${baseButtonClass} ${ghostButtonClass} relative`}
+                onClick={handleNotebookUploadClick}
+                title={t.uploadNotebook ?? 'Upload Jupyter Notebook'}
+              >
+                <Notebook size={18} weight="regular" />
+                <Plus
+                  size={10}
+                  weight="bold"
+                  className="absolute -top-0.5 -right-0.5 bg-orange-600 text-white rounded-full p-0.5"
                 />
               </button>
             </>

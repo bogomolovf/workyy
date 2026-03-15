@@ -6,13 +6,17 @@ import {
   X,
   ArrowsOut,
   Broadcast,
-  BroadcastSlash,
+  XCircle,
   Television,
   User,
+  MagnifyingGlassPlus,
+  MagnifyingGlassMinus,
+  Sidebar,
+  Download,
 } from '@phosphor-icons/react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { YMap } from 'yjs';
+import type { Map as YMap } from 'yjs';
 import {
   getBroadcastStateFromYjs,
   isBroadcastActive,
@@ -40,6 +44,8 @@ export type PresentationViewerProps = {
   initialFollowMode?: boolean;
 };
 
+const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
 export function PresentationViewer({
   nodeId,
   url,
@@ -62,6 +68,10 @@ export function PresentationViewer({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [broadcastTakenError, setBroadcastTakenError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [showThumbnails, setShowThumbnails] = useState(false);
+  const [slideInputValue, setSlideInputValue] = useState('');
+  const [showSlideInput, setShowSlideInput] = useState(false);
 
   // Broadcast state from Yjs (synced)
   const [broadcastState, setBroadcastState] = useState<PresentationBroadcastState | null>(null);
@@ -71,9 +81,8 @@ export function PresentationViewer({
   const isPptx =
     mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
     (originalName ?? '').toLowerCase().endsWith('.pptx');
-  const fullUrl = url?.startsWith('/')
-    ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${url}`
-    : url;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  const fullUrl = url?.startsWith('/') ? `${apiBase}${url}` : url;
 
   // Subscribe to broadcast state for this node
   useEffect(() => {
@@ -122,58 +131,63 @@ export function PresentationViewer({
     }
   }, [followMode, broadcastActive, broadcastState?.slideIndex]);
 
+  const navigateToSlide = useCallback(
+    (slideIndex: number) => {
+      const clamped = Math.max(0, Math.min(totalSlides - 1, slideIndex));
+      if (amPresenter && ydoc && presentationBroadcastsMap && clientId) {
+        ydoc.transact(() => {
+          presentationBroadcastsMap.set(nodeId, {
+            ...(broadcastState ?? DEFAULT_BROADCAST_STATE),
+            isActive: true,
+            presenterUserId: userInfo?.userId ?? '',
+            presenterName: userInfo?.userName ?? 'User',
+            slideIndex: clamped,
+            updatedAt: Date.now(),
+          });
+        }, clientId);
+      }
+      setCurrentSlideLocal(clamped);
+    },
+    [
+      amPresenter,
+      ydoc,
+      presentationBroadcastsMap,
+      nodeId,
+      clientId,
+      broadcastState,
+      userInfo,
+      totalSlides,
+    ],
+  );
+
   const goPrev = useCallback(() => {
-    if (amPresenter && ydoc && presentationBroadcastsMap && clientId) {
-      const next = Math.max(0, effectiveSlide - 1);
-      ydoc.transact(() => {
-        presentationBroadcastsMap.set(nodeId, {
-          ...(broadcastState ?? DEFAULT_BROADCAST_STATE),
-          isActive: true,
-          presenterUserId: userInfo?.userId ?? '',
-          presenterName: userInfo?.userName ?? 'User',
-          slideIndex: next,
-          updatedAt: Date.now(),
-        });
-      }, clientId);
-    }
-    setCurrentSlideLocal((p) => Math.max(0, p - 1));
-  }, [
-    amPresenter,
-    ydoc,
-    presentationBroadcastsMap,
-    nodeId,
-    clientId,
-    broadcastState,
-    userInfo,
-    effectiveSlide,
-  ]);
+    navigateToSlide(effectiveSlide - 1);
+  }, [navigateToSlide, effectiveSlide]);
 
   const goNext = useCallback(() => {
-    if (amPresenter && ydoc && presentationBroadcastsMap && clientId) {
-      const next = Math.min(totalSlides - 1, effectiveSlide + 1);
-      ydoc.transact(() => {
-        presentationBroadcastsMap.set(nodeId, {
-          ...(broadcastState ?? DEFAULT_BROADCAST_STATE),
-          isActive: true,
-          presenterUserId: userInfo?.userId ?? '',
-          presenterName: userInfo?.userName ?? 'User',
-          slideIndex: next,
-          updatedAt: Date.now(),
-        });
-      }, clientId);
-    }
-    setCurrentSlideLocal((p) => Math.min(Math.max(0, totalSlides - 1), p + 1));
-  }, [
-    amPresenter,
-    ydoc,
-    presentationBroadcastsMap,
-    nodeId,
-    clientId,
-    broadcastState,
-    userInfo,
-    effectiveSlide,
-    totalSlides,
-  ]);
+    navigateToSlide(effectiveSlide + 1);
+  }, [navigateToSlide, effectiveSlide]);
+
+  const goToSlide = useCallback(
+    (page: number) => {
+      navigateToSlide(page - 1);
+    },
+    [navigateToSlide],
+  );
+
+  const zoomIn = useCallback(() => {
+    setZoom((z) => {
+      const nextStep = ZOOM_STEPS.find((s) => s > z);
+      return nextStep ?? z;
+    });
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setZoom((z) => {
+      const prevStep = [...ZOOM_STEPS].reverse().find((s) => s < z);
+      return prevStep ?? z;
+    });
+  }, []);
 
   const toggleFullscreen = useCallback(() => {
     if (!containerRef.current) return;
@@ -226,8 +240,31 @@ export function PresentationViewer({
     }, clientId);
   }, [ydoc, presentationBroadcastsMap, nodeId, clientId, amPresenter]);
 
+  const handleDownload = useCallback(() => {
+    if (fullUrl) {
+      const link = document.createElement('a');
+      link.href = fullUrl;
+      link.download = originalName || 'document';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }, [fullUrl, originalName]);
+
+  const handleSlideInputSubmit = useCallback(() => {
+    const page = parseInt(slideInputValue, 10);
+    if (!isNaN(page) && page >= 1 && page <= totalSlides) {
+      goToSlide(page);
+    }
+    setShowSlideInput(false);
+    setSlideInputValue('');
+  }, [slideInputValue, totalSlides, goToSlide]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      // Don't handle keys when typing in the slide input
+      if (showSlideInput) return;
+
       if (e.key === 'Escape') {
         if (document.fullscreenElement) {
           document.exitFullscreen?.();
@@ -245,9 +282,44 @@ export function PresentationViewer({
       if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
         goNext();
         e.preventDefault();
+        return;
+      }
+      // Zoom: Ctrl/Cmd + / -
+      if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+        zoomIn();
+        e.preventDefault();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+        zoomOut();
+        e.preventDefault();
+        return;
+      }
+      // Reset zoom: Ctrl/Cmd + 0
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        setZoom(1);
+        e.preventDefault();
+        return;
+      }
+      // Toggle thumbnails: T
+      if (e.key === 't' || e.key === 'T') {
+        setShowThumbnails((v) => !v);
+        e.preventDefault();
+        return;
+      }
+      // Go to slide: G
+      if (e.key === 'g' || e.key === 'G') {
+        setShowSlideInput(true);
+        e.preventDefault();
+        return;
+      }
+      // Toggle fullscreen: F
+      if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+        e.preventDefault();
       }
     },
-    [onClose, goPrev, goNext],
+    [onClose, goPrev, goNext, zoomIn, zoomOut, toggleFullscreen, showSlideInput],
   );
 
   useEffect(() => {
@@ -309,7 +381,8 @@ export function PresentationViewer({
     >
       {/* Toolbar */}
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-700 bg-slate-800 px-4 py-2 text-white">
-        <div className="flex items-center gap-3">
+        {/* Left: close + name */}
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={onClose}
@@ -324,46 +397,152 @@ export function PresentationViewer({
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Center: navigation + zoom */}
+        <div className="flex items-center gap-1">
           {isPdf && (
             <>
+              {/* Thumbnails toggle */}
+              <button
+                type="button"
+                onClick={() => setShowThumbnails((v) => !v)}
+                className={`rounded p-1.5 transition-colors ${
+                  showThumbnails
+                    ? 'bg-slate-600 text-white'
+                    : 'text-slate-300 hover:bg-slate-600 hover:text-white'
+                }`}
+                title="Toggle thumbnails (T)"
+                aria-label="Toggle thumbnails"
+              >
+                <Sidebar size={18} />
+              </button>
+
+              <div className="mx-1 h-5 w-px bg-slate-600" />
+
+              {/* Navigation */}
               <button
                 type="button"
                 onClick={goPrev}
                 disabled={displaySlide <= 1}
                 className="rounded p-1.5 text-slate-300 hover:bg-slate-600 hover:text-white disabled:opacity-40"
-                title="Previous (←, PageUp)"
+                title="Previous slide"
                 aria-label="Previous slide"
               >
-                <CaretLeft size={22} />
+                <CaretLeft size={20} />
               </button>
-              <span className="min-w-[4rem] text-center text-sm text-slate-300" aria-live="polite">
-                {displaySlide} / {totalSlides || '–'}
-              </span>
+
+              {/* Slide counter - click to open go-to input */}
+              {showSlideInput ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSlideInputSubmit();
+                  }}
+                  className="flex items-center"
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    max={totalSlides}
+                    value={slideInputValue}
+                    onChange={(e) => setSlideInputValue(e.target.value)}
+                    onBlur={handleSlideInputSubmit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setShowSlideInput(false);
+                        setSlideInputValue('');
+                      }
+                      e.stopPropagation();
+                    }}
+                    autoFocus
+                    className="w-12 rounded bg-slate-700 px-2 py-1 text-center text-sm text-white outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder={String(displaySlide)}
+                  />
+                  <span className="mx-1 text-sm text-slate-400">/ {totalSlides || '-'}</span>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSlideInputValue(String(displaySlide));
+                    setShowSlideInput(true);
+                  }}
+                  className="min-w-[4rem] rounded px-2 py-1 text-center text-sm text-slate-300 hover:bg-slate-700"
+                  title="Go to slide (G)"
+                  aria-live="polite"
+                >
+                  {displaySlide} / {totalSlides || '-'}
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={goNext}
                 disabled={totalSlides > 0 && displaySlide >= totalSlides}
                 className="rounded p-1.5 text-slate-300 hover:bg-slate-600 hover:text-white disabled:opacity-40"
-                title="Next (→, PageDown, Space)"
+                title="Next slide"
                 aria-label="Next slide"
               >
-                <CaretRight size={22} />
+                <CaretRight size={20} />
               </button>
+
+              <div className="mx-1 h-5 w-px bg-slate-600" />
+
+              {/* Zoom controls */}
+              <button
+                type="button"
+                onClick={zoomOut}
+                disabled={zoom <= ZOOM_STEPS[0]}
+                className="rounded p-1.5 text-slate-300 hover:bg-slate-600 hover:text-white disabled:opacity-40"
+                title="Zoom out (Ctrl+-)"
+                aria-label="Zoom out"
+              >
+                <MagnifyingGlassMinus size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoom(1)}
+                className="min-w-[3rem] rounded px-1.5 py-1 text-center text-xs text-slate-300 hover:bg-slate-700"
+                title="Reset zoom (Ctrl+0)"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={zoomIn}
+                disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+                className="rounded p-1.5 text-slate-300 hover:bg-slate-600 hover:text-white disabled:opacity-40"
+                title="Zoom in (Ctrl++)"
+                aria-label="Zoom in"
+              >
+                <MagnifyingGlassPlus size={18} />
+              </button>
+
+              <div className="mx-1 h-5 w-px bg-slate-600" />
             </>
           )}
           {isPptx && <span className="text-sm text-slate-400">PPTX</span>}
+
           <button
             type="button"
             onClick={toggleFullscreen}
             className="rounded p-1.5 text-slate-300 hover:bg-slate-600 hover:text-white"
-            title="Fullscreen"
+            title="Fullscreen (F)"
             aria-label="Fullscreen"
           >
             <ArrowsOut size={20} />
           </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="rounded p-1.5 text-slate-300 hover:bg-slate-600 hover:text-white"
+            title="Download"
+            aria-label="Download"
+          >
+            <Download size={18} />
+          </button>
         </div>
 
+        {/* Right: broadcast controls */}
         <div className="flex items-center gap-2">
           {isPdf && (
             <>
@@ -375,7 +554,7 @@ export function PresentationViewer({
                   ) : (
                     <>
                       <User size={14} />
-                      {broadcastState?.presenterName ?? 'Someone'} • Slide {displaySlide}
+                      {broadcastState?.presenterName ?? 'Someone'} - Slide {displaySlide}
                     </>
                   )}
                 </span>
@@ -419,7 +598,7 @@ export function PresentationViewer({
                   onClick={endBroadcast}
                   className="flex items-center gap-1.5 rounded bg-rose-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-rose-500"
                 >
-                  <BroadcastSlash size={16} />
+                  <XCircle size={16} />
                   End broadcast
                 </button>
               )}
@@ -429,10 +608,23 @@ export function PresentationViewer({
       </div>
 
       {/* Slide area */}
-      <div className="flex flex-1 flex-col items-center justify-center overflow-auto p-4">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {loadError && (
-          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {loadError}
+          <div className="flex flex-1 items-center justify-center">
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-6 py-4 text-sm text-rose-700">
+              <p className="font-medium">Failed to load document</p>
+              <p className="mt-1 text-rose-600">{loadError}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoadError(null);
+                  setLoadProgress(null);
+                }}
+                className="mt-3 rounded bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-500"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         )}
         {isPdf && fullUrl && !loadError && (
@@ -444,6 +636,9 @@ export function PresentationViewer({
             loadProgress={loadProgress}
             totalSlides={totalSlides}
             displaySlide={displaySlide}
+            zoom={zoom}
+            showThumbnails={showThumbnails}
+            onGoToSlide={goToSlide}
           />
         )}
         {isPptx && fullUrl && (
@@ -452,8 +647,8 @@ export function PresentationViewer({
             (fullUrl.includes('localhost') || fullUrl.includes('127.0.0.1')) ? (
               <>
                 <p className="max-w-md text-center text-slate-300">
-                  Презентация на локальном сервере. Microsoft Office Online не может открыть
-                  localhost — откройте файл в новой вкладке.
+                  The presentation is on a local server. Microsoft Office Online cannot access
+                  localhost — please open the file in a new tab.
                 </p>
                 <a
                   href={fullUrl}
@@ -461,7 +656,7 @@ export function PresentationViewer({
                   rel="noopener noreferrer"
                   className="rounded-lg bg-orange-500 px-6 py-3 font-medium text-white hover:bg-orange-600"
                 >
-                  Открыть в новой вкладке
+                  Open in new tab
                 </a>
               </>
             ) : (
@@ -473,14 +668,14 @@ export function PresentationViewer({
                   sandbox="allow-same-origin allow-scripts allow-popups"
                 />
                 <p className="text-sm text-slate-400">
-                  Если презентация не загружается,{' '}
+                  If the presentation doesn't load,{' '}
                   <a
                     href={fullUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-indigo-400 underline hover:text-indigo-300"
                   >
-                    откройте в новой вкладке
+                    open in a new tab
                   </a>
                 </p>
               </>
@@ -488,6 +683,18 @@ export function PresentationViewer({
           </div>
         )}
       </div>
+
+      {/* Bottom hint bar */}
+      {isPdf && totalSlides > 0 && (
+        <div className="flex shrink-0 items-center justify-center gap-4 border-t border-slate-700 bg-slate-800/50 px-4 py-1.5 text-[11px] text-slate-500">
+          <span>Arrow keys: navigate</span>
+          <span>F: fullscreen</span>
+          <span>T: thumbnails</span>
+          <span>G: go to slide</span>
+          <span>Ctrl+/-: zoom</span>
+          <span>Esc: close</span>
+        </div>
+      )}
     </div>
   );
 }

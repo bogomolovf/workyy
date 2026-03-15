@@ -60,11 +60,11 @@
 
 /* CRITICAL FIX for Bug 2: Force hide cursor on all ReactFlow elements to prevent hand icon */
 /* This ensures only collaborative cursors are visible, not the system cursor */
-/* Apply only when NOT in hand mode */
+/* Apply only when NOT in hand mode; exclude resize handles so users see the resize cursor */
 .rf-cursor-hidden .react-flow__node,
 .rf-cursor-hidden .react-flow__pane,
 .rf-cursor-hidden,
-.rf-cursor-hidden * {
+.rf-cursor-hidden *:not(.react-flow__resize-control):not(.react-flow__resize-control *) {
   cursor: none !important;
 }
 
@@ -73,8 +73,8 @@
   cursor: none !important;
 }
 
-/* Hide cursor on ReactFlow children in non-hand modes, but exclude Controls and MiniMap */
-.rf-cursor-hidden *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(.react-flow__minimap *) {
+/* Hide cursor on ReactFlow children in non-hand modes, but exclude Controls, MiniMap, and resize handles */
+.rf-cursor-hidden *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(.react-flow__minimap *):not(.react-flow__resize-control):not(.react-flow__resize-control *) {
   cursor: none !important;
 }
 

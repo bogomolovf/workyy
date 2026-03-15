@@ -1,5 +1,6 @@
 # Node / pnpm
 node_modules/
+.pnpm-store/
 pnpm-lock.yaml
 .pnp.*
 .turbo/
@@ -38,5 +39,9 @@ coverage/
 reports/
 *.tsbuildinfo
 
+# Uploads
+apps/realtime-server/uploads/
+
 # Large binaries / disk images
 *.dmg
+*.bak

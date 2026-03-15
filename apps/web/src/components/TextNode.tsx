@@ -1,9 +1,9 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { NodeResizer, type NodeProps } from 'reactflow';
-import { RichTextEditor, type RichTextEditorRef } from './RichTextEditor';
-import { TextToolbar } from './TextToolbar';
 import { useNodeEditing } from '../context/EditingPresenceContext';
 import { EditingIndicator } from './EditingIndicator';
+import { RichTextEditor, type RichTextEditorRef } from './RichTextEditor';
+import { TextToolbar } from './TextToolbar';
 
 type TextData = {
   nodeId: string;
@@ -14,7 +14,7 @@ type TextData = {
   color: string;
   backgroundColor?: string;
   textAlign: 'left' | 'center' | 'right';
-  richContentHtml?: string | null; // HTML контент от TipTap
+  richContentHtml?: string | null;
   onChangeText: (id: string, text: string) => void;
   onChangeFormat: (
     id: string,
@@ -29,18 +29,17 @@ type TextData = {
       ui?: { width: number; height: number };
     }>,
   ) => void;
-  onDeleteNode?: (id: string) => void; // Callback для удаления узла
+  onDeleteNode?: (id: string) => void;
 };
 
 const DEFAULT_TEXT = '';
 const DEFAULT_FONT_SIZE = 18;
-const DEFAULT_FONT_FAMILY = 'Noto Sans, sans-serif'; // Как в референсе Miro
-const DEFAULT_COLOR = '#CF4C2C'; // orange-red (первый цвет в палитре, как у стикеров)
+const DEFAULT_FONT_FAMILY = 'Noto Sans, sans-serif';
+const DEFAULT_COLOR = '#CF4C2C';
 const DEFAULT_BACKGROUND_COLOR = 'transparent';
 const DEFAULT_TEXT_ALIGN: 'left' | 'center' | 'right' = 'left';
 
 export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextData>) {
-  // Получаем размеры из пропсов узла (React Flow передает их через nodeProps)
   const width = (nodeProps as any)?.width;
   const height = (nodeProps as any)?.height;
   const nodeWidth = typeof width === 'number' ? width : Number(width ?? 240);
@@ -55,14 +54,14 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
   const richContentHtml = data.richContentHtml ?? null;
 
   const editorRef = useRef<RichTextEditorRef>(null);
-  const hasAutoFocusedRef = useRef(false); // Отслеживаем, был ли уже установлен автофокус для этого узла
-  const currentTextRef = useRef<string>(''); // Отслеживаем текущий текст для проверки пустоты
-  const contentRef = useRef<HTMLDivElement>(null); // Ref для контейнера содержимого редактора
-  const resizeObserverRef = useRef<ResizeObserver | null>(null); // Ref для ResizeObserver
-  const isUpdatingSizeRef = useRef(false); // Флаг для предотвращения одновременных обновлений размеров
-  const pendingSizeUpdateRef = useRef<NodeJS.Timeout | null>(null); // Таймер для debounce обновлений размеров
+  const hasAutoFocusedRef = useRef(false);
+  const currentTextRef = useRef<string>('');
+  const contentRef = useRef<HTMLDivElement>(null);
+  const isUpdatingSizeRef = useRef(false);
+  const pendingSizeUpdateRef = useRef<NodeJS.Timeout | null>(null);
+  const isManuallyResizingRef = useRef(false);
+  const manualResizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Use editing presence to show who is editing this text node
   const {
     otherEditors,
     isBeingEdited,
@@ -71,8 +70,6 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
     onBlur: handleEditingBlur,
   } = useNodeEditing(id);
 
-  // Инициализируем контент: если есть richContent, используем его, иначе plain text
-  // Используем <p><br></p> для пустого контента, чтобы избежать ошибки "Empty text nodes are not allowed"
   const initialHtml = richContentHtml
     ? richContentHtml.trim() === '<p></p>'
       ? '<p><br></p>'
@@ -81,64 +78,43 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
       ? `<p>${escapeHtml(text)}</p>`
       : '<p><br></p>';
 
-  // Инициализируем currentTextRef при монтировании и при изменении text извне
   useEffect(() => {
     currentTextRef.current = text || '';
   }, [text]);
 
-  // Проверяем, пустой ли узел - используем реальный текст из редактора
-  const isEmpty = currentTextRef.current.trim() === '';
-
-  // Функция для вычисления размеров узла на основе контента
-  // При печати текст идет в одну строку, узел расширяется по ширине (по диагонали)
   const updateNodeSize = useCallback(() => {
-    if (!contentRef.current || isUpdatingSizeRef.current) return;
+    if (!contentRef.current || isUpdatingSizeRef.current || isManuallyResizingRef.current) return;
 
-    // Получаем размер содержимого редактора
     const editorElement = contentRef.current.querySelector('.ProseMirror') as HTMLElement;
     if (!editorElement) return;
 
-    // Устанавливаем флаг обновления для предотвращения параллельных вызовов
     isUpdatingSizeRef.current = true;
 
     const padding = 32;
     const minWidth = 120;
-    const minHeight = 40;
+    const minHeight = 60;
 
-    // Используем requestAnimationFrame для измерения после полного рендера контента
     requestAnimationFrame(() => {
       if (!editorElement) {
         isUpdatingSizeRef.current = false;
         return;
       }
 
-      // Для измерения ширины используем временное изменение white-space на nowrap
-      // Это даст нам реальную ширину контента в одну строку (без переносов)
       const originalWhiteSpace = editorElement.style.whiteSpace;
       editorElement.style.whiteSpace = 'nowrap';
       const contentWidth = editorElement.scrollWidth;
       editorElement.style.whiteSpace = originalWhiteSpace || '';
 
-      // Высота: измеряем реальную высоту контента с учетом переносов через Enter (многострочный текст)
       const contentHeight = editorElement.scrollHeight;
 
-      // Вычисляем новые размеры с учетом padding
-      // Ширина: растет по самой длинной строке текста (grow + shrink по диагонали)
       const requiredContentWidth = contentWidth + padding;
       const newWidth = Math.max(minWidth, Math.ceil(requiredContentWidth));
-
-      // Высота: всегда должна соответствовать высоте контента с учетом строк через Enter
       const newHeight = Math.max(minHeight, Math.ceil(contentHeight + padding));
 
-      // Обновляем размер узла только если он изменился (с небольшой погрешностью)
-      const currentWidth = nodeWidth;
-      const currentHeight = nodeHeight;
-      const widthDiff = Math.abs(newWidth - currentWidth);
-      const heightDiff = Math.abs(newHeight - currentHeight);
+      const widthDiff = Math.abs(newWidth - nodeWidth);
+      const heightDiff = Math.abs(newHeight - nodeHeight);
 
       if (widthDiff > 1 || heightDiff > 1) {
-        // Обновляем размер узла через onChangeFormat
-        // Это вызовет ререндер React Flow с новыми размерами
         data.onChangeFormat?.(id, {
           ui: {
             width: newWidth,
@@ -147,7 +123,6 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
         });
       }
 
-      // Сбрасываем флаг обновления после небольшой задержки, чтобы дать время React Flow обновить размеры
       requestAnimationFrame(() => {
         isUpdatingSizeRef.current = false;
       });
@@ -156,47 +131,25 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
 
   const handleChange = useCallback(
     (content: { html: string; text: string }) => {
-      // Сохраняем текущий текст для проверки пустоты
       currentTextRef.current = content.text || '';
 
-      // Обновляем и plain text, и rich content
       data.onChangeText?.(id, content.text);
       data.onChangeFormat?.(id, {
         richContent: content.html,
-        text: content.text, // подстраховка
+        text: content.text,
       });
 
-      // Update editing presence timestamp
       handleEditingChange();
 
-      // Временно отключаем ResizeObserver, чтобы избежать конфликта обновлений
-      if (resizeObserverRef.current) {
-        resizeObserverRef.current.disconnect();
-      }
-
-      // Очищаем предыдущий отложенный вызов updateNodeSize
       if (pendingSizeUpdateRef.current) {
         clearTimeout(pendingSizeUpdateRef.current);
       }
 
-      // Обновляем размер узла с debounce для плавности
-      // Используем двойной requestAnimationFrame для гарантированного ожидания рендера контента
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          // Используем небольшой debounce для батчинга частых обновлений
           pendingSizeUpdateRef.current = setTimeout(() => {
             updateNodeSize();
-
-            // Восстанавливаем ResizeObserver после обновления
-            requestAnimationFrame(() => {
-              const editorElement = contentRef.current?.querySelector(
-                '.ProseMirror',
-              ) as HTMLElement;
-              if (editorElement && resizeObserverRef.current) {
-                resizeObserverRef.current.observe(editorElement);
-              }
-            });
-          }, 0); // Убрали задержку, так как уже есть двойной requestAnimationFrame
+          }, 0);
         });
       });
     },
@@ -206,8 +159,6 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
   const handleFontSizeChange = useCallback(
     (newFontSize: number) => {
       data.onChangeFormat?.(id, { fontSize: newFontSize });
-      // Немедленно обновляем размер после изменения размера шрифта
-      // Используем requestAnimationFrame для обновления после применения нового размера
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           updateNodeSize();
@@ -253,18 +204,14 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
     editorRef.current?.toggleItalic();
   }, []);
 
-  // Сохраняем выделение перед взаимодействием с тулбаром
   const handleInteractionStart = useCallback(() => {
     editorRef.current?.saveSelection();
   }, []);
 
-  // Восстанавливаем выделение после взаимодействия с тулбаром
   const handleInteractionEnd = useCallback(() => {
-    // Используем комбинацию requestIdleCallback и requestAnimationFrame для более надежного восстановления
     const restoreFocus = () => {
       if (editorRef.current) {
         editorRef.current.restoreSelection();
-        // Дополнительный requestAnimationFrame для гарантированного восстановления фокуса
         requestAnimationFrame(() => {
           if (editorRef.current) {
             editorRef.current.focus();
@@ -273,28 +220,31 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
       }
     };
 
-    // Используем requestIdleCallback если доступен, иначе setTimeout с большей задержкой
     if (typeof requestIdleCallback !== 'undefined') {
       requestIdleCallback(restoreFocus, { timeout: 200 });
     } else {
-      // Fallback для браузеров без requestIdleCallback
       requestAnimationFrame(() => {
         setTimeout(restoreFocus, 50);
       });
     }
   }, []);
 
-  // Автофокус редактора когда узел только что создан (пустой) и selected (как в Miro)
-  useEffect(() => {
-    // Проверяем пустоту через реальный текст
-    const isActuallyEmpty = currentTextRef.current.trim() === '';
+  const handleResizeStart = useCallback(() => {
+    isManuallyResizingRef.current = true;
+    if (manualResizeTimeoutRef.current) {
+      clearTimeout(manualResizeTimeoutRef.current);
+    }
+  }, []);
 
-    // Фокусируем только если:
-    // 1. Узел selected
-    // 2. Узел пустой (только что создан)
-    // 3. Еще не был установлен автофокус для этого узла
+  const handleResizeEnd = useCallback(() => {
+    manualResizeTimeoutRef.current = setTimeout(() => {
+      isManuallyResizingRef.current = false;
+    }, 500);
+  }, []);
+
+  useEffect(() => {
+    const isActuallyEmpty = currentTextRef.current.trim() === '';
     if (selected && isActuallyEmpty && !hasAutoFocusedRef.current && editorRef.current) {
-      // Используем requestAnimationFrame чтобы дождаться монтирования редактора
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (editorRef.current) {
@@ -304,93 +254,46 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
         });
       });
     }
-
-    // Сбрасываем флаг автофокуса если узел больше не selected или стал непустым
     if (!selected || !isActuallyEmpty) {
       hasAutoFocusedRef.current = false;
     }
   }, [selected]);
 
-  // Автоматическое изменение размера при изменении содержимого или размера шрифта
   useEffect(() => {
-    if (!contentRef.current) return;
+    if (isManuallyResizingRef.current) return;
 
-    // Создаем ResizeObserver для отслеживания изменений размера содержимого
-    // ResizeObserver будет отключаться во время обновления через handleChange
-    const observer = new ResizeObserver(() => {
-      // Игнорируем обновления, если идет обновление через handleChange
-      if (isUpdatingSizeRef.current) return;
-
-      // Очищаем предыдущий отложенный вызов
-      if (pendingSizeUpdateRef.current) {
-        clearTimeout(pendingSizeUpdateRef.current);
-      }
-
-      // Используем debounce для ResizeObserver, чтобы избежать конфликтов
-      pendingSizeUpdateRef.current = setTimeout(() => {
-        if (!isUpdatingSizeRef.current) {
-          requestAnimationFrame(() => {
-            updateNodeSize();
-          });
-        }
-      }, 100);
-    });
-
-    const editorElement = contentRef.current.querySelector('.ProseMirror') as HTMLElement;
-    if (editorElement) {
-      observer.observe(editorElement);
-      resizeObserverRef.current = observer;
-    }
-
-    // Также обновляем размер при изменении размера шрифта или других свойств
-    // Используем requestAnimationFrame для обновления после рендера
     requestAnimationFrame(() => {
       updateNodeSize();
     });
+  }, [fontSize, fontFamily, textAlign, updateNodeSize]);
 
+  useEffect(() => {
     return () => {
       if (pendingSizeUpdateRef.current) {
         clearTimeout(pendingSizeUpdateRef.current);
         pendingSizeUpdateRef.current = null;
       }
-      if (resizeObserverRef.current) {
-        resizeObserverRef.current.disconnect();
-        resizeObserverRef.current = null;
+      if (manualResizeTimeoutRef.current) {
+        clearTimeout(manualResizeTimeoutRef.current);
+        manualResizeTimeoutRef.current = null;
       }
-      // Сбрасываем флаг обновления при размонтировании
       isUpdatingSizeRef.current = false;
+      isManuallyResizingRef.current = false;
     };
-  }, [fontSize, fontFamily, textAlign, updateNodeSize]);
+  }, []);
 
-  // Пересчитываем размеры при изменении ширины через resize
-  // При resize пользователь может изменить ширину, размеры пересчитываются
-  useEffect(() => {
-    if (!contentRef.current) return;
-
-    // Пересчитываем размеры при изменении ширины
-    requestAnimationFrame(() => {
-      updateNodeSize();
-    });
-  }, [nodeWidth, updateNodeSize]);
-
-  // Автоматическое удаление пустого узла при потере выделения (как в Miro)
   const wasSelectedRef = useRef<boolean | null>(null);
   useEffect(() => {
-    // Инициализируем ref при первом рендере
     if (wasSelectedRef.current === null) {
       wasSelectedRef.current = selected;
       return;
     }
 
-    // Отслеживаем переход selected: true -> false
     const wasSelected = wasSelectedRef.current;
     const isNowSelected = selected;
 
-    // Если узел был selected, а теперь не selected - проверяем пустоту и удаляем
     if (wasSelected && !isNowSelected && data.onDeleteNode) {
-      // Проверяем реальное содержимое редактора
       const checkAndDelete = () => {
-        // Сначала пробуем через TipTap API (самый надежный способ)
         const editor = editorRef.current?.getEditor();
         let isEmpty = false;
 
@@ -398,27 +301,19 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
           const editorText = editor.getText().trim();
           isEmpty = editorText === '';
         } else {
-          // Если редактор еще не готов, проверяем через ref (обновляется в handleChange)
           isEmpty = currentTextRef.current.trim() === '';
         }
 
-        // Если узел пустой - удаляем его
         if (isEmpty) {
           data.onDeleteNode?.(id);
         }
       };
 
-      // Используем небольшую задержку чтобы избежать конфликтов с другими обработчиками
-      // и дать время редактору обновить состояние после потери фокуса
-      // Увеличиваем задержку до 300ms для более надежной проверки
       const timeoutId = setTimeout(checkAndDelete, 300);
-
-      // Обновляем ref перед возвратом
       wasSelectedRef.current = selected;
       return () => clearTimeout(timeoutId);
     }
 
-    // Обновляем ref для следующего рендера
     wasSelectedRef.current = selected;
   }, [selected, id, data]);
 
@@ -428,16 +323,15 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
       style={{
         width: '100%',
         height: '100%',
-        minWidth: 120,
-        minHeight: 40,
+        minWidth: 140,
+        minHeight: 60,
         boxSizing: 'border-box',
-        // Add visual indicator border when others are editing
+        padding: 4,
         boxShadow: isBeingEdited ? `0 0 0 2px ${otherEditors[0]?.color || '#6366f1'}` : undefined,
       }}
       onFocus={handleEditingFocus}
       onBlur={handleEditingBlur}
     >
-      {/* Show editing indicator when others are editing this text */}
       {isBeingEdited && <EditingIndicator editors={otherEditors} position="top-right" />}
       {selected && (
         <TextToolbar
@@ -458,19 +352,18 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
       )}
       <NodeResizer
         isVisible={selected}
-        minWidth={120}
-        minHeight={40}
+        minWidth={140}
+        minHeight={60}
         lineClassName="!border-slate-300"
         handleStyle={{
-          width: 10,
-          height: 10,
+          width: 12,
+          height: 12,
           borderRadius: 9999,
           border: '2px solid #cbd5e1',
           background: '#ffffff',
         }}
-        // Miro-like поведение: разрешаем resize по всем направлениям (width и height)
-        // Высота будет автоматически пересчитана после завершения resize
-        // Если нужно ограничить только шириной - используем keepAspectRatio={false} и обрабатываем отдельно
+        onResizeStart={handleResizeStart}
+        onResizeEnd={handleResizeEnd}
       />
       <div
         ref={contentRef}
@@ -502,7 +395,6 @@ export function TextNode({ id, data, selected, ...nodeProps }: NodeProps<TextDat
   );
 }
 
-// Простая функция для экранирования HTML
 function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;

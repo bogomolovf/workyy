@@ -161,11 +161,7 @@ export async function executeSqlWithPreview(
   query: string,
   options?: ExecuteSqlOptions,
 ): Promise<PreviewSqlResult> {
-  const {
-    previewLimit = DEFAULT_PREVIEW_LIMIT,
-    fullLoad = false,
-    fullLoadMaxRows,
-  } = options ?? {};
+  const { previewLimit = DEFAULT_PREVIEW_LIMIT, fullLoad = false, fullLoadMaxRows } = options ?? {};
   const { connection } = await getDuckDbContext();
 
   // Normalize query - remove trailing semicolons and whitespace
@@ -363,10 +359,10 @@ export async function deleteTable(
   connectionOverride?: duckdb.AsyncDuckDBConnection,
 ): Promise<void> {
   const connection = connectionOverride ?? (await getDuckDbContext()).connection;
-  
+
   // Delete table from DuckDB
   await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(tableName)};`);
-  
+
   // Delete metadata from localStorage
   if (typeof window !== 'undefined') {
     try {
@@ -415,7 +411,7 @@ async function ensureDemoDatasetForBoard(
  * - Convert to lowercase
  * - Remove leading/trailing underscores
  */
-function normalizeColumnName(name: string): string {
+export function normalizeColumnName(name: string): string {
   return name
     .toLowerCase()
     .replace(/\s+/g, '_') // Replace spaces with underscores
@@ -476,9 +472,7 @@ export async function registerDatasetFromCsvNode(
     .map((col, idx) => `${quotedIdentifier(col)} ${columnTypes[idx]}`)
     .join(', ');
 
-  await connection.query(
-    `CREATE TABLE ${quotedIdentifier(tableName)} (${columnsDef});`,
-  );
+  await connection.query(`CREATE TABLE ${quotedIdentifier(tableName)} (${columnsDef});`);
 
   // Insert data in batches to avoid query size limits
   const BATCH_SIZE = 500;
@@ -501,9 +495,7 @@ export async function registerDatasetFromCsvNode(
       .join(', ');
 
     if (batch.length > 0) {
-      await connection.query(
-        `INSERT INTO ${quotedIdentifier(tableName)} VALUES ${rowsSql};`,
-      );
+      await connection.query(`INSERT INTO ${quotedIdentifier(tableName)} VALUES ${rowsSql};`);
     }
   }
 
@@ -582,9 +574,7 @@ export async function restoreDatasetsForBoard(boardId: string): Promise<void> {
     }
     // Notify plot hooks so they can refetch after restore (e.g. post-reload when observer ran later)
     if (typeof window !== 'undefined' && datasets.length > 0) {
-      window.dispatchEvent(
-        new CustomEvent('workyy:datasetsRestored', { detail: { boardId } }),
-      );
+      window.dispatchEvent(new CustomEvent('workyy:datasetsRestored', { detail: { boardId } }));
     }
   } catch {
     // if restore fails, we just start with an empty DuckDB context
@@ -638,9 +628,7 @@ export async function restoreDatasetsFromBoardArray(
         );
       }
     }
-    window.dispatchEvent(
-      new CustomEvent('workyy:datasetsRestored', { detail: { boardId } }),
-    );
+    window.dispatchEvent(new CustomEvent('workyy:datasetsRestored', { detail: { boardId } }));
   } catch (err) {
     console.error('restoreDatasetsFromBoardArray failed', err);
   }
@@ -658,11 +646,11 @@ export async function queryTablePaginated(
   const { connection } = await getDuckDbContext();
   const query = `SELECT * FROM ${quotedIdentifier(tableName)} LIMIT ${limit} OFFSET ${offset};`;
   const result = await connection.query(query);
-  
+
   // Convert Arrow table to SqlResult format
   const columns = result.schema.fields.map((f) => f.name);
   const rows: Array<Array<string | number | null>> = [];
-  
+
   for (let i = 0; i < result.numRows; i++) {
     const row: Array<string | number | null> = [];
     for (let j = 0; j < columns.length; j++) {
@@ -678,7 +666,7 @@ export async function queryTablePaginated(
     }
     rows.push(row);
   }
-  
+
   return { columns, rows };
 }
 

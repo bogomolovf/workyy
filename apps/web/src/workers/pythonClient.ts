@@ -90,6 +90,63 @@ export function runPythonInPool(
   });
 }
 
+/**
+ * Acquires a dedicated worker for sequential execution (e.g. notebook cells).
+ * The worker stays locked until `release()` is called, ensuring all calls
+ * share the same Python runtime state (variables, imports).
+ */
+export function acquireDedicatedWorker(): {
+  runPython: (
+    payload: Parameters<PythonWorkerApi['runPython']>[0],
+    options?: { timeoutMs?: number },
+  ) => Promise<Awaited<ReturnType<PythonWorkerApi['runPython']>>>;
+  release: () => void;
+} {
+  let entry: WorkerEntry;
+  const free = workerEntries.find((w) => !w.busy);
+  if (free) {
+    entry = free;
+  } else if (workerEntries.length < MAX_WORKERS) {
+    entry = createWorkerEntry();
+    workerEntries.push(entry);
+  } else {
+    entry = createWorkerEntry();
+    workerEntries.push(entry);
+  }
+  entry.busy = true;
+
+  let released = false;
+  return {
+    runPython(payload, options) {
+      if (released) return Promise.reject(new Error('Worker already released'));
+      const timeoutMs = options?.timeoutMs ?? 120_000;
+      return new Promise((resolve, reject) => {
+        const timeoutId =
+          typeof window !== 'undefined'
+            ? window.setTimeout(() => reject(new Error('Python execution timed out')), timeoutMs)
+            : null;
+
+        entry.client
+          .runPython(payload)
+          .then((result) => {
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+            resolve(result);
+          })
+          .catch((error) => {
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+            reject(error);
+          });
+      });
+    },
+    release() {
+      if (released) return;
+      released = true;
+      entry.busy = false;
+      drainQueue();
+    },
+  };
+}
+
 export function disposePythonPool() {
   while (workerEntries.length > 0) {
     const entry = workerEntries.pop();

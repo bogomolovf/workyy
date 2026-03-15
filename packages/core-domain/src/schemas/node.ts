@@ -5,7 +5,16 @@ export const PositionSchema = z.object({
   y: z.number(),
 });
 
-export const NodeTypeSchema = z.enum(['sql', 'python', 'table', 'plot']);
+export const NodeTypeSchema = z.enum([
+  'sql',
+  'python',
+  'table',
+  'plot',
+  'pythonCell',
+  'markdownCell',
+  'sqlCell',
+  'notebookFrame',
+]);
 
 export const NodePayloadSchema = z.union([
   z.object({
@@ -21,6 +30,16 @@ export const NodePayloadSchema = z.union([
   }),
   z.object({
     plotConfig: z.record(z.unknown()),
+  }),
+  z.object({
+    cellSource: z.string(),
+    cellLanguage: z.enum(['python', 'sql', 'markdown']),
+    frameId: z.string().uuid().optional(),
+    cellIndex: z.number().int().nonneg().optional(),
+  }),
+  z.object({
+    frameName: z.string(),
+    cellIds: z.array(z.string().uuid()),
   }),
 ]);
 

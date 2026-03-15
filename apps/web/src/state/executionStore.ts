@@ -40,8 +40,17 @@ type HiddenOutputs = {
   warnings?: boolean;
 };
 
+export type ExecutionNodeType =
+  | 'sql'
+  | 'python'
+  | 'table'
+  | 'plot'
+  | 'csv'
+  | 'pythonCell'
+  | 'sqlCell';
+
 export type ExecutionEntry = {
-  nodeType: 'sql' | 'python' | 'table' | 'plot' | 'csv';
+  nodeType: ExecutionNodeType;
   status: NodeStatus;
   code: string;
   error?: string | null;
@@ -49,6 +58,8 @@ export type ExecutionEntry = {
   finishedAt?: number;
   output?: NodeExecutionOutput;
   hiddenOutputs?: HiddenOutputs;
+  /** Frame this cell belongs to (for chain execution) */
+  frameId?: string;
 };
 
 const DEFAULT_PYTHON_TEMPLATE = [
@@ -121,7 +132,7 @@ function normalizeMultiline(value?: string) {
 
 type ExecutionNodeLike = {
   id: string;
-  type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
+  type: ExecutionNodeType;
   payload?: Record<string, unknown>;
 };
 
@@ -132,7 +143,7 @@ export type ExecutionStoreState = {
   mergeExecutionFromNodes: (nodes: ExecutionNodeLike[]) => void;
   registerNode: (node: {
     id: string;
-    type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
+    type: ExecutionNodeType;
     payload?: Record<string, unknown>;
   }) => void;
   setCode: (nodeId: string, code: string) => void;
@@ -146,10 +157,7 @@ export type ExecutionStoreState = {
   removeNode: (nodeId: string) => void;
 };
 
-function getInitialCode(node: {
-  type: 'sql' | 'python' | 'table' | 'plot' | 'csv';
-  payload?: Record<string, unknown>;
-}) {
+function getInitialCode(node: { type: ExecutionNodeType; payload?: Record<string, unknown> }) {
   if (node.type === 'sql') {
     const sqlPayload = node.payload?.sql as string | undefined;
     return normalizeMultiline(sqlPayload) ?? 'SELECT 1;';
@@ -159,8 +167,15 @@ function getInitialCode(node: {
     const normalized = normalizeMultiline(pythonPayload);
     return normalized ?? DEFAULT_PYTHON_TEMPLATE;
   }
+  if (node.type === 'pythonCell') {
+    const cellSource = node.payload?.cellSource as string | undefined;
+    return normalizeMultiline(cellSource) ?? '';
+  }
+  if (node.type === 'sqlCell') {
+    const cellSource = node.payload?.cellSource as string | undefined;
+    return normalizeMultiline(cellSource) ?? 'SELECT 1;';
+  }
   if (node.type === 'plot' || node.type === 'csv') {
-    // Plot and CSV nodes don't have code, but we return empty string for consistency
     return '';
   }
   return '';
@@ -410,7 +425,7 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
     set((state) => {
       const entry = state.entries[nodeId];
       if (!entry) return state;
-      if (entry.nodeType === 'python') {
+      if (entry.nodeType === 'python' || entry.nodeType === 'pythonCell') {
         const hiddenOutputs = createHiddenOutputs();
         persistHiddenOutputs(nodeId, hiddenOutputs);
         return {

@@ -1,10 +1,9 @@
 'use client';
 
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react';
-import { NodeResizer, type NodeProps, useStore, NodeToolbar } from 'reactflow';
+import { NodeResizer, type NodeProps, useStore } from 'reactflow';
 import { useNodeEditing } from '../../context/EditingPresenceContext';
 import { EditingIndicator } from '../EditingIndicator';
-import { RichTextEditor, type RichTextEditorRef } from '../RichTextEditor';
 import {
   type ShapeType,
   SHAPE_DEFAULTS,
@@ -12,14 +11,11 @@ import {
   generateShapePath,
   getShapePoints,
   getStarPoints,
-  getCylinderPath,
   getShapeClipPath,
   isLineType as isLineTypeFn,
   getShapeDefinition,
 } from '../shape/shapeEngine';
-import { ShapeToolbar } from '../shape/ShapeToolbar';
 import { StickyToolbar } from '../StickyToolbar';
-import { TextToolbar } from '../TextToolbar';
 
 export type { ShapeType } from '../shape/shapeEngine';
 
@@ -58,6 +54,7 @@ export type ShapeNodeData = {
   onChangeFontFamily?: (id: string, fontFamily: string) => void;
   onChangeBold?: (id: string, isBold: boolean) => void;
   onChangeItalic?: (id: string, isItalic: boolean) => void;
+  // Legacy shape-specific callbacks (kept for backward compat but not used by toolbar)
   onChangeFill?: (id: string, fill: string) => void;
   onChangeStroke?: (id: string, stroke: string) => void;
   onChangeStrokeWidth?: (id: string, strokeWidth: number) => void;
@@ -84,7 +81,6 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   const {
     shapeType = 'rectangle',
     shapeColor,
-    shapeLabel = 'Фигура',
     startX,
     startY,
     endX,
@@ -94,18 +90,15 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
     fontFamily: dataFontFamily,
     isBold = false,
     isItalic = false,
-    richContentHtml,
-    textAlign = 'center',
-    color: textColor,
   } = data ?? {};
 
+  // Notes are shapes rendered via the note type — they have onChangeText but no onChangeFormat
   const isNote = Boolean((text !== undefined || data?.onChangeText) && !data?.onChangeFormat);
 
   const fontSize = dataFontSize ?? (isNote ? 48 : 16);
-  const fontFamily = dataFontFamily ?? (isNote ? 'Inter, sans-serif' : 'Noto Sans, sans-serif');
-  const color = textColor ?? '#0f172a';
+  const fontFamily = dataFontFamily ?? (isNote ? 'Inter, sans-serif' : 'Inter, sans-serif');
 
-  // Ensure shapeType is valid — fallback to rectangle if unknown (e.g. corrupted/old data)
+  // Ensure shapeType is valid — fallback to rectangle if unknown
   const resolvedShapeType: ShapeType = getShapeDefinition(shapeType as ShapeType)
     ? (shapeType as ShapeType)
     : 'rectangle';
@@ -136,22 +129,6 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectionRestoreRef = useRef<{ start: number; end: number } | null>(null);
-  const editorRef = useRef<RichTextEditorRef>(null);
-  const hasAutoFocusedRef = useRef(false);
-  const currentTextRef = useRef<string>(text || '');
-
-  const initialHtml = useMemo(() => {
-    if (richContentHtml) {
-      const trimmed = richContentHtml.trim();
-      if (trimmed === '<p></p>' || trimmed === '<p><br></p>') return '<p><br></p>';
-      return richContentHtml;
-    }
-    if (text) {
-      const escaped = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return escaped ? `<p>${escaped}</p>` : '<p><br></p>';
-    }
-    return '<p><br></p>';
-  }, [richContentHtml, text]);
 
   const [shiftPressed, setShiftPressed] = useState(false);
 
@@ -171,7 +148,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   }, []);
 
   useLayoutEffect(() => {
-    if (!isNote || !selectionRestoreRef.current || !textareaRef.current) return;
+    if (!selectionRestoreRef.current || !textareaRef.current) return;
     const { start, end } = selectionRestoreRef.current;
     selectionRestoreRef.current = null;
     const textarea = textareaRef.current;
@@ -179,7 +156,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
     const safeStart = Math.min(Math.max(0, start), len);
     const safeEnd = Math.min(Math.max(safeStart, end), len);
     textarea.setSelectionRange(safeStart, safeEnd);
-  }, [isNote, text]);
+  }, [text]);
 
   const handleTextChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -247,32 +224,6 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
     [isLineShape, endX, endY, finalWidth, finalHeight, innerWidth, innerHeight],
   );
 
-  useEffect(() => {
-    const isActuallyEmpty = currentTextRef.current.trim() === '';
-    const hasTextSupport = !isNote && data?.onChangeFormat;
-    if (
-      selected &&
-      hasTextSupport &&
-      isActuallyEmpty &&
-      !hasAutoFocusedRef.current &&
-      editorRef.current
-    ) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (editorRef.current) {
-            editorRef.current.focus();
-            hasAutoFocusedRef.current = true;
-          }
-        });
-      });
-    }
-    if (!selected || !isActuallyEmpty || !hasTextSupport) hasAutoFocusedRef.current = false;
-  }, [selected, isNote, data]);
-
-  useEffect(() => {
-    currentTextRef.current = text || '';
-  }, [text]);
-
   // ── Render shape geometry via the engine ───────────────────────────────────
 
   const shapeGeometry = useMemo(() => {
@@ -280,7 +231,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
 
     const def = getShapeDefinition(resolvedShapeType);
 
-    // Shapes with a custom render (cylinder, etc.) use the render fn
+    // Shapes with a custom render (cylinder, cloud, heart, speech-bubble, document-shape, etc.)
     if (def?.render) {
       return def.render({
         width: innerWidth,
@@ -301,7 +252,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
           cx={innerWidth / 2}
           cy={innerHeight / 2}
           rx={innerWidth / 2}
-          ry={innerHeight / 2}
+          ry={resolvedShapeType === 'ellipse' ? innerHeight / 2 : innerWidth / 2}
           fill={finalFill}
           stroke={finalStroke}
           strokeWidth={finalStrokeWidth}
@@ -421,13 +372,15 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
     lineEnd,
   ]);
 
+  // The active fill color for the toolbar palette
+  const activeColor = shapeColor ?? finalFill;
+
   return (
     <div
       className="workyy-shape-node relative"
       style={{
-        width: finalWidth,
-        height: finalHeight,
-        ...(!isNote && { cursor: 'grab' }),
+        width: '100%',
+        height: '100%',
       }}
     >
       <NodeResizer
@@ -436,60 +389,27 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
         minHeight={48}
         keepAspectRatio={shiftPressed}
         lineClassName="!border-slate-300"
-        handleStyle={
-          isNote
-            ? {
-                width: 12,
-                height: 12,
-                borderRadius: 6,
-                border: '2px solid #6366f1',
-                background: '#EEF2FF',
-              }
-            : {
-                width: 10,
-                height: 10,
-                borderRadius: 9999,
-                border: '2px solid #64748b',
-                background: '#ffffff',
-              }
-        }
+        handleStyle={{
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          border: '2px solid #6366f1',
+          background: '#EEF2FF',
+        }}
       />
-      {isNote && selected && (
+      {/* Unified StickyToolbar for all shapes (same as notes) */}
+      {selected && !isLineShape && (
         <StickyToolbar
           fontSize={fontSize}
           fontFamily={fontFamily}
           isBold={isBold}
           isItalic={isItalic}
-          activeColor={shapeColor ?? finalFill}
+          activeColor={activeColor}
           onFontSizeChange={handleFontSizeChange}
           onFontFamilyChange={handleFontFamilyChange}
           onBoldToggle={handleBoldToggle}
           onItalicToggle={handleItalicToggle}
           onColorChange={handleColorChange}
-        />
-      )}
-      {!isNote && selected && (
-        <ShapeToolbar
-          shapeType={resolvedShapeType}
-          fill={finalFill}
-          stroke={finalStroke}
-          strokeWidth={finalStrokeWidth}
-          opacity={finalOpacity}
-          cornerRadius={finalCornerRadius}
-          arrowHead={finalArrowHead}
-          onChangeFill={(v) => data?.onChangeFill?.(id, v)}
-          onChangeStroke={(v) => data?.onChangeStroke?.(id, v)}
-          onChangeStrokeWidth={(v) => data?.onChangeStrokeWidth?.(id, v)}
-          onChangeOpacity={(v) => data?.onChangeOpacity?.(id, v)}
-          onChangeCornerRadius={(v) => data?.onChangeCornerRadius?.(id, v)}
-          onChangeArrowHead={(v) => data?.onChangeArrowHead?.(id, v)}
-        />
-      )}
-      {!isNote && (
-        <div
-          className="absolute inset-0 nodrag"
-          style={{ zIndex: 1, pointerEvents: 'none' }}
-          aria-hidden
         />
       )}
       <svg
@@ -507,65 +427,8 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
           {shapeGeometry}
         </g>
       </svg>
-      {!isNote && data?.onChangeFormat && selected && (
-        <TextToolbar
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          activeColor={color}
-          activeBackgroundColor="transparent"
-          textAlign={textAlign}
-          editorRef={editorRef}
-          onFontSizeChange={(v) => data?.onChangeFormat?.(id, { fontSize: v })}
-          onFontFamilyChange={(v) => data?.onChangeFormat?.(id, { fontFamily: v })}
-          onColorChange={(v) => data?.onChangeFormat?.(id, { color: v })}
-          onTextAlignChange={(v) => data?.onChangeFormat?.(id, { textAlign: v })}
-          onInteractionStart={() => editorRef.current?.saveSelection()}
-          onInteractionEnd={() => {
-            editorRef.current?.restoreSelection();
-            requestAnimationFrame(() => editorRef.current?.focus());
-          }}
-        />
-      )}
-      {!isNote && data?.onChangeFormat && (
-        <div
-          className="absolute inset-0 flex items-center justify-center p-4 nodrag"
-          style={{
-            pointerEvents: selected ? 'auto' : 'none',
-            zIndex: 10,
-            background: 'transparent',
-            ...(getShapeClipPath(resolvedShapeType) && {
-              clipPath: getShapeClipPath(resolvedShapeType),
-              WebkitClipPath: getShapeClipPath(resolvedShapeType),
-            }),
-          }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.ProseMirror'))
-              e.stopPropagation();
-          }}
-          onDoubleClick={(e) => {
-            editorRef.current?.focus();
-            e.stopPropagation();
-          }}
-        >
-          <RichTextEditor
-            ref={editorRef}
-            value={initialHtml}
-            plainTextFallback={text}
-            color={color}
-            fontSize={fontSize}
-            fontFamily={fontFamily}
-            textAlign={textAlign}
-            onChange={(content) => {
-              currentTextRef.current = content.text || '';
-              data?.onChangeText?.(id, content.text);
-              data?.onChangeFormat?.(id, { text: content.text, richContent: content.html });
-            }}
-            showToolbar={false}
-            className="w-full"
-          />
-        </div>
-      )}
-      {isNote && (
+      {/* Textarea for text input — same approach as notes */}
+      {!isLineShape && (
         <>
           {isBeingEdited && <EditingIndicator editors={otherEditors} position="top-right" />}
           <textarea
@@ -574,7 +437,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
             onChange={handleTextChange}
             onFocus={handleEditingFocus}
             onBlur={handleEditingBlur}
-            placeholder="Sticky note..."
+            placeholder=""
             className="absolute inset-0 w-full h-full resize-none bg-transparent text-slate-800 outline-none p-2 cursor-pointer"
             style={{
               boxSizing: 'border-box',
@@ -583,11 +446,18 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
               fontWeight: isBold ? 'bold' : 'normal',
               fontStyle: isItalic ? 'italic' : 'normal',
               lineHeight: '1.5',
+              textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
               borderRadius: 'inherit',
               pointerEvents: selected ? 'auto' : 'none',
               boxShadow: isBeingEdited
                 ? `0 0 0 2px ${otherEditors[0]?.color || '#6366f1'}`
                 : undefined,
+              ...(getShapeClipPath(resolvedShapeType) && {
+                clipPath: getShapeClipPath(resolvedShapeType),
+                WebkitClipPath: getShapeClipPath(resolvedShapeType),
+              }),
             }}
             onMouseDown={(e) => {
               const ta = e.target as HTMLTextAreaElement;

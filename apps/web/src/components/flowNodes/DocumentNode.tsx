@@ -16,9 +16,9 @@ import { NodeResizer, type NodeProps, useStore } from 'reactflow';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-// Configure PDF.js worker once (DocumentNode loads before any PDF is rendered on board)
+// Configure PDF.js worker – serve locally from /public to avoid CDN version mismatches
 if (typeof window !== 'undefined' && pdfjs?.GlobalWorkerOptions) {
-  pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 }
 
 // PDF.js options: fetch only data needed for current page; withCredentials for CORS + cookies

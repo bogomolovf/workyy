@@ -21,7 +21,8 @@ export type BoardResponse = {
       | 'document'
       | 'pen'
       | 'database'
-      | 'voice';
+      | 'voice'
+      | 'notebook';
     position: { x: number; y: number };
     payload?: Record<string, unknown>;
   }>;
@@ -166,7 +167,8 @@ export type PersistedNode = {
     | 'document'
     | 'pen'
     | 'database'
-    | 'voice';
+    | 'voice'
+    | 'notebook';
   position: { x: number; y: number };
   payload?: Record<string, unknown>;
   boardId?: string;
@@ -436,13 +438,10 @@ export async function removeWorkspaceMember(
   if (!isValidUuid(workspaceId) || !isValidUuid(memberUserId)) {
     throw new Error('invalid-workspace-or-user-id');
   }
-  const res = await fetch(
-    `${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`,
-    {
-      method: 'DELETE',
-      credentials: 'include',
-    },
-  );
+  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
   if (!res.ok) {
     let detail = 'Failed to remove member';
     try {
@@ -463,18 +462,15 @@ export async function updateWorkspaceMemberRole(
   if (!isValidUuid(workspaceId) || !isValidUuid(memberUserId)) {
     throw new Error('invalid-workspace-or-user-id');
   }
-  const res = await fetch(
-    `${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`,
-    {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(payload),
+  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
-  );
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
   if (!res.ok) {
     let detail = 'Failed to update role';
     try {

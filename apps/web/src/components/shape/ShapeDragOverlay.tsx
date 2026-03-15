@@ -9,6 +9,7 @@ import {
   normalizeDragLine,
   isLineType,
   getShapeClipPath,
+  getShapeDefinition,
 } from './shapeEngine';
 
 type ShapeDragOverlayProps = {
@@ -41,6 +42,25 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
   const [isDragging, setIsDragging] = useState(false);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [currentPoint, setCurrentPoint] = useState<{ x: number; y: number } | null>(null);
+  const startTimeRef = useRef<number>(0);
+
+  const getDefaultPayload = useCallback((shape: ShapeType) => {
+    const isLine = isLineType(shape);
+    return {
+      shapeType: shape,
+      fill: isLine ? 'none' : SHAPE_DEFAULTS.fill,
+      stroke: SHAPE_DEFAULTS.stroke,
+      strokeWidth: SHAPE_DEFAULTS.strokeWidth,
+      opacity: SHAPE_DEFAULTS.opacity,
+      cornerRadius:
+        shape === 'round-rectangle'
+          ? SHAPE_DEFAULTS.roundRectCornerRadius
+          : shape === 'speech-bubble'
+            ? 12
+            : SHAPE_DEFAULTS.cornerRadius,
+      arrowHead: shape === 'arrow' ? true : undefined,
+    };
+  }, []);
 
   const handlePointerDown = useCallback(
     (e: PointerEvent<HTMLDivElement>) => {
@@ -53,6 +73,7 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
       setStartPoint({ x, y });
       setCurrentPoint({ x, y });
       setIsDragging(true);
+      startTimeRef.current = Date.now();
     },
     [screenToFlowPosition],
   );
@@ -79,11 +100,33 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
 
       const opts = { shift: e.shiftKey, alt: e.altKey || e.metaKey };
       const isLine = isLineType(selectedShape);
+      const elapsed = Date.now() - startTimeRef.current;
+      const dx = Math.abs(currentPoint.x - startPoint.x);
+      const dy = Math.abs(currentPoint.y - startPoint.y);
+      const isClick = elapsed < 300 && dx < 5 && dy < 5;
+
+      // Click-to-add: create shape with default size at click position
+      if (isClick && !isLine) {
+        const def = getShapeDefinition(selectedShape);
+        const w = def?.defaultWidth ?? SHAPE_DEFAULTS.defaultWidth;
+        const h = def?.defaultHeight ?? SHAPE_DEFAULTS.defaultHeight;
+        onAddShapeNode?.({
+          id: crypto.randomUUID(),
+          type: 'shape',
+          position: { x: startPoint.x - w / 2, y: startPoint.y - h / 2 },
+          width: w,
+          height: h,
+          payload: getDefaultPayload(selectedShape),
+        });
+        setIsDragging(false);
+        setStartPoint(null);
+        setCurrentPoint(null);
+        return;
+      }
 
       if (isLine) {
         const norm = normalizeDragLine(startPoint, currentPoint, opts);
-        const totalSize =
-          Math.abs(currentPoint.x - startPoint.x) + Math.abs(currentPoint.y - startPoint.y);
+        const totalSize = dx + dy;
         if (totalSize < SHAPE_DEFAULTS.minLineSize) {
           setIsDragging(false);
           setStartPoint(null);
@@ -97,21 +140,14 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
           width: norm.width,
           height: norm.height,
           payload: {
-            shapeType: selectedShape,
-            fill: 'none',
-            stroke: SHAPE_DEFAULTS.stroke,
-            strokeWidth: SHAPE_DEFAULTS.strokeWidth,
-            opacity: SHAPE_DEFAULTS.opacity,
+            ...getDefaultPayload(selectedShape),
             endX: norm.endX,
             endY: norm.endY,
-            arrowHead: selectedShape === 'arrow',
           },
         });
       } else {
         const norm = normalizeDragRect(startPoint, currentPoint, opts);
-        const w = Math.abs(currentPoint.x - startPoint.x);
-        const h = Math.abs(currentPoint.y - startPoint.y);
-        if (w < SHAPE_DEFAULTS.minSize && h < SHAPE_DEFAULTS.minSize) {
+        if (dx < SHAPE_DEFAULTS.minSize && dy < SHAPE_DEFAULTS.minSize) {
           setIsDragging(false);
           setStartPoint(null);
           setCurrentPoint(null);
@@ -123,17 +159,7 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
           position: { x: norm.x, y: norm.y },
           width: norm.width,
           height: norm.height,
-          payload: {
-            shapeType: selectedShape,
-            fill: SHAPE_DEFAULTS.fill,
-            stroke: SHAPE_DEFAULTS.stroke,
-            strokeWidth: SHAPE_DEFAULTS.strokeWidth,
-            opacity: SHAPE_DEFAULTS.opacity,
-            cornerRadius:
-              selectedShape === 'round-rectangle'
-                ? SHAPE_DEFAULTS.roundRectCornerRadius
-                : SHAPE_DEFAULTS.cornerRadius,
-          },
+          payload: getDefaultPayload(selectedShape),
         });
       }
 
@@ -141,7 +167,7 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
       setStartPoint(null);
       setCurrentPoint(null);
     },
-    [isDragging, startPoint, currentPoint, selectedShape, onAddShapeNode],
+    [isDragging, startPoint, currentPoint, selectedShape, onAddShapeNode, getDefaultPayload],
   );
 
   useEffect(() => {
@@ -158,8 +184,6 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
   }, [isDragging]);
 
   const viewport = getViewport();
-
-  // ── Build preview geometry ─────────────────────────────────────────────────
 
   const preview = useMemo(() => {
     if (!isDragging || !startPoint || !currentPoint) return null;
@@ -193,8 +217,6 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
       shapeType: selectedShape,
     };
   }, [isDragging, startPoint, currentPoint, selectedShape]);
-
-  // ── Convert flow coords to screen pixels ───────────────────────────────────
 
   const toScreen = useCallback(
     (fx: number, fy: number) => ({
@@ -237,7 +259,7 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
             borderRadius:
               preview.shapeType === 'circle' || preview.shapeType === 'ellipse'
                 ? '50%'
-                : preview.shapeType === 'round-rectangle'
+                : preview.shapeType === 'round-rectangle' || preview.shapeType === 'speech-bubble'
                   ? `${SHAPE_DEFAULTS.roundRectCornerRadius * viewport.zoom}px`
                   : undefined,
             background: 'rgba(99, 102, 241, 0.08)',

@@ -28,7 +28,14 @@ export type ShapeType =
   | 'arrow-rectangle'
   | 'plus'
   | 'line'
-  | 'arrow';
+  | 'arrow'
+  | 'pentagon'
+  | 'octagon'
+  | 'cloud'
+  | 'speech-bubble'
+  | 'heart'
+  | 'document-shape'
+  | 'banner';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 

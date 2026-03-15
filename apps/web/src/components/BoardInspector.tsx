@@ -2,15 +2,15 @@
 
 import dynamic from 'next/dynamic';
 import { useMemo, useState } from 'react';
-import type { SqlResult, PythonResult, NodeStatus, ExecutionEntry } from '../state/executionStore';
-import { PlotPreview } from './PlotPreview';
-import { InteractiveResultTable } from './InteractiveResultTable';
-import { PlotNodeConfigPanel } from './flowNodes/PlotNodeConfigPanel';
 import { useFullCsvDataForPlot } from '../hooks/useFullCsvDataForPlot';
 import { useFullSqlDataForPlot } from '../hooks/useFullSqlDataForPlot';
 import { usePlotData } from '../hooks/usePlotData';
 import { usePlotSnapshot } from '../hooks/usePlotSnapshot';
 import type { PlotNodePayload } from '../lib/visualization/chartTypes';
+import type { SqlResult, PythonResult, NodeStatus, ExecutionEntry } from '../state/executionStore';
+import { PlotNodeConfigPanel } from './flowNodes/PlotNodeConfigPanel';
+import { InteractiveResultTable } from './InteractiveResultTable';
+import { PlotPreview } from './PlotPreview';
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
   ssr: false,
@@ -187,8 +187,7 @@ export function BoardInspector(props: InspectorProps) {
     const edge = props.edges.find((e) => e.targetId === props.nodeId);
     if (!edge) return undefined;
     const sourceNode = props.nodes.find((n) => n.id === edge.sourceId);
-    const isCsv =
-      sourceNode?.type === 'csv' || sourceNode?.type === 'csvNode';
+    const isCsv = sourceNode?.type === 'csv' || sourceNode?.type === 'csvNode';
     if (!isCsv) return undefined;
     return (sourceNode.payload as { tableName?: string })?.tableName;
   }, [props.kind, props.nodeId, props.edges, props.nodes]);
@@ -202,12 +201,13 @@ export function BoardInspector(props: InspectorProps) {
   const { data: fullCsvData } = useFullCsvDataForPlot(upstreamCsvTableName);
   const { data: fullSqlData } = useFullSqlDataForPlot(upstreamSqlNodeId);
   // For config panel mirror chart behavior: CSV/SQL → full data or snapshot; иначе → snapshot/preview.
-  const plotDataForConfig =
-    upstreamCsvTableName
-      ? fullCsvData ?? plotSnapshot
-      : upstreamSqlNodeId
-        ? fullSqlData ?? plotSnapshot
-        : plotSnapshot ?? plotData;
+  // Include plotData (from executionStore with normalized column names) as fallback so that
+  // field mapping is shown even when fullCsvData / fullSqlData are not yet available.
+  const plotDataForConfig = upstreamCsvTableName
+    ? (fullCsvData ?? plotData ?? plotSnapshot)
+    : upstreamSqlNodeId
+      ? (fullSqlData ?? plotData ?? plotSnapshot)
+      : (plotSnapshot ?? plotData);
 
   // Handle plot node configuration
   if (props.kind === 'plot') {

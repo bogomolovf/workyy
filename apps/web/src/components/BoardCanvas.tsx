@@ -31,6 +31,8 @@ import { EditingPresenceProvider } from '../context/EditingPresenceContext';
 import { useCursorStateSynced } from '../hooks/useCursorStateSynced';
 import { type UploadedFile } from '../lib/api';
 import { registerDatasetFromCsvNode } from '../lib/duckdbClient';
+import { createEmptyCell } from '../lib/notebookParser';
+import type { ParsedNotebook } from '../lib/notebookParser';
 import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
 import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
 import { useBoardCanvasApiStore } from '../state/boardCanvasApiStore';
@@ -41,6 +43,7 @@ import {
   MAX_NODE_WIDTH,
   type CanvasLayoutState,
 } from '../state/canvasLayoutStore';
+import { useChainStore } from '../state/chainStore';
 import { DEFAULT_CURSOR, useCursorSettingsStore } from '../state/cursorSettingsStore';
 import type { ExecutionEntry, NodeStatus, ExecutionStoreState } from '../state/executionStore';
 import { useExecutionStore } from '../state/executionStore';
@@ -60,7 +63,14 @@ import { CsvNode } from './flowNodes/CsvNode';
 import { DatabaseNode } from './flowNodes/DatabaseNode';
 import { DocumentNode } from './flowNodes/DocumentNode';
 import { ImageNode } from './flowNodes/ImageNode';
+import { MarkdownCellNode } from './flowNodes/MarkdownCellNode';
+import { NotebookFrameNode } from './flowNodes/NotebookFrame';
+import { NotebookNode } from './flowNodes/NotebookNode';
 import { PlotNode } from './flowNodes/PlotNode';
+import { PythonCellNode } from './flowNodes/PythonCellNode';
+import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
+import { VideoNode } from './flowNodes/VideoNode';
+import { VoiceNode } from './flowNodes/VoiceNode';
 import { InteractiveResultTable } from './InteractiveResultTable';
 import { PlotPreview } from './PlotPreview';
 import { FreehandOverlay } from './pen/FreehandOverlay';
@@ -70,10 +80,8 @@ import { PenToolbar } from './pen/PenToolbar';
 import { EraserOverlay } from './pen/EraserOverlay';
 // Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
 import { TextNode } from './TextNode';
-import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
 import { SHAPE_DEFAULTS, isLineType as isLineShapeType } from './shape/shapeEngine';
-import { VoiceNode } from './flowNodes/VoiceNode';
-import { VideoNode } from './flowNodes/VideoNode';
+import { SqlCellNode } from './flowNodes/SqlCellNode';
 import { PresentationViewer } from './PresentationViewer';
 
 // SessionStorage-backed cache for voice audio data
@@ -152,7 +160,8 @@ type CanvasNodeType =
   | 'document'
   | 'pen'
   | 'database'
-  | 'voice';
+  | 'voice'
+  | 'notebook';
 
 type BoardCanvasProps = {
   board: {
@@ -355,7 +364,7 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   return (
     <div
       className={`group rounded-md border bg-white shadow-lg px-5 pb-5 pt-4 transition-all ${statusColors[status]}`}
-      style={{ width: data.width, minHeight: 320 }}
+      style={{ width: '100%', minHeight: 320 }}
     >
       <NodeResizer
         isVisible={selected}
@@ -480,7 +489,7 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   return (
     <div
       className={`group rounded-md border bg-white shadow-lg px-5 pb-5 pt-4 transition-all ${statusColors[status]}`}
-      style={{ width: data.width, minHeight: 320 }}
+      style={{ width: '100%', minHeight: 320 }}
     >
       <NodeResizer
         isVisible={selected}
@@ -618,11 +627,16 @@ const nodeTypes = {
   databaseNode: DatabaseNode,
   plotNode: PlotNode,
   csvNode: CsvNode,
-  shapeNode: ShapeNode, // Заметки теперь тоже shape nodes
+  shapeNode: ShapeNode,
   voiceNode: VoiceNode,
   imageNode: ImageNode,
   videoNode: VideoNode,
   documentNode: DocumentNode,
+  notebookNode: NotebookNode,
+  pythonCellNode: PythonCellNode,
+  markdownCellNode: MarkdownCellNode,
+  sqlCellNode: SqlCellNode,
+  notebookFrameNode: NotebookFrameNode,
 };
 
 type ConnectionArrowsOverlayProps = {
@@ -916,7 +930,8 @@ function InnerBoardCanvas({
   // Also hide own cursor when using eraser (eraser has its own cursor indicator)
   // When 'default' cursor selected, user sees system cursor — never show overlay
   const cursorColor = useCursorSettingsStore((s) => s.cursorColor);
-  const showOwnCursor = !isHoveringToolbar && tool !== 'eraser' && cursorColor !== DEFAULT_CURSOR;
+  const showOwnCursor =
+    !isHoveringToolbar && tool !== 'eraser' && tool !== 'pen' && cursorColor !== DEFAULT_CURSOR;
   const [cursors, onMouseMove, onPointerLeave] =
     cursorsMap && clientId
       ? useCursorStateSynced(cursorsMap, clientId, userInfo, {
@@ -1254,6 +1269,8 @@ function InnerBoardCanvas({
         applyCursorStyle(node as HTMLElement, canvasCursor);
         const children = node.querySelectorAll('*');
         children.forEach((child) => {
+          if ((child as HTMLElement).classList?.contains('react-flow__resize-control')) return;
+          if ((child as HTMLElement).closest?.('.react-flow__resize-control')) return;
           applyCursorStyle(child as HTMLElement, canvasCursor);
         });
       });
@@ -1581,45 +1598,62 @@ function InnerBoardCanvas({
           const isPen = node.type === 'pen';
           const isText = node.type === 'text';
           const isShape = node.type === 'shape';
-          const isNote = node.type === 'note'; // Заметки теперь тоже shape nodes
+          const isNote = node.type === 'note';
           const isVoice = node.type === 'voice';
           const isImage = node.type === 'image';
           const isVideo = node.type === 'video';
           const isDocument = node.type === 'document';
-          const type = isSql
-            ? 'sqlNode'
-            : isPython
-              ? 'pythonNode'
-              : isDatabase
-                ? 'databaseNode'
-                : isPlot
-                  ? 'plotNode'
-                  : isCsv
-                    ? 'csvNode'
-                    : isPen
-                      ? 'pen'
-                      : isText
-                        ? 'textNode'
-                        : isVoice
-                          ? 'voiceNode'
-                          : isImage
-                            ? 'imageNode'
-                            : isVideo
-                              ? 'videoNode'
-                              : isDocument
-                                ? 'documentNode'
-                                : isShape || isNote
-                                  ? 'shapeNode'
-                                  : 'default';
+          const isNotebook = node.type === 'notebook';
+          const isPythonCell = node.type === 'pythonCell';
+          const isMarkdownCell = node.type === 'markdownCell';
+          const isSqlCell = node.type === 'sqlCell';
+          const isNotebookFrame = node.type === 'notebookFrame';
 
-          // Определяем тип слоя для сортировки: data nodes (0) идут раньше, canvas nodes (1) - позже
-          const isDataNode = isSql || isPython || isDatabase || isPlot || isCsv;
+          const CELL_TYPE_MAP: Record<string, string> = {
+            sql: 'sqlNode',
+            python: 'pythonNode',
+            database: 'databaseNode',
+            plot: 'plotNode',
+            csv: 'csvNode',
+            pen: 'pen',
+            text: 'textNode',
+            voice: 'voiceNode',
+            image: 'imageNode',
+            video: 'videoNode',
+            document: 'documentNode',
+            notebook: 'notebookNode',
+            pythonCell: 'pythonCellNode',
+            markdownCell: 'markdownCellNode',
+            sqlCell: 'sqlCellNode',
+            notebookFrame: 'notebookFrameNode',
+            shape: 'shapeNode',
+            note: 'shapeNode',
+          };
+          const type = CELL_TYPE_MAP[node.type as string] ?? 'default';
+
+          const isDataNode =
+            isSql ||
+            isPython ||
+            isDatabase ||
+            isPlot ||
+            isCsv ||
+            isNotebook ||
+            isPythonCell ||
+            isSqlCell ||
+            isNotebookFrame;
+          const isCellNode = isPythonCell || isMarkdownCell || isSqlCell;
           const isCanvasNode =
             isPen || isText || isShape || isNote || isVoice || isImage || isVideo || isDocument;
 
           // NOTE: executionEntries removed - SqlNode/PythonNode fetch their own state via useExecutionStore
           const storedWidth = nodeSizes[node.id]?.width ?? getDefaultNodeWidth();
           const isCodeCollapsed = codeCollapsedMap[node.id] ?? false;
+
+          // Chain ID for notebook grouping (cells linked together, no parent-child)
+          const cellChainId =
+            isPythonCell || isMarkdownCell || isSqlCell
+              ? useChainStore.getState().getFrameForCell(node.id)
+              : undefined;
 
           // Базовые стили для каждого типа
           const baseStyle =
@@ -1685,11 +1719,33 @@ function InnerBoardCanvas({
                                 border: 'none',
                                 boxShadow: 'none',
                               }
-                            : {
-                                width: storedWidth,
-                                minWidth: MIN_NODE_WIDTH,
-                                maxWidth: MAX_NODE_WIDTH,
-                              };
+                            : isNotebook
+                              ? {
+                                  width: (node.payload as any)?.width ?? 520,
+                                  background: 'transparent',
+                                  border: 'none',
+                                  boxShadow: 'none',
+                                }
+                              : isPythonCell || isSqlCell || isMarkdownCell
+                                ? {
+                                    width: 520,
+                                    background: 'transparent',
+                                    border: 'none',
+                                    boxShadow: 'none',
+                                  }
+                                : isNotebookFrame
+                                  ? {
+                                      width: (node.payload as any)?.width ?? 560,
+                                      height: (node.payload as any)?.height ?? 400,
+                                      background: 'transparent',
+                                      border: 'none',
+                                      boxShadow: 'none',
+                                    }
+                                  : {
+                                      width: storedWidth,
+                                      minWidth: MIN_NODE_WIDTH,
+                                      maxWidth: MAX_NODE_WIDTH,
+                                    };
 
           return {
             id: node.id,
@@ -1750,32 +1806,20 @@ function InnerBoardCanvas({
                           ui?: { width: number; height: number };
                         }>,
                       ) => {
-                        setLocalNodes((prev) => {
-                          const next = prev.map((n) =>
-                            n.id === id && n.type === 'text'
-                              ? {
-                                  ...n,
-                                  payload: {
-                                    ...(n.payload ?? {}),
-                                    ...(patch.ui
-                                      ? {
-                                          ...(n.payload ?? {}),
-                                          ui: {
-                                            ...((n.payload as any)?.ui ?? {}),
-                                            ...patch.ui,
-                                          },
-                                        }
-                                      : {}),
-                                    ...Object.fromEntries(
-                                      Object.entries(patch).filter(([key]) => key !== 'ui'),
-                                    ),
-                                  },
-                                }
-                              : n,
-                          );
-                          emitNodesChange(next);
-                          return next;
-                        });
+                        syncNodePayloadChange(id, (prevPayload) => ({
+                          ...prevPayload,
+                          ...(patch.ui
+                            ? {
+                                ui: {
+                                  ...((prevPayload as any)?.ui ?? {}),
+                                  ...patch.ui,
+                                },
+                              }
+                            : {}),
+                          ...Object.fromEntries(
+                            Object.entries(patch).filter(([key]) => key !== 'ui'),
+                          ),
+                        }));
                       },
                       onDeleteNode: (nodeId: string) => {
                         // Удаляем узел из localNodes
@@ -1988,12 +2032,12 @@ function InnerBoardCanvas({
                                 },
                               };
                             } else {
-                              // Обычные shape nodes (не заметки)
+                              // Обычные shape nodes — используем StickyToolbar как у заметок
                               const payload = node.payload as any;
                               return {
                                 shapeType: (payload?.shapeType ?? 'rectangle') as any,
-                                shapeColor: payload?.shapeColor ?? SHAPE_DEFAULTS.legacyShapeColor,
-                                shapeLabel: payload?.shapeLabel ?? 'Фигура',
+                                shapeColor:
+                                  payload?.shapeColor ?? payload?.fill ?? SHAPE_DEFAULTS.fill,
                                 width: payload?.width ?? SHAPE_DEFAULTS.defaultWidth,
                                 height: payload?.height ?? SHAPE_DEFAULTS.defaultHeight,
                                 fill: payload?.fill ?? SHAPE_DEFAULTS.fill,
@@ -2002,17 +2046,15 @@ function InnerBoardCanvas({
                                 opacity: payload?.opacity ?? SHAPE_DEFAULTS.opacity,
                                 cornerRadius: payload?.cornerRadius ?? SHAPE_DEFAULTS.cornerRadius,
                                 arrowHead: payload?.arrowHead,
-                                // For line/arrow types
                                 endX: payload?.endX,
                                 endY: payload?.endY,
-                                // Text properties for shapes
-                                text: payload?.text,
-                                richContentHtml: payload?.richContentHtml,
-                                fontSize: payload?.fontSize,
-                                fontFamily: payload?.fontFamily,
-                                color: payload?.color,
-                                textAlign: payload?.textAlign ?? 'center',
-                                // Callback for text changes (as in TextNode)
+                                // Text (plain, like notes)
+                                text: payload?.text ?? '',
+                                fontSize: payload?.fontSize ?? 16,
+                                fontFamily: payload?.fontFamily ?? 'Inter, sans-serif',
+                                isBold: payload?.isBold ?? false,
+                                isItalic: payload?.isItalic ?? false,
+                                // StickyToolbar callbacks (same pattern as notes)
                                 onChangeText: (nid: string, newText: string) => {
                                   setLocalNodes((prev) => {
                                     const next = prev.map((n) =>
@@ -2027,17 +2069,7 @@ function InnerBoardCanvas({
                                     return next;
                                   });
                                 },
-                                onChangeFormat: (
-                                  nid: string,
-                                  patch: Partial<{
-                                    text: string;
-                                    richContent: string;
-                                    fontSize: number;
-                                    fontFamily: string;
-                                    color: string;
-                                    textAlign: 'left' | 'center' | 'right';
-                                  }>,
-                                ) => {
+                                onChangeColor: (nid: string, newColor: string) => {
                                   setLocalNodes((prev) => {
                                     const next = prev.map((n) =>
                                       n.id === nid && n.type === 'shape'
@@ -2045,22 +2077,8 @@ function InnerBoardCanvas({
                                             ...n,
                                             payload: {
                                               ...(n.payload ?? {}),
-                                              ...(patch.text !== undefined && { text: patch.text }),
-                                              ...(patch.richContent !== undefined && {
-                                                richContentHtml: patch.richContent,
-                                              }),
-                                              ...(patch.fontSize !== undefined && {
-                                                fontSize: patch.fontSize,
-                                              }),
-                                              ...(patch.fontFamily !== undefined && {
-                                                fontFamily: patch.fontFamily,
-                                              }),
-                                              ...(patch.color !== undefined && {
-                                                color: patch.color,
-                                              }),
-                                              ...(patch.textAlign !== undefined && {
-                                                textAlign: patch.textAlign,
-                                              }),
+                                              fill: newColor,
+                                              shapeColor: newColor,
                                             },
                                           }
                                         : n,
@@ -2069,36 +2087,7 @@ function InnerBoardCanvas({
                                     return next;
                                   });
                                 },
-                                // Callbacks для обновления стилей
-                                onChangeFill: (nid: string, newFill: string) => {
-                                  setLocalNodes((prev) => {
-                                    const next = prev.map((n) =>
-                                      n.id === nid && n.type === 'shape'
-                                        ? {
-                                            ...n,
-                                            payload: { ...(n.payload ?? {}), fill: newFill },
-                                          }
-                                        : n,
-                                    );
-                                    emitNodesChange(next);
-                                    return next;
-                                  });
-                                },
-                                onChangeStroke: (nid: string, newStroke: string) => {
-                                  setLocalNodes((prev) => {
-                                    const next = prev.map((n) =>
-                                      n.id === nid && n.type === 'shape'
-                                        ? {
-                                            ...n,
-                                            payload: { ...(n.payload ?? {}), stroke: newStroke },
-                                          }
-                                        : n,
-                                    );
-                                    emitNodesChange(next);
-                                    return next;
-                                  });
-                                },
-                                onChangeStrokeWidth: (nid: string, newStrokeWidth: number) => {
+                                onChangeFontSize: (nid: string, newFontSize: number) => {
                                   setLocalNodes((prev) => {
                                     const next = prev.map((n) =>
                                       n.id === nid && n.type === 'shape'
@@ -2106,7 +2095,7 @@ function InnerBoardCanvas({
                                             ...n,
                                             payload: {
                                               ...(n.payload ?? {}),
-                                              strokeWidth: newStrokeWidth,
+                                              fontSize: newFontSize,
                                             },
                                           }
                                         : n,
@@ -2115,21 +2104,7 @@ function InnerBoardCanvas({
                                     return next;
                                   });
                                 },
-                                onChangeOpacity: (nid: string, newOpacity: number) => {
-                                  setLocalNodes((prev) => {
-                                    const next = prev.map((n) =>
-                                      n.id === nid && n.type === 'shape'
-                                        ? {
-                                            ...n,
-                                            payload: { ...(n.payload ?? {}), opacity: newOpacity },
-                                          }
-                                        : n,
-                                    );
-                                    emitNodesChange(next);
-                                    return next;
-                                  });
-                                },
-                                onChangeCornerRadius: (nid: string, newCornerRadius: number) => {
+                                onChangeFontFamily: (nid: string, newFontFamily: string) => {
                                   setLocalNodes((prev) => {
                                     const next = prev.map((n) =>
                                       n.id === nid && n.type === 'shape'
@@ -2137,7 +2112,7 @@ function InnerBoardCanvas({
                                             ...n,
                                             payload: {
                                               ...(n.payload ?? {}),
-                                              cornerRadius: newCornerRadius,
+                                              fontFamily: newFontFamily,
                                             },
                                           }
                                         : n,
@@ -2146,7 +2121,21 @@ function InnerBoardCanvas({
                                     return next;
                                   });
                                 },
-                                onChangeArrowHead: (nid: string, newArrowHead: boolean) => {
+                                onChangeBold: (nid: string, newIsBold: boolean) => {
+                                  setLocalNodes((prev) => {
+                                    const next = prev.map((n) =>
+                                      n.id === nid && n.type === 'shape'
+                                        ? {
+                                            ...n,
+                                            payload: { ...(n.payload ?? {}), isBold: newIsBold },
+                                          }
+                                        : n,
+                                    );
+                                    emitNodesChange(next);
+                                    return next;
+                                  });
+                                },
+                                onChangeItalic: (nid: string, newIsItalic: boolean) => {
                                   setLocalNodes((prev) => {
                                     const next = prev.map((n) =>
                                       n.id === nid && n.type === 'shape'
@@ -2154,7 +2143,7 @@ function InnerBoardCanvas({
                                             ...n,
                                             payload: {
                                               ...(n.payload ?? {}),
-                                              arrowHead: newArrowHead,
+                                              isItalic: newIsItalic,
                                             },
                                           }
                                         : n,
@@ -2248,16 +2237,33 @@ function InnerBoardCanvas({
                               }
                             : isPlot
                               ? (() => {
+                                  const edgeTargetId = (e: {
+                                    targetId?: string;
+                                    target?: string;
+                                  }) => e.targetId ?? (e as { target?: string }).target;
+                                  const edgeSourceId = (e: {
+                                    sourceId?: string;
+                                    source?: string;
+                                  }) => e.sourceId ?? (e as { source?: string }).source;
+                                  const edgeSourceHandle = (e: any) =>
+                                    e.sourceHandleId ?? e.metadata?.sourceHandleId ?? undefined;
                                   const incomingEdge = localEdges.find(
-                                    (e) => e.targetId === node.id,
+                                    (e) => edgeTargetId(e) === node.id,
                                   );
-                                  const upstreamNode = incomingEdge
-                                    ? localNodes.find((n) => n.id === incomingEdge.sourceId)
+                                  const sourceId = incomingEdge
+                                    ? edgeSourceId(incomingEdge)
+                                    : undefined;
+                                  const srcHandle = incomingEdge
+                                    ? edgeSourceHandle(incomingEdge)
+                                    : undefined;
+                                  const upstreamNode = sourceId
+                                    ? localNodes.find((n) => n.id === sourceId)
                                     : null;
                                   const isCsvSource =
                                     upstreamNode?.type === 'csv' ||
                                     upstreamNode?.type === 'csvNode';
                                   const isSqlSource = upstreamNode?.type === 'sql';
+                                  const isNotebookSource = upstreamNode?.type === 'notebook';
                                   const upstreamPayload = upstreamNode?.payload as
                                     | { tableName?: string }
                                     | undefined;
@@ -2266,16 +2272,79 @@ function InnerBoardCanvas({
                                       ? upstreamPayload.tableName
                                       : undefined;
                                   const upstreamSqlNodeId =
-                                    isSqlSource && incomingEdge
-                                      ? incomingEdge.sourceId
-                                      : undefined;
+                                    isSqlSource && sourceId ? sourceId : undefined;
+                                  // Notebook cell output: compute executionStore entry ID
+                                  let notebookCellEntryId: string | undefined;
+                                  if (isNotebookSource && srcHandle?.startsWith('cell-out-')) {
+                                    const cellId = srcHandle.slice(9); // remove "cell-out-"
+                                    notebookCellEntryId = `${sourceId}__${cellId}`;
+                                  }
+                                  // Fallback: if connected to notebook but no cell handle, find any cell with data
+                                  if (isNotebookSource && !notebookCellEntryId && sourceId) {
+                                    const nbPayload = (upstreamNode?.payload ?? {}) as any;
+                                    const nbCells = nbPayload?.notebook?.cells;
+                                    if (Array.isArray(nbCells)) {
+                                      const execStore = useExecutionStore.getState();
+                                      for (let ci = nbCells.length - 1; ci >= 0; ci--) {
+                                        const cid = nbCells[ci].id;
+                                        const entryId = `${sourceId}__${cid}`;
+                                        const entry = execStore.entries[entryId];
+                                        if (
+                                          entry?.output?.kind === 'python' &&
+                                          entry.output.result?.table
+                                        ) {
+                                          notebookCellEntryId = entryId;
+                                          break;
+                                        }
+                                      }
+                                    }
+                                  }
+                                  // Resolve CSV data through notebook: find CSV connected to notebook and pass data inline
+                                  let notebookUpstreamCsvTableName: string | undefined;
+                                  let inlineData:
+                                    | {
+                                        columns: string[];
+                                        rows: Array<Array<string | number | null>>;
+                                      }
+                                    | undefined;
+                                  if (isNotebookSource && sourceId) {
+                                    const nbIncomingEdges = localEdges.filter(
+                                      (e) => edgeTargetId(e) === sourceId,
+                                    );
+                                    for (const nbEdge of nbIncomingEdges) {
+                                      const nbSrcId = edgeSourceId(nbEdge);
+                                      if (nbSrcId) {
+                                        const nbSrcNode = localNodes.find((n) => n.id === nbSrcId);
+                                        if (
+                                          nbSrcNode?.type === 'csv' ||
+                                          nbSrcNode?.type === 'csvNode'
+                                        ) {
+                                          const nbSrcPayload = (nbSrcNode.payload ?? {}) as any;
+                                          if (nbSrcPayload.tableName) {
+                                            notebookUpstreamCsvTableName = nbSrcPayload.tableName;
+                                          }
+                                          // Pass CSV data directly as inline data (no DuckDB round-trip needed)
+                                          if (
+                                            nbSrcPayload.data?.columns &&
+                                            nbSrcPayload.data?.rows
+                                          ) {
+                                            inlineData = nbSrcPayload.data;
+                                          }
+                                          break;
+                                        }
+                                      }
+                                    }
+                                  }
                                   return {
                                     nodeId: node.id,
                                     payload: node.payload,
                                     edges: localEdges,
                                     width: storedWidth,
-                                    upstreamCsvTableName,
+                                    upstreamCsvTableName:
+                                      upstreamCsvTableName || notebookUpstreamCsvTableName,
                                     upstreamSqlNodeId,
+                                    notebookCellEntryId,
+                                    inlineData,
                                   };
                                 })()
                               : isCsv
@@ -2287,17 +2356,345 @@ function InnerBoardCanvas({
                                       setNodeWidth(nodeId, width);
                                     },
                                   }
-                                : {
-                                    nodeId: node.id,
-                                    nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
-                                    onCodeChange: (code: string) => onCodeChange(node.id, code),
-                                    onRun: () => onRunNode(node.id),
-                                    onRunDownstream: () => onRunDownstream(node.id),
-                                    onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
-                                    width: storedWidth,
-                                    isCodeCollapsed,
-                                    nodeKind: node.type,
-                                  },
+                                : isNotebook
+                                  ? (() => {
+                                      const payload = (node.payload ?? {}) as any;
+                                      const edgeTargetId = (e: {
+                                        targetId?: string;
+                                        target?: string;
+                                      }) => e.targetId ?? (e as { target?: string }).target;
+                                      const edgeSourceId = (e: {
+                                        sourceId?: string;
+                                        source?: string;
+                                      }) => e.sourceId ?? (e as { source?: string }).source;
+                                      const edgeTargetHandle = (e: any) =>
+                                        e.targetHandleId ?? e.metadata?.targetHandleId ?? undefined;
+                                      // Find all incoming edges to this notebook
+                                      const incomingEdges = localEdges.filter(
+                                        (e) => edgeTargetId(e) === node.id,
+                                      );
+                                      // Global upstream (connected to node-level "left" handle)
+                                      const globalEdge = incomingEdges.find(
+                                        (e) =>
+                                          !edgeTargetHandle(e) || edgeTargetHandle(e) === 'left',
+                                      );
+                                      const sourceId = globalEdge
+                                        ? edgeSourceId(globalEdge)
+                                        : undefined;
+                                      let csvUpstreamData:
+                                        | {
+                                            columns: string[];
+                                            rows: Array<Array<string | number | null>>;
+                                          }
+                                        | undefined;
+                                      let csvUpstreamFilename: string | undefined;
+                                      if (sourceId) {
+                                        const sourceNode = localNodes.find(
+                                          (n) => n.id === sourceId,
+                                        );
+                                        if (sourceNode?.type === 'csv') {
+                                          const srcPayload = (sourceNode.payload ?? {}) as any;
+                                          if (srcPayload.data?.columns && srcPayload.data?.rows) {
+                                            csvUpstreamData = srcPayload.data;
+                                          }
+                                          csvUpstreamFilename = srcPayload.filename;
+                                        }
+                                      }
+                                      // Per-cell upstream: edges targeting "cell-{cellId}" handles
+                                      const cellDataMap: Record<
+                                        string,
+                                        {
+                                          columns: string[];
+                                          rows: Array<Array<string | number | null>>;
+                                          filename?: string;
+                                          tableName?: string;
+                                        }
+                                      > = {};
+                                      for (const edge of incomingEdges) {
+                                        const th = edgeTargetHandle(edge);
+                                        if (th && th.startsWith('cell-')) {
+                                          const cellId = th.slice(5); // remove "cell-" prefix
+                                          const srcId = edgeSourceId(edge);
+                                          if (srcId) {
+                                            const srcNode = localNodes.find((n) => n.id === srcId);
+                                            if (srcNode?.type === 'csv') {
+                                              const srcPayload = (srcNode.payload ?? {}) as any;
+                                              if (
+                                                srcPayload.data?.columns &&
+                                                srcPayload.data?.rows
+                                              ) {
+                                                cellDataMap[cellId] = {
+                                                  ...srcPayload.data,
+                                                  filename: srcPayload.filename,
+                                                  tableName: srcPayload.tableName,
+                                                };
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                      return {
+                                        nodeId: node.id,
+                                        notebook: payload.notebook ?? {
+                                          name: payload.fileName ?? 'Untitled',
+                                          cells: [],
+                                          metadata: {},
+                                          nbformat: 4,
+                                          nbformatMinor: 0,
+                                        },
+                                        upstreamNodeId: sourceId,
+                                        csvUpstreamData,
+                                        csvUpstreamFilename,
+                                        cellDataMap:
+                                          Object.keys(cellDataMap).length > 0
+                                            ? cellDataMap
+                                            : undefined,
+                                        onNotebookChange: (nb: any) => {
+                                          syncNodePayloadChange(node.id, (prev) => ({
+                                            ...prev,
+                                            notebook: nb,
+                                          }));
+                                        },
+                                      };
+                                    })()
+                                  : isPythonCell
+                                    ? (() => {
+                                        const cid = cellChainId;
+                                        const chain = cid
+                                          ? useChainStore.getState().chains[cid]
+                                          : undefined;
+                                        const idx = chain ? chain.cellIds.indexOf(node.id) : -1;
+                                        const total = chain ? chain.cellIds.length : 0;
+                                        const pos =
+                                          cid && idx >= 0
+                                            ? ((total <= 1
+                                                ? 'only'
+                                                : idx === 0
+                                                  ? 'first'
+                                                  : idx === total - 1
+                                                    ? 'last'
+                                                    : 'middle') as const)
+                                            : ('standalone' as const);
+                                        return {
+                                          nodeId: node.id,
+                                          onCodeChange: (code: string) =>
+                                            onCodeChange(node.id, code),
+                                          onRun: () => onRunNode(node.id),
+                                          onDelete: () => {
+                                            const deleteHeight =
+                                              rf.getNode(node.id)?.height ?? DEFAULT_CELL_HEIGHT;
+                                            const chainBefore = cid
+                                              ? useChainStore.getState().chains[cid]
+                                              : undefined;
+                                            const delIdx = chainBefore
+                                              ? chainBefore.cellIds.indexOf(node.id)
+                                              : -1;
+                                            const cellsToShift =
+                                              chainBefore && delIdx >= 0
+                                                ? new Set(chainBefore.cellIds.slice(delIdx + 1))
+                                                : new Set<string>();
+                                            if (cid)
+                                              useChainStore
+                                                .getState()
+                                                .removeCellFromFrame(cid, node.id);
+                                            setLocalNodes((prev) => {
+                                              const next = prev
+                                                .filter((n) => n.id !== node.id)
+                                                .map((n) =>
+                                                  cellsToShift.has(n.id)
+                                                    ? {
+                                                        ...n,
+                                                        position: {
+                                                          x: n.position.x,
+                                                          y: n.position.y - deleteHeight,
+                                                        },
+                                                      }
+                                                    : n,
+                                                );
+                                              emitNodesChange(next);
+                                              return next;
+                                            });
+                                          },
+                                          cellPosition: pos,
+                                          cellIndex: idx >= 0 ? idx + 1 : undefined,
+                                          onAddCellBelow: (type: 'pythonCell' | 'markdownCell') => {
+                                            handleAddCellBelow(node.id, type);
+                                          },
+                                          chainName: chain?.name,
+                                          chainCellCount: total || undefined,
+                                          onRunAll: cid ? () => onRunNode(cid) : undefined,
+                                        };
+                                      })()
+                                    : isMarkdownCell
+                                      ? (() => {
+                                          const cid = cellChainId;
+                                          const chain = cid
+                                            ? useChainStore.getState().chains[cid]
+                                            : undefined;
+                                          const idx = chain ? chain.cellIds.indexOf(node.id) : -1;
+                                          const total = chain ? chain.cellIds.length : 0;
+                                          const pos =
+                                            cid && idx >= 0
+                                              ? ((total <= 1
+                                                  ? 'only'
+                                                  : idx === 0
+                                                    ? 'first'
+                                                    : idx === total - 1
+                                                      ? 'last'
+                                                      : 'middle') as const)
+                                              : ('standalone' as const);
+                                          return {
+                                            nodeId: node.id,
+                                            source: (node.payload as any)?.cellSource ?? '',
+                                            onSourceChange: (source: string) => {
+                                              syncNodePayloadChange(node.id, (prev) => ({
+                                                ...prev,
+                                                cellSource: source,
+                                              }));
+                                              onCodeChange(node.id, source);
+                                            },
+                                            onDelete: () => {
+                                              const deleteHeight =
+                                                rf.getNode(node.id)?.height ??
+                                                DEFAULT_MD_CELL_HEIGHT;
+                                              const chainBefore = cid
+                                                ? useChainStore.getState().chains[cid]
+                                                : undefined;
+                                              const delIdx = chainBefore
+                                                ? chainBefore.cellIds.indexOf(node.id)
+                                                : -1;
+                                              const cellsToShift =
+                                                chainBefore && delIdx >= 0
+                                                  ? new Set(chainBefore.cellIds.slice(delIdx + 1))
+                                                  : new Set<string>();
+                                              if (cid)
+                                                useChainStore
+                                                  .getState()
+                                                  .removeCellFromFrame(cid, node.id);
+                                              setLocalNodes((prev) => {
+                                                const next = prev
+                                                  .filter((n) => n.id !== node.id)
+                                                  .map((n) =>
+                                                    cellsToShift.has(n.id)
+                                                      ? {
+                                                          ...n,
+                                                          position: {
+                                                            x: n.position.x,
+                                                            y: n.position.y - deleteHeight,
+                                                          },
+                                                        }
+                                                      : n,
+                                                  );
+                                                emitNodesChange(next);
+                                                return next;
+                                              });
+                                            },
+                                            onAddCellBelow: (
+                                              type: 'pythonCell' | 'markdownCell',
+                                            ) => {
+                                              handleAddCellBelow(node.id, type);
+                                            },
+                                            cellPosition: pos,
+                                            chainName: chain?.name,
+                                            chainCellCount: total || undefined,
+                                            onRunAll: cid ? () => onRunNode(cid) : undefined,
+                                          };
+                                        })()
+                                      : isSqlCell
+                                        ? (() => {
+                                            const cid = cellChainId;
+                                            const chain = cid
+                                              ? useChainStore.getState().chains[cid]
+                                              : undefined;
+                                            const idx = chain ? chain.cellIds.indexOf(node.id) : -1;
+                                            const total = chain ? chain.cellIds.length : 0;
+                                            const pos =
+                                              cid && idx >= 0
+                                                ? ((total <= 1
+                                                    ? 'only'
+                                                    : idx === 0
+                                                      ? 'first'
+                                                      : idx === total - 1
+                                                        ? 'last'
+                                                        : 'middle') as const)
+                                                : ('standalone' as const);
+                                            return {
+                                              nodeId: node.id,
+                                              onCodeChange: (code: string) =>
+                                                onCodeChange(node.id, code),
+                                              onRun: () => onRunNode(node.id),
+                                              onRunFull: () => onRunNodeFull?.(node.id),
+                                              onDelete: () => {
+                                                const deleteHeight =
+                                                  rf.getNode(node.id)?.height ??
+                                                  DEFAULT_CELL_HEIGHT;
+                                                const chainBefore = cid
+                                                  ? useChainStore.getState().chains[cid]
+                                                  : undefined;
+                                                const delIdx = chainBefore
+                                                  ? chainBefore.cellIds.indexOf(node.id)
+                                                  : -1;
+                                                const cellsToShift =
+                                                  chainBefore && delIdx >= 0
+                                                    ? new Set(chainBefore.cellIds.slice(delIdx + 1))
+                                                    : new Set<string>();
+                                                if (cid)
+                                                  useChainStore
+                                                    .getState()
+                                                    .removeCellFromFrame(cid, node.id);
+                                                setLocalNodes((prev) => {
+                                                  const next = prev
+                                                    .filter((n) => n.id !== node.id)
+                                                    .map((n) =>
+                                                      cellsToShift.has(n.id)
+                                                        ? {
+                                                            ...n,
+                                                            position: {
+                                                              x: n.position.x,
+                                                              y: n.position.y - deleteHeight,
+                                                            },
+                                                          }
+                                                        : n,
+                                                    );
+                                                  emitNodesChange(next);
+                                                  return next;
+                                                });
+                                              },
+                                              cellPosition: pos,
+                                              cellIndex: idx >= 0 ? idx + 1 : undefined,
+                                              onAddCellBelow: (
+                                                type: 'pythonCell' | 'markdownCell',
+                                              ) => {
+                                                handleAddCellBelow(node.id, type);
+                                              },
+                                              chainName: chain?.name,
+                                              chainCellCount: total || undefined,
+                                              onRunAll: cid ? () => onRunNode(cid) : undefined,
+                                            };
+                                          })()
+                                        : isNotebookFrame
+                                          ? {
+                                              nodeId: node.id,
+                                              frameName:
+                                                (node.payload as any)?.frameName ?? 'Notebook',
+                                              onRunAll: () => onRunNode(node.id),
+                                              onAddCell: (afterIndex: number, cellType: string) => {
+                                                // Will be handled by the board page
+                                              },
+                                            }
+                                          : {
+                                              nodeId: node.id,
+                                              nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
+                                              onCodeChange: (code: string) =>
+                                                onCodeChange(node.id, code),
+                                              onRun: () => onRunNode(node.id),
+                                              onRunDownstream: () => onRunDownstream(node.id),
+                                              onToggleCodeCollapsed: () =>
+                                                toggleCodeCollapsed(node.id),
+                                              width: storedWidth,
+                                              isCodeCollapsed,
+                                              nodeKind: node.type,
+                                            },
             // Для shape nodes (включая заметки) передаем width и height как пропсы, чтобы NodeResizer мог обновлять их в реальном времени
             ...(isShape || isNote
               ? {
@@ -2362,6 +2759,7 @@ function InnerBoardCanvas({
   }, [
     // NOTE: executionEntries removed - causes constant re-renders, SqlNode/PythonNode fetch their own state
     localNodes,
+    localEdges,
     nodeSizes,
     codeCollapsedMap,
     onCodeChange,
@@ -2416,6 +2814,7 @@ function InnerBoardCanvas({
   }, [
     mapNodes, // Include the callback itself
     localNodes, // CRITICAL: mapNodes uses localNodes, so we must recalculate when localNodes changes
+    localEdges, // mapNodes uses localEdges for edge-based data resolution (e.g. PlotNode upstream CSV)
   ]);
 
   useEffect(() => {
@@ -2447,19 +2846,14 @@ function InnerBoardCanvas({
         return {
           ...node,
           data: updatedData,
-          // Используем position из mapped node (он будет обновлен через applyNodeChanges)
           position: node.position,
-          // Сохраняем selected из existing (обновляется отдельным useEffect)
           selected: existing?.selected ?? node.id === selectedNodeId,
-          // Используем width/height из mapped node (React Flow обновляет их через applyNodeChanges)
-          width: node.width ?? existing?.width,
-          height: node.height ?? existing?.height,
-          // Убеждаемся, что zIndex сохраняется из mapNodes (где уже установлен правильный слой)
+          width: existing?.width ?? node.width,
+          height: existing?.height ?? node.height,
           style: {
             ...node.style,
-            // Используем width/height из mapped node style (React Flow обновляет их)
-            width: node.style?.width ?? existing?.style?.width,
-            height: node.style?.height ?? existing?.style?.height,
+            width: existing?.style?.width ?? node.style?.width,
+            height: existing?.style?.height ?? node.style?.height,
             zIndex: node.style?.zIndex ?? (node.type === 'pen' ? 10 : 1),
           },
         };
@@ -2753,8 +3147,7 @@ function InnerBoardCanvas({
                 height: node.height,
                 style: {
                   ...node.style,
-                  // Для shape nodes обновляем width/height в style из пропсов, чтобы они синхронизировались
-                  ...(isShape
+                  ...(isShape || isDataNode
                     ? {
                         width: typeof node.width === 'number' ? node.width : node.style?.width,
                         height: typeof node.height === 'number' ? node.height : node.style?.height,
@@ -2921,10 +3314,7 @@ function InnerBoardCanvas({
               width &&
               !hasActiveDragging
             ) {
-              // Для data nodes сохраняем только width
-              requestAnimationFrame(() => {
-                setNodeWidth(change.id!, width);
-              });
+              setNodeWidth(change.id!, width);
             }
             // Для pen nodes также сохраняем height
             if (height && node?.type === 'pen') {
@@ -3044,6 +3434,486 @@ function InnerBoardCanvas({
     onSelectNode?.(template.id);
   }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, registerNode]);
 
+  const handleAddPythonCell = useCallback(() => {
+    const viewportCenterX = window.innerWidth / 2;
+    const viewportCenterY = window.innerHeight / 2;
+    const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
+
+    // Create a NotebookNode with one empty code cell — a single draggable object
+    const emptyNotebook: ParsedNotebook = {
+      name: 'Notebook',
+      cells: [createEmptyCell('code')],
+      metadata: {},
+      nbformat: 4,
+      nbformatMinor: 5,
+    };
+    const template = addNodeHelpers.createNotebookNode(position, {
+      notebook: emptyNotebook,
+      fileName: 'Notebook',
+    }) as BoardCanvasProps['nodes'][number];
+
+    const reactFlowNode = canvasNodeToReactFlowNode(template);
+    if (yjsOnNodesChange) {
+      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+    }
+    setLocalNodes((prev) => {
+      const next = [...prev, template];
+      if (onNodesChange) {
+        const sanitized = sanitizeExternalNodes(next);
+        onNodesChange(sanitized);
+      }
+      return next;
+    });
+    onSelectNode?.(template.id);
+  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, sanitizeExternalNodes]);
+
+  const handleAddSqlCell = useCallback(() => {
+    const viewportCenterX = window.innerWidth / 2;
+    const viewportCenterY = window.innerHeight / 2;
+    const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
+
+    const template = addNodeHelpers.createSqlCell(position) as BoardCanvasProps['nodes'][number];
+    registerNode({ id: template.id, type: 'sqlCell', payload: template.payload });
+
+    const reactFlowNode = canvasNodeToReactFlowNode(template);
+    if (yjsOnNodesChange) {
+      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+    }
+    setLocalNodes((prev) => {
+      const next = [...prev, template];
+      if (onNodesChange) {
+        const sanitized = sanitizeExternalNodes(next);
+        onNodesChange(sanitized);
+      }
+      return next;
+    });
+    onSelectNode?.(template.id);
+  }, [
+    addNodeHelpers,
+    rf,
+    yjsOnNodesChange,
+    onNodesChange,
+    onSelectNode,
+    registerNode,
+    sanitizeExternalNodes,
+  ]);
+
+  // Height of the in-flow "+" button area on the last cell (py-1 = 4+4 padding + ~14 button + 2 border ≈ 24px)
+  const ADD_BUTTON_FLOW_HEIGHT = 24;
+
+  const handleAddCellBelow = useCallback(
+    (aboveNodeId: string, cellType: 'pythonCell' | 'markdownCell') => {
+      const aboveNode = localNodes.find((n) => n.id === aboveNodeId);
+      if (!aboveNode) return;
+
+      const cellHeight = cellType === 'pythonCell' ? DEFAULT_CELL_HEIGHT : DEFAULT_MD_CELL_HEIGHT;
+      const measuredAbove = rf.getNode(aboveNodeId);
+      let aboveHeight =
+        measuredAbove?.height ??
+        (aboveNode.type === 'markdownCell' ? DEFAULT_MD_CELL_HEIGHT : DEFAULT_CELL_HEIGHT);
+
+      // If the above node was the last cell in chain (or standalone), its measured height
+      // includes the in-flow "+" button. Subtract it so cells are placed flush.
+      const aboveChainId = useChainStore.getState().getFrameForCell(aboveNodeId);
+      if (aboveChainId) {
+        const aboveChain = useChainStore.getState().chains[aboveChainId];
+        const aboveIdx = aboveChain ? aboveChain.cellIds.indexOf(aboveNodeId) : -1;
+        const isLast = !aboveChain || aboveIdx === aboveChain.cellIds.length - 1;
+        if (isLast && measuredAbove?.height) {
+          aboveHeight -= ADD_BUTTON_FLOW_HEIGHT;
+        }
+      } else {
+        // Standalone cell — also has the in-flow "+" button
+        if (measuredAbove?.height) {
+          aboveHeight -= ADD_BUTTON_FLOW_HEIGHT;
+        }
+      }
+
+      const newPosition = {
+        x: aboveNode.position.x,
+        y: aboveNode.position.y + aboveHeight,
+      };
+
+      const creator =
+        cellType === 'pythonCell'
+          ? addNodeHelpers.createPythonCell
+          : addNodeHelpers.createMarkdownCell;
+      const template = creator(newPosition, {
+        source: '',
+        exact: true,
+      }) as BoardCanvasProps['nodes'][number];
+
+      if (cellType === 'pythonCell') {
+        registerNode({ id: template.id, type: 'pythonCell', payload: template.payload });
+      }
+
+      // Add to the same chain if the above cell is in one, otherwise create a new chain
+      const existingChainId = useChainStore.getState().getFrameForCell(aboveNodeId);
+      if (existingChainId) {
+        const chain = useChainStore.getState().chains[existingChainId];
+        const idx = chain?.cellIds.indexOf(aboveNodeId) ?? -1;
+        useChainStore.getState().addCellToFrame(existingChainId, template.id, idx);
+      } else {
+        // Create a new chain from these two cells
+        const chainId = aboveNodeId;
+        useChainStore.getState().registerFrame(chainId, 'Notebook', [aboveNodeId, template.id]);
+      }
+
+      // Determine cells that need to shift down
+      const chainId = useChainStore.getState().getFrameForCell(template.id);
+      let cellsBelowSet = new Set<string>();
+      if (chainId) {
+        const chain = useChainStore.getState().chains[chainId];
+        if (chain) {
+          const insertedIdx = chain.cellIds.indexOf(template.id);
+          cellsBelowSet = new Set(chain.cellIds.slice(insertedIdx + 1));
+        }
+      }
+
+      const reactFlowNode = canvasNodeToReactFlowNode(template);
+      if (yjsOnNodesChange) {
+        yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+      }
+
+      setLocalNodes((prev) => {
+        const shifted = prev.map((n) => {
+          if (cellsBelowSet.has(n.id)) {
+            return {
+              ...n,
+              position: {
+                x: n.position.x,
+                y: n.position.y + cellHeight + CELL_STACK_GAP,
+              },
+            };
+          }
+          return n;
+        });
+        const next = [...shifted, template];
+        if (onNodesChange) {
+          const sanitized = sanitizeExternalNodes(next);
+          onNodesChange(sanitized);
+        }
+        return next;
+      });
+      onSelectNode?.(template.id);
+    },
+    [
+      addNodeHelpers,
+      localNodes,
+      yjsOnNodesChange,
+      onNodesChange,
+      onSelectNode,
+      registerNode,
+      sanitizeExternalNodes,
+    ],
+  );
+
+  // ─── Chain drag: move all connected cells together ───
+  const chainDragRef = useRef<{
+    startPositions: Map<string, { x: number; y: number }>;
+    dragNodeId: string;
+  } | null>(null);
+
+  const handleNodeDragStart = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      const chainId = useChainStore.getState().getFrameForCell(node.id);
+      if (!chainId) {
+        chainDragRef.current = null;
+        return;
+      }
+
+      const chain = useChainStore.getState().chains[chainId];
+      if (!chain || chain.cellIds.length <= 1) {
+        chainDragRef.current = null;
+        return;
+      }
+
+      const allRfNodes = rf.getNodes();
+      const startPositions = new Map<string, { x: number; y: number }>();
+      for (const cellId of chain.cellIds) {
+        const n = allRfNodes.find((rfn) => rfn.id === cellId);
+        if (n) startPositions.set(cellId, { x: n.position.x, y: n.position.y });
+      }
+
+      chainDragRef.current = { startPositions, dragNodeId: node.id };
+    },
+    [rf],
+  );
+
+  const handleNodeDrag = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      const ref = chainDragRef.current;
+      if (!ref || ref.dragNodeId !== node.id) return;
+
+      const startPos = ref.startPositions.get(node.id);
+      if (!startPos) return;
+
+      const dx = node.position.x - startPos.x;
+      const dy = node.position.y - startPos.y;
+
+      setFlowNodes((prev) =>
+        prev.map((n) => {
+          if (n.id === node.id) return n;
+          const orig = ref.startPositions.get(n.id);
+          if (!orig) return n;
+          return {
+            ...n,
+            position: { x: orig.x + dx, y: orig.y + dy },
+          };
+        }),
+      );
+    },
+    [setFlowNodes],
+  );
+
+  // ─── Snap-to-attach / Detach logic for cell nodes ───
+  const SNAP_THRESHOLD_Y = 40;
+  const SNAP_THRESHOLD_X = 60;
+  const DETACH_THRESHOLD = 60;
+
+  const getCellNodeType = useCallback((rfType?: string): string | undefined => {
+    if (rfType === 'pythonCellNode') return 'pythonCell';
+    if (rfType === 'markdownCellNode') return 'markdownCell';
+    if (rfType === 'sqlCellNode') return 'sqlCell';
+    return undefined;
+  }, []);
+
+  const handleNodeDragStop = useCallback(
+    (_event: React.MouseEvent, draggedNode: Node) => {
+      // Sync chain member positions to localNodes after group drag
+      const chainDrag = chainDragRef.current;
+      if (chainDrag && chainDrag.dragNodeId === draggedNode.id) {
+        const startPos = chainDrag.startPositions.get(draggedNode.id);
+        if (startPos) {
+          const dx = draggedNode.position.x - startPos.x;
+          const dy = draggedNode.position.y - startPos.y;
+          if (dx !== 0 || dy !== 0) {
+            const siblingIds = new Set<string>();
+            for (const [cid] of chainDrag.startPositions) {
+              if (cid !== draggedNode.id) siblingIds.add(cid);
+            }
+            if (siblingIds.size > 0) {
+              setLocalNodes((prev) => {
+                const next = prev.map((n) => {
+                  if (!siblingIds.has(n.id)) return n;
+                  const orig = chainDrag.startPositions.get(n.id);
+                  if (!orig) return n;
+                  return { ...n, position: { x: orig.x + dx, y: orig.y + dy } };
+                });
+                emitNodesChange(next);
+                return next;
+              });
+            }
+          }
+        }
+        chainDragRef.current = null;
+      }
+
+      const draggedCellType = getCellNodeType(draggedNode.type);
+      if (!draggedCellType) return;
+
+      const allNodes = rf.getNodes();
+      const draggedTop = draggedNode.position.y;
+      const draggedHeight = draggedNode.height ?? DEFAULT_CELL_HEIGHT;
+      const draggedBottom = draggedTop + draggedHeight;
+      const draggedX = draggedNode.position.x;
+
+      let snapBelow: Node | null = null;
+      let snapAbove: Node | null = null;
+
+      for (const other of allNodes) {
+        if (other.id === draggedNode.id) continue;
+        const otherCellType = getCellNodeType(other.type);
+        if (!otherCellType) continue;
+
+        const otherHeight = other.height ?? DEFAULT_CELL_HEIGHT;
+        const otherBottom = other.position.y + otherHeight;
+        const otherTop = other.position.y;
+
+        // Dragged cell's top near other cell's bottom → snap below other
+        if (
+          Math.abs(draggedTop - otherBottom) < SNAP_THRESHOLD_Y &&
+          Math.abs(draggedX - other.position.x) < SNAP_THRESHOLD_X
+        ) {
+          snapBelow = other;
+          break;
+        }
+
+        // Dragged cell's bottom near other cell's top → snap above other
+        if (
+          Math.abs(draggedBottom - otherTop) < SNAP_THRESHOLD_Y &&
+          Math.abs(draggedX - other.position.x) < SNAP_THRESHOLD_X
+        ) {
+          snapAbove = other;
+          break;
+        }
+      }
+
+      const draggedChainId = useChainStore.getState().getFrameForCell(draggedNode.id);
+
+      if (snapBelow) {
+        // Snap below this node — subtract "+" button area if target was the last cell
+        let targetHeight = snapBelow.height ?? DEFAULT_CELL_HEIGHT;
+        const snapBelowChainId = useChainStore.getState().getFrameForCell(snapBelow.id);
+        if (snapBelowChainId) {
+          const snapChain = useChainStore.getState().chains[snapBelowChainId];
+          const snapIdx = snapChain ? snapChain.cellIds.indexOf(snapBelow.id) : -1;
+          if (!snapChain || snapIdx === snapChain.cellIds.length - 1) {
+            targetHeight -= ADD_BUTTON_FLOW_HEIGHT;
+          }
+        }
+        const newPos = {
+          x: snapBelow.position.x,
+          y: snapBelow.position.y + targetHeight,
+        };
+
+        // Remove from old chain first
+        if (draggedChainId) {
+          useChainStore.getState().removeCellFromFrame(draggedChainId, draggedNode.id);
+        }
+
+        const targetChainId = useChainStore.getState().getFrameForCell(snapBelow.id);
+        if (targetChainId) {
+          const chain = useChainStore.getState().chains[targetChainId];
+          const idx = chain?.cellIds.indexOf(snapBelow.id) ?? -1;
+          useChainStore.getState().addCellToFrame(targetChainId, draggedNode.id, idx);
+
+          // Shift cells that were after the insertion point
+          const updatedChain = useChainStore.getState().chains[targetChainId];
+          if (updatedChain) {
+            const insertedIdx = updatedChain.cellIds.indexOf(draggedNode.id);
+            const cellsAfter = updatedChain.cellIds.slice(insertedIdx + 1);
+            const cellsAfterSet = new Set(cellsAfter);
+
+            setLocalNodes((prev) => {
+              const next = prev.map((n) => {
+                if (n.id === draggedNode.id) return { ...n, position: newPos };
+                if (cellsAfterSet.has(n.id))
+                  return { ...n, position: { x: newPos.x, y: n.position.y + draggedHeight } };
+                return n;
+              });
+              emitNodesChange(next);
+              return next;
+            });
+          } else {
+            setLocalNodes((prev) => {
+              const next = prev.map((n) =>
+                n.id === draggedNode.id ? { ...n, position: newPos } : n,
+              );
+              emitNodesChange(next);
+              return next;
+            });
+          }
+        } else {
+          // Create new chain: target + dragged
+          useChainStore
+            .getState()
+            .registerFrame(snapBelow.id, 'Notebook', [snapBelow.id, draggedNode.id]);
+          setLocalNodes((prev) => {
+            const next = prev.map((n) =>
+              n.id === draggedNode.id ? { ...n, position: newPos } : n,
+            );
+            emitNodesChange(next);
+            return next;
+          });
+        }
+        return;
+      }
+
+      if (snapAbove) {
+        // Snap above this node: dragged goes right above snapAbove
+        const newPos = {
+          x: snapAbove.position.x,
+          y: snapAbove.position.y - draggedHeight,
+        };
+
+        if (draggedChainId) {
+          useChainStore.getState().removeCellFromFrame(draggedChainId, draggedNode.id);
+        }
+
+        const targetChainId = useChainStore.getState().getFrameForCell(snapAbove.id);
+        if (targetChainId) {
+          const chain = useChainStore.getState().chains[targetChainId];
+          const snapAboveIdx = chain?.cellIds.indexOf(snapAbove.id) ?? 0;
+          const insertIdx = Math.max(0, snapAboveIdx - 1);
+          useChainStore.getState().addCellToFrame(targetChainId, draggedNode.id, insertIdx);
+        } else {
+          useChainStore
+            .getState()
+            .registerFrame(draggedNode.id, 'Notebook', [draggedNode.id, snapAbove.id]);
+        }
+
+        setLocalNodes((prev) => {
+          const next = prev.map((n) => (n.id === draggedNode.id ? { ...n, position: newPos } : n));
+          emitNodesChange(next);
+          return next;
+        });
+        return;
+      }
+
+      // No snap target found — check if should detach from current chain
+      if (draggedChainId) {
+        const chain = useChainStore.getState().chains[draggedChainId];
+        if (chain) {
+          const idx = chain.cellIds.indexOf(draggedNode.id);
+          if (idx >= 0) {
+            // Check distance to neighbors
+            const prevCellId = idx > 0 ? chain.cellIds[idx - 1] : null;
+            const nextCellId = idx < chain.cellIds.length - 1 ? chain.cellIds[idx + 1] : null;
+            const prevNode = prevCellId ? allNodes.find((n) => n.id === prevCellId) : null;
+            const nextNode = nextCellId ? allNodes.find((n) => n.id === nextCellId) : null;
+
+            let shouldDetach = true;
+            if (prevNode) {
+              const prevBottom = prevNode.position.y + (prevNode.height ?? DEFAULT_CELL_HEIGHT);
+              if (
+                Math.abs(draggedTop - prevBottom) < DETACH_THRESHOLD &&
+                Math.abs(draggedX - prevNode.position.x) < SNAP_THRESHOLD_X
+              ) {
+                shouldDetach = false;
+              }
+            }
+            if (nextNode && shouldDetach) {
+              if (
+                Math.abs(draggedBottom - nextNode.position.y) < DETACH_THRESHOLD &&
+                Math.abs(draggedX - nextNode.position.x) < SNAP_THRESHOLD_X
+              ) {
+                shouldDetach = false;
+              }
+            }
+
+            if (shouldDetach) {
+              useChainStore.getState().removeCellFromFrame(draggedChainId, draggedNode.id);
+
+              // Close the gap: shift cells that were below the detached cell up
+              const remainingChain = useChainStore.getState().chains[draggedChainId];
+              if (remainingChain && remainingChain.cellIds.length > 0) {
+                const cellsAfterDetach = chain.cellIds.slice(idx + 1);
+                const cellsAfterSet = new Set(cellsAfterDetach);
+                if (cellsAfterSet.size > 0) {
+                  setLocalNodes((prev) => {
+                    const next = prev.map((n) => {
+                      if (cellsAfterSet.has(n.id)) {
+                        return {
+                          ...n,
+                          position: { x: n.position.x, y: n.position.y - draggedHeight },
+                        };
+                      }
+                      return n;
+                    });
+                    emitNodesChange(next);
+                    return next;
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    [rf, getCellNodeType, localNodes, emitNodesChange, setLocalNodes],
+  );
+
   const handleAddDatabaseNode = useCallback(() => {
     // Получаем центр viewport пользователя и преобразуем в координаты flow
     const viewportCenterX = window.innerWidth / 2;
@@ -3135,9 +4005,7 @@ function InnerBoardCanvas({
         );
         tableName = duckDbResult.tableName;
         normalizedColumns = duckDbResult.normalizedColumns;
-        console.log(
-          `Registered table "${tableName}" with ${duckDbResult.rows} rows in DuckDB`,
-        );
+        console.log(`Registered table "${tableName}" with ${duckDbResult.rows} rows in DuckDB`);
         // Sync to Yjs datasetsMap so observer keeps localStorage in sync and table survives restoreDatasetsForBoard
         onCsvDatasetAdded?.({
           tableName,
@@ -3160,15 +4028,14 @@ function InnerBoardCanvas({
 
       const nodeId = crypto.randomUUID();
 
-      // Table preview: default 100 rows (no user selector). Full data lives in DuckDB;
-      // Plot nodes connected to this CSV use full dataset via useFullCsvDataForPlot.
-      const PREVIEW_ROW_LIMIT = 100;
-      const previewRows = result.data.rows.slice(0, PREVIEW_ROW_LIMIT);
+      // Load all rows directly (up to 10k). No pagination needed for datasets this size.
+      const MAX_INLINE_ROWS = 10000;
+      const allRows = result.data.rows.slice(0, MAX_INLINE_ROWS);
       const columns = normalizedColumns.length > 0 ? normalizedColumns : result.data.columns;
 
       const previewData = {
         columns,
-        rows: previewRows,
+        rows: allRows,
       };
 
       const csvNode: BoardCanvasProps['nodes'][number] = {
@@ -3226,6 +4093,49 @@ function InnerBoardCanvas({
     onSelectNode?.(template.id);
     setTool('select'); // Переключаемся на select после создания voice узла
   }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode, setTool]);
+
+  const CELL_STACK_GAP = 0;
+  const DEFAULT_CELL_HEIGHT = 180;
+  const DEFAULT_MD_CELL_HEIGHT = 100;
+  const NOTEBOOK_HEADER_HEIGHT = 28; // Height of the notebook header rendered above the first cell
+
+  const handleUploadNotebook = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const { parseNotebook } = await import('../lib/notebookParser');
+        const notebook = parseNotebook(text, file.name);
+
+        const viewportCenterX = window.innerWidth / 2;
+        const viewportCenterY = window.innerHeight / 2;
+        const position = rf.screenToFlowPosition({ x: viewportCenterX, y: viewportCenterY });
+
+        // Create a single NotebookNode containing all cells
+        const template = addNodeHelpers.createNotebookNode(position, {
+          notebook,
+          fileName: file.name,
+        }) as BoardCanvasProps['nodes'][number];
+
+        const reactFlowNode = canvasNodeToReactFlowNode(template);
+        if (yjsOnNodesChange) {
+          yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+        }
+
+        setLocalNodes((prev) => {
+          const next = [...prev, template];
+          if (onNodesChange) {
+            const sanitized = sanitizeExternalNodes(next);
+            onNodesChange(sanitized);
+          }
+          return next;
+        });
+        onSelectNode?.(template.id);
+      } catch (err) {
+        console.error('Failed to parse notebook:', err);
+      }
+    },
+    [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, sanitizeExternalNodes],
+  );
 
   const handleConnectStart = useCallback(
     (_event: React.MouseEvent | React.TouchEvent, params: OnConnectStartParams) => {
@@ -3325,7 +4235,8 @@ function InnerBoardCanvas({
               (originHandleId === 'left' ||
                 originHandleId === 'top' ||
                 originHandleId === 'right' ||
-                originHandleId === 'bottom')
+                originHandleId === 'bottom' ||
+                originHandleId.startsWith('cell-')) // notebook cell handles
             ) {
               // Use the handle ID from where we started
               sourceHandle = originHandleId;
@@ -3403,14 +4314,22 @@ function InnerBoardCanvas({
         connectOriginRef.current,
       );
 
+      // If sourceHandle wasn't resolved from connection, use the origin handle ID
+      if (!sourceHandle && connectOriginRef.current?.handleId) {
+        sourceHandle = connectOriginRef.current.handleId;
+      }
+
       // Determine the handle type we started from (from connectOriginRef)
       const originHandleType = connectOriginRef.current?.handleType;
       const isConnectingFromSource =
         originHandleType === 'source' ||
         sourceHandle === 'right' ||
         sourceHandle === 'bottom' ||
+        (sourceHandle && sourceHandle.startsWith('cell-out-')) ||
         (connection.sourceHandle &&
-          (connection.sourceHandle === 'right' || connection.sourceHandle === 'bottom'));
+          (connection.sourceHandle === 'right' ||
+            connection.sourceHandle === 'bottom' ||
+            connection.sourceHandle.startsWith('cell-out-')));
 
       // Auto-complete targetHandle if missing
       if (targetId && !targetHandle && connection.target) {
@@ -3817,10 +4736,52 @@ function InnerBoardCanvas({
     [rf, addNodeHelpers, emitNodesChange, onSelectNode],
   );
 
+  const handleNotebookDropped = useCallback(
+    async (file: File, dropPosition?: { x: number; y: number }) => {
+      try {
+        const text = await file.text();
+        const { parseNotebook } = await import('../lib/notebookParser');
+        const notebook = parseNotebook(text, file.name);
+
+        const position =
+          dropPosition ??
+          rf.screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          });
+
+        // Create a single NotebookNode containing all cells
+        const template = addNodeHelpers.createNotebookNode(position, {
+          notebook,
+          fileName: file.name,
+        }) as BoardCanvasProps['nodes'][number];
+
+        const reactFlowNode = canvasNodeToReactFlowNode(template);
+        if (yjsOnNodesChange) {
+          yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+        }
+
+        setLocalNodes((prev) => {
+          const next = [...prev, template];
+          if (onNodesChange) {
+            const sanitized = sanitizeExternalNodes(next);
+            onNodesChange(sanitized);
+          }
+          return next;
+        });
+        onSelectNode?.(template.id);
+      } catch (err) {
+        console.error('Failed to parse dropped notebook:', err);
+      }
+    },
+    [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, sanitizeExternalNodes],
+  );
+
   return (
     <FileDropOverlay
       boardId={board.id}
       onFilesUploaded={handleFilesUploaded}
+      onNotebookDropped={handleNotebookDropped}
       getDropPosition={getDropPosition}
       disabled={isPenMode || isShapeMode}
     >
@@ -3884,6 +4845,9 @@ function InnerBoardCanvas({
               onConnectEnd={handleConnectEnd}
               connectionLineComponent={CustomConnectionLine}
               connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 4 }}
+              onNodeDragStart={handleNodeDragStart}
+              onNodeDrag={handleNodeDrag}
+              onNodeDragStop={handleNodeDragStop}
               onNodeClick={handleNodeClick}
               onNodeDataChange={(id, data) => {
                 // Синхронизируем изменения данных узла (цвет, форматирование, стили) с localNodes
@@ -4207,6 +5171,8 @@ function InnerBoardCanvas({
               )}
               {isPenMode && (
                 <FreehandOverlay
+                  yjsOnNodesChange={yjsOnNodesChange}
+                  onCursorMove={onMouseMove}
                   onAddPenNode={(node) => {
                     console.log('onAddPenNode called with:', node);
                     // Добавляем pen node в localNodes
@@ -4281,10 +5247,13 @@ function InnerBoardCanvas({
           canRunDownstream={canRunDownstream}
           onAddSqlNode={handleAddSqlNode}
           onAddPythonNode={handleAddPythonNode}
+          onAddPythonCell={handleAddPythonCell}
+          onAddSqlCell={handleAddSqlCell}
           onAddDatabaseNode={handleAddDatabaseNode}
           onAddPlotNode={handleAddPlotNode}
           onAddVoiceNode={handleAddVoiceNode}
           onUploadSpreadsheet={handleUploadSpreadsheet}
+          onUploadNotebook={handleUploadNotebook}
           selectedShape={selectedShape}
           onSelectShape={setSelectedShape}
           onDeleteSelection={handleDeleteSelection}

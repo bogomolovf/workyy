@@ -15,6 +15,7 @@ import { UserPresenceIndicator } from '../../../components/UserPresenceIndicator
 import { useAudioCall } from '../../../hooks/useAudioCall';
 import { useBoardCollaboration } from '../../../hooks/useBoardCollaboration';
 import { useBoardPresence } from '../../../hooks/useBoardPresence';
+import { useTranslation } from '../../../hooks/useTranslation';
 import { useYjsUndoManager } from '../../../hooks/useYjsUndoManager';
 import {
   deleteBoard as deleteBoardApi,
@@ -26,13 +27,6 @@ import {
   type PersistedNode,
   type SaveBoardStructureInput,
 } from '../../../lib/api';
-import { useAuthStore } from '../../../state/authStore';
-import { useBoardSettingsStore } from '../../../state/boardSettingsStore';
-import { useCanvasLayoutStore, type CanvasLayoutState } from '../../../state/canvasLayoutStore';
-import { useExecutionStore, type ExecutionStoreState } from '../../../state/executionStore';
-import type { PlotResult, SqlResult } from '../../../state/executionStore';
-import { useSettingsStore } from '../../../state/settingsStore';
-import { useTranslation } from '../../../hooks/useTranslation';
 import {
   executeSql,
   executeSqlWithPreview,
@@ -44,6 +38,12 @@ import {
 } from '../../../lib/duckdbClient';
 import { runPython } from '../../../lib/pythonExecutor';
 import type { PlotConfig, PlotNodePayload } from '../../../lib/visualization/chartTypes';
+import { useAuthStore } from '../../../state/authStore';
+import { useBoardSettingsStore } from '../../../state/boardSettingsStore';
+import { useCanvasLayoutStore, type CanvasLayoutState } from '../../../state/canvasLayoutStore';
+import { useExecutionStore, type ExecutionStoreState } from '../../../state/executionStore';
+import type { PlotResult, SqlResult } from '../../../state/executionStore';
+import { useSettingsStore } from '../../../state/settingsStore';
 
 type ExecutionNode = Extract<
   BoardResponse['nodes'][number],
@@ -386,7 +386,10 @@ function BoardPageContent({ params }: BoardPageProps) {
             : ((yjsNode.payload as any)?.python ?? '');
         const storeCode = entries[yjsNode.id]?.code ?? '';
         if (yjsCode.trim() === '' && storeCode.trim() !== '') {
-          const payload = { ...(yjsNode.payload ?? {}), [yjsNode.type === 'sql' ? 'sql' : 'python']: storeCode };
+          const payload = {
+            ...(yjsNode.payload ?? {}),
+            [yjsNode.type === 'sql' ? 'sql' : 'python']: storeCode,
+          };
           return { ...yjsNode, payload };
         }
         return yjsNode;
@@ -513,11 +516,8 @@ function BoardPageContent({ params }: BoardPageProps) {
 
     const observer = async () => {
       try {
-        const {
-          restoreDatasetsForBoard,
-          restoreDatasetsFromBoardArray,
-          getDatasetsKey,
-        } = await import('../../../lib/duckdbClient');
+        const { restoreDatasetsForBoard, restoreDatasetsFromBoardArray, getDatasetsKey } =
+          await import('../../../lib/duckdbClient');
         const datasets: Array<{
           tableName: string;
           columns: string[];
@@ -939,16 +939,32 @@ function BoardPageContent({ params }: BoardPageProps) {
                 parentEntry?.output?.kind === 'python' &&
                 parentEntry.output.result?.table?.columns?.length;
               const outputStale =
-                hasValidOutput &&
-                (parentEntry?.code ?? '') !== (parentEntry?.output?.code ?? '');
+                hasValidOutput && (parentEntry?.code ?? '') !== (parentEntry?.output?.code ?? '');
               if (!hasValidOutput || outputStale) {
                 await handleRunNode(parentId);
                 parentEntry = useExecutionStore.getState().entries[parentId];
               }
-              const table = parentEntry?.output?.kind === 'python' ? parentEntry.output.result?.table : null;
+              const table =
+                parentEntry?.output?.kind === 'python' ? parentEntry.output.result?.table : null;
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:pythonUpstream',message:'Python upstream table check',data:{nodeId,parentId,hasTable:!!table,tableColumns:table?.columns,tableRowsCount:table?.rows?.length},timestamp:Date.now(),hypothesisId:'C,D'})}).catch(()=>{});
+              fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  location: 'page.tsx:pythonUpstream',
+                  message: 'Python upstream table check',
+                  data: {
+                    nodeId,
+                    parentId,
+                    hasTable: !!table,
+                    tableColumns: table?.columns,
+                    tableRowsCount: table?.rows?.length,
+                  },
+                  timestamp: Date.now(),
+                  hypothesisId: 'C,D',
+                }),
+              }).catch(() => {});
               // #endregion
 
               if (table?.columns?.length) {
@@ -997,7 +1013,22 @@ function BoardPageContent({ params }: BoardPageProps) {
           }
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:beforeRunPython',message:'About to call runPython',data:{nodeId,hasUpstreamResult:!!upstreamResult,upstreamColumns:upstreamResult?.columns,upstreamRowsCount:upstreamResult?.rows?.length},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              location: 'page.tsx:beforeRunPython',
+              message: 'About to call runPython',
+              data: {
+                nodeId,
+                hasUpstreamResult: !!upstreamResult,
+                upstreamColumns: upstreamResult?.columns,
+                upstreamRowsCount: upstreamResult?.rows?.length,
+              },
+              timestamp: Date.now(),
+              hypothesisId: 'D',
+            }),
+          }).catch(() => {});
           // #endregion
 
           const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
@@ -1043,7 +1074,23 @@ function BoardPageContent({ params }: BoardPageProps) {
           };
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:afterPythonSuccess',message:'Python execution success, saving output',data:{nodeId,hasTable:!!pythonOutput.table,tableColumns:pythonOutput.table?.columns,tableRowsCount:pythonOutput.table?.rows?.length,outputTableColumns:output.result.table?.columns},timestamp:Date.now(),hypothesisId:'B,C'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              location: 'page.tsx:afterPythonSuccess',
+              message: 'Python execution success, saving output',
+              data: {
+                nodeId,
+                hasTable: !!pythonOutput.table,
+                tableColumns: pythonOutput.table?.columns,
+                tableRowsCount: pythonOutput.table?.rows?.length,
+                outputTableColumns: output.result.table?.columns,
+              },
+              timestamp: Date.now(),
+              hypothesisId: 'B,C',
+            }),
+          }).catch(() => {});
           // #endregion
 
           setSuccess(nodeId, output);
@@ -1051,7 +1098,23 @@ function BoardPageContent({ params }: BoardPageProps) {
 
           // #region agent log
           const savedEntry = useExecutionStore.getState().entries[nodeId];
-          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:afterSetSuccess',message:'After setSuccess, checking saved entry',data:{nodeId,hasOutput:!!savedEntry?.output,outputKind:savedEntry?.output?.kind,hasResultTable:!!savedEntry?.output?.result?.table,savedTableColumns:savedEntry?.output?.result?.table?.columns},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              location: 'page.tsx:afterSetSuccess',
+              message: 'After setSuccess, checking saved entry',
+              data: {
+                nodeId,
+                hasOutput: !!savedEntry?.output,
+                outputKind: savedEntry?.output?.kind,
+                hasResultTable: !!savedEntry?.output?.result?.table,
+                savedTableColumns: savedEntry?.output?.result?.table?.columns,
+              },
+              timestamp: Date.now(),
+              hypothesisId: 'C',
+            }),
+          }).catch(() => {});
           // #endregion
 
           // Сохраняем результаты выполнения в payload узла и синхронизируем через Yjs
@@ -1075,6 +1138,73 @@ function BoardPageContent({ params }: BoardPageProps) {
             collaboration.handleCanvasNodesChange(next);
             return next;
           });
+          markDirty();
+          return;
+        }
+
+        if (node.type === 'pythonCell') {
+          const { executeStandalonePythonCell, resolveUpstreamDataForCell } =
+            await import('../../../lib/chainExecutor');
+          const { useChainStore } = await import('../../../state/chainStore');
+
+          const frameId = useChainStore.getState().getFrameForCell(nodeId);
+          if (frameId) {
+            const cellIds = useChainStore.getState().getCellOrder(frameId);
+            const startIdx = cellIds.indexOf(nodeId);
+            const upstreamData = resolveUpstreamDataForCell(
+              frameId,
+              edgesState.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
+              nodesState.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
+            );
+            const { executeFrameCells } = await import('../../../lib/chainExecutor');
+            await executeFrameCells(cellIds, upstreamData, startIdx > 0 ? startIdx : 0);
+          } else {
+            const upstreamData = resolveUpstreamDataForCell(
+              nodeId,
+              edgesState.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
+              nodesState.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
+            );
+            const result = await executeStandalonePythonCell(nodeId, code, upstreamData);
+
+            if (result.status === 'success') {
+              setSuccess(nodeId, {
+                kind: 'python',
+                result: {
+                  stdout: result.stdout,
+                  stderr: result.stderr,
+                  table: result.table ?? null,
+                  plotJson: result.plotJson ?? null,
+                },
+                code,
+              });
+            } else {
+              setError(nodeId, result.error ?? 'Execution failed');
+            }
+          }
+          markDirty();
+          return;
+        }
+
+        if (node.type === 'sqlCell') {
+          const result = await executeSqlWithPreview(code);
+          const output = { kind: 'sql' as const, result, code };
+          setSuccess(nodeId, output);
+          markDirty();
+          return;
+        }
+
+        if (node.type === 'notebookFrame') {
+          const { executeFrameCells, resolveUpstreamDataForCell } =
+            await import('../../../lib/chainExecutor');
+          const { useChainStore } = await import('../../../state/chainStore');
+          const cellIds = useChainStore.getState().getCellOrder(nodeId);
+          const upstreamData = resolveUpstreamDataForCell(
+            nodeId,
+            edgesState.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
+            nodesState.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
+          );
+          await executeFrameCells(cellIds, upstreamData);
+          setStatus(nodeId, 'success');
           markDirty();
           return;
         }
@@ -1345,232 +1475,235 @@ function BoardPageContent({ params }: BoardPageProps) {
   // (e.g. when the last node is deleted and refs are not yet updated)
   const autoSaveBoard = useCallback(
     async (override?: { nodes?: CanvasNode[]; edges?: CanvasEdge[] }) => {
-    if (isAutoSavingRef.current || !dataLoadedRef.current || isLoadingRef.current) {
-      console.log(
-        '[AutoSave] Skipping - isAutoSaving:',
-        isAutoSavingRef.current,
-        'dataLoaded:',
-        dataLoadedRef.current,
-        'isLoading:',
-        isLoadingRef.current,
-      );
-      return;
-    }
+      if (isAutoSavingRef.current || !dataLoadedRef.current || isLoadingRef.current) {
+        console.log(
+          '[AutoSave] Skipping - isAutoSaving:',
+          isAutoSavingRef.current,
+          'dataLoaded:',
+          dataLoadedRef.current,
+          'isLoading:',
+          isLoadingRef.current,
+        );
+        return;
+      }
 
-    // CRITICAL FIX: Prefer explicit override when provided (e.g. immediate delete)
-    // Fallback to nodesState / edgesState as source of truth for auto-save.
-    const currentNodes =
-      override?.nodes ?? (nodesStateRef.current.length > 0 ? nodesStateRef.current : nodesState);
-    const currentEdges = override?.edges ?? (edgesState.length > 0 ? edgesState : []);
-    console.log('[AutoSave] Saving nodes:', currentNodes.length, 'edges:', currentEdges.length);
+      // CRITICAL FIX: Prefer explicit override when provided (e.g. immediate delete)
+      // Fallback to nodesState / edgesState as source of truth for auto-save.
+      const currentNodes =
+        override?.nodes ?? (nodesStateRef.current.length > 0 ? nodesStateRef.current : nodesState);
+      const currentEdges = override?.edges ?? (edgesState.length > 0 ? edgesState : []);
+      console.log('[AutoSave] Saving nodes:', currentNodes.length, 'edges:', currentEdges.length);
 
-    // Build payload from Yjs data
-    const nodes = currentNodes.map((node) => {
-      const payload: Record<string, unknown> = { ...(node.payload ?? {}) };
-      if (node.type === 'sql') {
-        const entry = useExecutionStore.getState().entries[node.id];
-        const sqlFromPayload = (payload.sql as string | undefined) ?? '';
-        payload.sql = sqlFromPayload.trim() !== '' ? sqlFromPayload : (entry?.code ?? '');
-        if (entry?.status === 'success' && entry.output) {
-          payload.execution = {
-            status: entry.status,
-            output: entry.output,
-            hiddenOutputs: entry.hiddenOutputs,
+      // Build payload from Yjs data
+      const nodes = currentNodes.map((node) => {
+        const payload: Record<string, unknown> = { ...(node.payload ?? {}) };
+        if (node.type === 'sql') {
+          const entry = useExecutionStore.getState().entries[node.id];
+          const sqlFromPayload = (payload.sql as string | undefined) ?? '';
+          payload.sql = sqlFromPayload.trim() !== '' ? sqlFromPayload : (entry?.code ?? '');
+          if (entry?.status === 'success' && entry.output) {
+            payload.execution = {
+              status: entry.status,
+              output: entry.output,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
+          } else if (entry?.status === 'error') {
+            payload.execution = {
+              status: entry.status,
+              error: entry.error,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
+          }
+        } else if (node.type === 'python') {
+          const entry = useExecutionStore.getState().entries[node.id];
+          const pythonFromPayload = (payload.python as string | undefined) ?? '';
+          payload.python =
+            pythonFromPayload.trim() !== '' ? pythonFromPayload : (entry?.code ?? '');
+          if (entry?.status === 'success' && entry.output) {
+            payload.execution = {
+              status: entry.status,
+              output: entry.output,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
+          } else if (entry?.status === 'error') {
+            payload.execution = {
+              status: entry.status,
+              error: entry.error,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
+          }
+        } else if (node.type === 'note') {
+          const text =
+            typeof (payload as any).text === 'string'
+              ? (payload as any).text
+              : ((payload as any).noteContent ?? '');
+          payload.text = text ?? '';
+          if ((payload as any).noteContent === undefined) {
+            (payload as any).noteContent = text ?? '';
+          }
+        } else if (node.type === 'pen') {
+          payload.points = (payload as any).points ?? [];
+          payload.initialSize = (payload as any).initialSize ?? { width: 100, height: 100 };
+        } else if (node.type === 'text') {
+          const text =
+            typeof (payload as any).text === 'string'
+              ? (payload as any).text
+              : ((payload as any).textContent ?? '');
+          payload.text = text ?? '';
+          payload.textContent = text ?? '';
+          payload.fontSize = (payload as any).fontSize ?? 18;
+          payload.fontFamily = (payload as any).fontFamily ?? 'Inter, sans-serif';
+          payload.color = (payload as any).color ?? '#0f172a';
+          payload.textAlign = (payload as any).textAlign ?? 'left';
+          if ((payload as any).richContent) {
+            payload.richContent = (payload as any).richContent;
+          }
+        } else if (node.type === 'plot') {
+          payload.chartType = (payload as any).chartType ?? 'bar';
+          payload.mapping = (payload as any).mapping ?? {};
+          payload.styling = (payload as any).styling ?? {
+            title: 'New Chart',
+            theme: 'light',
+            showLegend: true,
+            legendPosition: 'top',
+            showGrid: true,
           };
-        } else if (entry?.status === 'error') {
-          payload.execution = {
-            status: entry.status,
-            error: entry.error,
-            hiddenOutputs: entry.hiddenOutputs,
-          };
+          payload.version = (payload as any).version ?? '1';
+          // Persist last successful plot execution (10k snapshot) so visualizations survive reload
+          const entry = useExecutionStore.getState().entries[node.id];
+          if (entry?.status === 'success' && entry.output && entry.output.kind === 'plot') {
+            payload.execution = {
+              status: entry.status,
+              output: entry.output,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
+          }
         }
-      } else if (node.type === 'python') {
-        const entry = useExecutionStore.getState().entries[node.id];
-        const pythonFromPayload = (payload.python as string | undefined) ?? '';
-        payload.python = pythonFromPayload.trim() !== '' ? pythonFromPayload : (entry?.code ?? '');
-        if (entry?.status === 'success' && entry.output) {
-          payload.execution = {
-            status: entry.status,
-            output: entry.output,
-            hiddenOutputs: entry.hiddenOutputs,
-          };
-        } else if (entry?.status === 'error') {
-          payload.execution = {
-            status: entry.status,
-            error: entry.error,
-            hiddenOutputs: entry.hiddenOutputs,
-          };
-        }
-      } else if (node.type === 'note') {
-        const text =
-          typeof (payload as any).text === 'string'
-            ? (payload as any).text
-            : ((payload as any).noteContent ?? '');
-        payload.text = text ?? '';
-        if ((payload as any).noteContent === undefined) {
-          (payload as any).noteContent = text ?? '';
-        }
-      } else if (node.type === 'pen') {
-        payload.points = (payload as any).points ?? [];
-        payload.initialSize = (payload as any).initialSize ?? { width: 100, height: 100 };
-      } else if (node.type === 'text') {
-        const text =
-          typeof (payload as any).text === 'string'
-            ? (payload as any).text
-            : ((payload as any).textContent ?? '');
-        payload.text = text ?? '';
-        payload.textContent = text ?? '';
-        payload.fontSize = (payload as any).fontSize ?? 18;
-        payload.fontFamily = (payload as any).fontFamily ?? 'Inter, sans-serif';
-        payload.color = (payload as any).color ?? '#0f172a';
-        payload.textAlign = (payload as any).textAlign ?? 'left';
-        if ((payload as any).richContent) {
-          payload.richContent = (payload as any).richContent;
-        }
-      } else if (node.type === 'plot') {
-        payload.chartType = (payload as any).chartType ?? 'bar';
-        payload.mapping = (payload as any).mapping ?? {};
-        payload.styling = (payload as any).styling ?? {
-          title: 'New Chart',
-          theme: 'light',
-          showLegend: true,
-          legendPosition: 'top',
-          showGrid: true,
-        };
-        payload.version = (payload as any).version ?? '1';
-        // Persist last successful plot execution (10k snapshot) so visualizations survive reload
-        const entry = useExecutionStore.getState().entries[node.id];
-        if (entry?.status === 'success' && entry.output && entry.output.kind === 'plot') {
-          payload.execution = {
-            status: entry.status,
-            output: entry.output,
-            hiddenOutputs: entry.hiddenOutputs,
-          };
-        }
-      }
-      const existingUi = (payload.ui as Record<string, unknown> | undefined) ?? {};
-      const ui: Record<string, unknown> = { ...existingUi };
-      const width = nodeSizes[node.id]?.width;
-      const height = nodeSizes[node.id]?.height;
-      if (
-        node.type !== 'note' &&
-        node.type !== 'pen' &&
-        node.type !== 'text' &&
-        width !== undefined
-      ) {
-        ui.width = width;
-      }
-      if (node.type === 'note') {
-        const existingH = (payload.ui as any)?.height as number | undefined;
-        if (existingH !== undefined) {
-          ui.height = existingH;
-        } else if (ui.height === undefined) {
-          ui.height = 96;
-        }
-        if (ui.width === undefined) {
-          ui.width = 160;
-        }
-      }
-      if (node.type === 'text') {
-        const existingH = (payload.ui as any)?.height as number | undefined;
-        if (existingH !== undefined) {
-          ui.height = existingH;
-        } else if (ui.height === undefined) {
-          ui.height = 80;
-        }
-        const existingW = (payload.ui as any)?.width as number | undefined;
-        if (existingW !== undefined) {
-          ui.width = existingW;
-        } else if (ui.width === undefined) {
-          ui.width = 240;
-        }
-      }
-      if (node.type === 'pen') {
-        if (width !== undefined) {
+        const existingUi = (payload.ui as Record<string, unknown> | undefined) ?? {};
+        const ui: Record<string, unknown> = { ...existingUi };
+        const width = nodeSizes[node.id]?.width;
+        const height = nodeSizes[node.id]?.height;
+        if (
+          node.type !== 'note' &&
+          node.type !== 'pen' &&
+          node.type !== 'text' &&
+          width !== undefined
+        ) {
           ui.width = width;
-        } else if (ui.width === undefined && (payload as any).initialSize?.width) {
-          ui.width = (payload as any).initialSize.width;
         }
-        if (height !== undefined) {
-          ui.height = height;
-        } else if (ui.height === undefined && (payload as any).initialSize?.height) {
-          ui.height = (payload as any).initialSize.height;
+        if (node.type === 'note') {
+          const existingH = (payload.ui as any)?.height as number | undefined;
+          if (existingH !== undefined) {
+            ui.height = existingH;
+          } else if (ui.height === undefined) {
+            ui.height = 96;
+          }
+          if (ui.width === undefined) {
+            ui.width = 160;
+          }
         }
-      }
-      if (Object.keys(ui).length > 0) {
-        payload.ui = ui;
-      } else if (payload.ui) {
-        delete payload.ui;
-      }
-      return {
-        id: node.id,
-        type: node.type,
-        position: node.position,
-        payload,
-      };
-    });
-
-    const nodeIds = new Set(nodes.map((n) => n.id).filter((id) => isValidUuid(id)));
-    const edges = currentEdges
-      .filter((e) => isValidUuid(e.id) && isValidUuid(e.sourceId) && isValidUuid(e.targetId))
-      .filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId))
-      .map((edge) => ({
-        id: edge.id,
-        sourceId: edge.sourceId,
-        targetId: edge.targetId,
-        metadata: edge.metadata ?? {},
-      }));
-
-    const payload: SaveBoardStructureInput = { nodes, edges };
-
-    try {
-      isAutoSavingRef.current = true;
-      await persistBoard(payload);
-      setIsDirty(false);
-      setSaveError(null);
-
-      // Update serverDataRef with saved data
-      queryClient.setQueryData<BoardResponse | undefined>(['board', boardId], (previous) => {
-        if (!previous) return previous;
-
-        const savedNodes: BoardResponse['nodes'] = payload.nodes.map((node) => ({
+        if (node.type === 'text') {
+          const existingH = (payload.ui as any)?.height as number | undefined;
+          if (existingH !== undefined) {
+            ui.height = existingH;
+          } else if (ui.height === undefined) {
+            ui.height = 80;
+          }
+          const existingW = (payload.ui as any)?.width as number | undefined;
+          if (existingW !== undefined) {
+            ui.width = existingW;
+          } else if (ui.width === undefined) {
+            ui.width = 240;
+          }
+        }
+        if (node.type === 'pen') {
+          if (width !== undefined) {
+            ui.width = width;
+          } else if (ui.width === undefined && (payload as any).initialSize?.width) {
+            ui.width = (payload as any).initialSize.width;
+          }
+          if (height !== undefined) {
+            ui.height = height;
+          } else if (ui.height === undefined && (payload as any).initialSize?.height) {
+            ui.height = (payload as any).initialSize.height;
+          }
+        }
+        if (Object.keys(ui).length > 0) {
+          payload.ui = ui;
+        } else if (payload.ui) {
+          delete payload.ui;
+        }
+        return {
           id: node.id,
-          boardId,
           type: node.type,
           position: node.position,
-          payload: node.payload,
-        }));
-        const savedEdges: BoardResponse['edges'] = payload.edges.map((edge) => ({
+          payload,
+        };
+      });
+
+      const nodeIds = new Set(nodes.map((n) => n.id).filter((id) => isValidUuid(id)));
+      const edges = currentEdges
+        .filter((e) => isValidUuid(e.id) && isValidUuid(e.sourceId) && isValidUuid(e.targetId))
+        .filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId))
+        .map((edge) => ({
           id: edge.id,
           sourceId: edge.sourceId,
           targetId: edge.targetId,
           metadata: edge.metadata ?? {},
         }));
 
-        serverDataRef.current = { nodes: savedNodes, edges: savedEdges };
+      const payload: SaveBoardStructureInput = { nodes, edges };
 
-        return {
-          board: previous.board,
-          nodes: savedNodes,
-          edges: savedEdges,
-        };
-      });
-    } catch (err) {
-      console.error('Auto-save failed:', err);
-      setSaveError(err instanceof Error ? err.message : 'Failed to auto-save board');
-    } finally {
-      isAutoSavingRef.current = false;
-    }
-  }, [
-    boardId,
-    persistBoard,
-    queryClient,
-    nodeSizes,
-    collaboration.canvasNodes,
-    collaboration.canvasEdges,
-    nodesState,
-    edgesState,
-  ]);
+      try {
+        isAutoSavingRef.current = true;
+        await persistBoard(payload);
+        setIsDirty(false);
+        setSaveError(null);
+
+        // Update serverDataRef with saved data
+        queryClient.setQueryData<BoardResponse | undefined>(['board', boardId], (previous) => {
+          if (!previous) return previous;
+
+          const savedNodes: BoardResponse['nodes'] = payload.nodes.map((node) => ({
+            id: node.id,
+            boardId,
+            type: node.type,
+            position: node.position,
+            payload: node.payload,
+          }));
+          const savedEdges: BoardResponse['edges'] = payload.edges.map((edge) => ({
+            id: edge.id,
+            sourceId: edge.sourceId,
+            targetId: edge.targetId,
+            metadata: edge.metadata ?? {},
+          }));
+
+          serverDataRef.current = { nodes: savedNodes, edges: savedEdges };
+
+          return {
+            board: previous.board,
+            nodes: savedNodes,
+            edges: savedEdges,
+          };
+        });
+      } catch (err) {
+        console.error('Auto-save failed:', err);
+        setSaveError(err instanceof Error ? err.message : 'Failed to auto-save board');
+      } finally {
+        isAutoSavingRef.current = false;
+      }
+    },
+    [
+      boardId,
+      persistBoard,
+      queryClient,
+      nodeSizes,
+      collaboration.canvasNodes,
+      collaboration.canvasEdges,
+      nodesState,
+      edgesState,
+    ],
+  );
 
   // Debounced auto-save trigger
   // CRITICAL FIX: Moved before first useEffect to fix initialization order
@@ -1593,16 +1726,19 @@ function BoardPageContent({ params }: BoardPageProps) {
   // Flush debounce and save immediately (e.g. on delete so refresh loads correct state)
   // Accepts optional override of nodes/edges to guarantee we persist exactly the state
   // that was just produced by the user action (important for deletions).
-  const triggerImmediateSave = useCallback((override?: { nodes?: CanvasNode[]; edges?: CanvasEdge[] }) => {
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
-    // Run after React has applied setState so nodesStateRef is up to date
-    setTimeout(() => {
-      void autoSaveBoard(override);
-    }, 0);
-  }, [autoSaveBoard]);
+  const triggerImmediateSave = useCallback(
+    (override?: { nodes?: CanvasNode[]; edges?: CanvasEdge[] }) => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      // Run after React has applied setState so nodesStateRef is up to date
+      setTimeout(() => {
+        void autoSaveBoard(override);
+      }, 0);
+    },
+    [autoSaveBoard],
+  );
 
   // Ensure latest Yjs state is persisted when user closes tab / reloads page.
   // This avoids situations where new nodes disappear or deleted nodes reappear

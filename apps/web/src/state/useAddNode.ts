@@ -14,7 +14,12 @@ type NodeKind =
   | 'document'
   | 'database'
   | 'plot'
-  | 'voice';
+  | 'voice'
+  | 'notebook'
+  | 'pythonCell'
+  | 'markdownCell'
+  | 'sqlCell'
+  | 'notebookFrame';
 
 type NewNode = {
   id: string;
@@ -189,8 +194,6 @@ export function useAddNode() {
       position: centeredPosition,
       payload: {
         shapeType: payload?.shapeType ?? 'rectangle',
-        shapeColor: SHAPE_DEFAULTS.legacyShapeColor,
-        shapeLabel: 'Фигура',
         fill: payload?.fill ?? SHAPE_DEFAULTS.fill,
         stroke: payload?.stroke ?? SHAPE_DEFAULTS.stroke,
         strokeWidth: payload?.strokeWidth ?? SHAPE_DEFAULTS.strokeWidth,
@@ -357,6 +360,98 @@ export function useAddNode() {
     };
   }
 
+  function createNotebookNode(
+    position: Position,
+    payload?: {
+      notebook?: unknown;
+      fileName?: string;
+    },
+  ): NewNode {
+    const nodeWidth = 520;
+    const centeredPosition = centerPosition(position, nodeWidth, 200);
+    return {
+      id: createId(),
+      type: 'notebook',
+      position: centeredPosition,
+      payload: {
+        notebook: payload?.notebook ?? null,
+        fileName: payload?.fileName ?? 'Untitled',
+        width: nodeWidth,
+      },
+    };
+  }
+
+  function createPythonCell(
+    position: Position,
+    opts?: { source?: string; frameId?: string; cellIndex?: number; exact?: boolean },
+  ): NewNode {
+    const nodeWidth = 520;
+    const nodeHeight = 180;
+    const finalPosition =
+      opts?.frameId || opts?.exact ? position : centerPosition(position, nodeWidth, nodeHeight);
+    return {
+      id: createId(),
+      type: 'pythonCell',
+      position: finalPosition,
+      payload: {
+        cellSource: opts?.source ?? '',
+        cellLanguage: 'python',
+      },
+    };
+  }
+
+  function createMarkdownCell(
+    position: Position,
+    opts?: { source?: string; frameId?: string; cellIndex?: number; exact?: boolean },
+  ): NewNode {
+    const nodeWidth = 520;
+    const nodeHeight = 100;
+    const finalPosition =
+      opts?.frameId || opts?.exact ? position : centerPosition(position, nodeWidth, nodeHeight);
+    return {
+      id: createId(),
+      type: 'markdownCell',
+      position: finalPosition,
+      payload: {
+        cellSource: opts?.source ?? '',
+        cellLanguage: 'markdown',
+      },
+    };
+  }
+
+  function createSqlCell(position: Position, opts?: { source?: string }): NewNode {
+    const nodeWidth = 520;
+    const nodeHeight = 180;
+    const centeredPosition = centerPosition(position, nodeWidth, nodeHeight);
+    return {
+      id: createId(),
+      type: 'sqlCell',
+      position: centeredPosition,
+      payload: {
+        cellSource: opts?.source ?? 'SELECT 1;',
+        cellLanguage: 'sql',
+      },
+    };
+  }
+
+  function createNotebookFrame(
+    position: Position,
+    opts?: { name?: string; cellIds?: string[] },
+  ): NewNode {
+    const nodeWidth = 560;
+    const nodeHeight = 400;
+    const centeredPosition = centerPosition(position, nodeWidth, nodeHeight);
+    return {
+      id: createId(),
+      type: 'notebookFrame',
+      position: centeredPosition,
+      payload: {
+        frameName: opts?.name ?? 'Notebook',
+        cellIds: opts?.cellIds ?? [],
+      },
+    };
+  }
+
   return {
     getNextPosition,
     createSqlNode,
@@ -370,5 +465,10 @@ export function useAddNode() {
     createDatabaseNode,
     createPlotNode,
     createVoiceNode,
+    createNotebookNode,
+    createPythonCell,
+    createMarkdownCell,
+    createSqlCell,
+    createNotebookFrame,
   };
 }

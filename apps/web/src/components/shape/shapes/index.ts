@@ -11,35 +11,52 @@ export type { ShapeDefinition, ShapeStyleData, ShapeRenderProps } from './types'
 
 import { arrowShape } from './arrow';
 import { arrowRectangleShape } from './arrowRectangle';
+import { bannerShape } from './banner';
 import { circleShape } from './circle';
+import { cloudShape } from './cloud';
 import { cylinderShape } from './cylinder';
 import { diamondShape } from './diamond';
+import { documentShapeShape } from './documentShape';
 import { ellipseShape } from './ellipse';
+import { heartShape } from './heart';
 import { hexagonShape } from './hexagon';
 import { lineShape } from './line';
+import { octagonShape } from './octagon';
 import { parallelogramShape } from './parallelogram';
+import { pentagonShape } from './pentagon';
 import { plusShape } from './plus';
 import { rectangleShape } from './rectangle';
 import { roundRectangleShape } from './roundRectangle';
+import { speechBubbleShape } from './speechBubble';
 import { starShape } from './star';
 import { triangleShape } from './triangle';
 
 import type { ShapeDefinition } from './types';
 
-/** Ordered list — controls palette display order. */
+/** Ordered list — controls palette display order, grouped by category. */
 const ALL_SHAPES: ShapeDefinition[] = [
+  // Basic shapes
   rectangleShape,
   roundRectangleShape,
   circleShape,
-  diamondShape,
-  triangleShape,
   ellipseShape,
+  triangleShape,
+  diamondShape,
+  pentagonShape,
   hexagonShape,
+  octagonShape,
+  starShape,
+  heartShape,
+  cloudShape,
+  bannerShape,
+  // Flowchart
   parallelogramShape,
   cylinderShape,
   arrowRectangleShape,
   plusShape,
-  starShape,
+  documentShapeShape,
+  speechBubbleShape,
+  // Lines
   lineShape,
   arrowShape,
 ];

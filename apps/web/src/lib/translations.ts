@@ -81,6 +81,7 @@ export type TranslationMessages = {
   addDatabaseNode: string;
   addPlotNode: string;
   uploadCsvExcel: string;
+  uploadNotebook: string;
   deleteSelection: string;
   sqlCell: string;
   pythonCell: string;
@@ -268,6 +269,7 @@ const messages: Record<Locale, TranslationMessages> = {
     addDatabaseNode: 'Добавить узел Database (D)',
     addPlotNode: 'Добавить узел Plot (P)',
     uploadCsvExcel: 'Загрузить CSV/Excel',
+    uploadNotebook: 'Загрузить Jupyter Notebook (.ipynb)',
     deleteSelection: 'Удалить выбранное (Delete)',
     sqlCell: 'SQL ячейка',
     pythonCell: 'Python ячейка',
@@ -338,6 +340,9 @@ const messages: Record<Locale, TranslationMessages> = {
     },
 
     shapeLabels: {
+      _categoryBasic: 'Фигуры',
+      _categoryFlowchart: 'Блок-схемы',
+      _categoryLines: 'Линии',
       rectangle: 'Прямоугольник',
       'round-rectangle': 'Скруглённый прямоугольник',
       circle: 'Круг',
@@ -345,11 +350,18 @@ const messages: Record<Locale, TranslationMessages> = {
       triangle: 'Треугольник',
       ellipse: 'Эллипс',
       hexagon: 'Шестиугольник',
+      pentagon: 'Пятиугольник',
+      octagon: 'Восьмиугольник',
       parallelogram: 'Параллелограмм',
       cylinder: 'Цилиндр',
       'arrow-rectangle': 'Прямоугольник со стрелкой',
       plus: 'Плюс',
       star: 'Звезда',
+      heart: 'Сердце',
+      cloud: 'Облако',
+      'speech-bubble': 'Выноска',
+      'document-shape': 'Документ',
+      banner: 'Баннер',
       line: 'Линия',
       arrow: 'Стрелка',
     },
@@ -512,6 +524,7 @@ const messages: Record<Locale, TranslationMessages> = {
     addDatabaseNode: 'Add Database node (D)',
     addPlotNode: 'Add Plot node (P)',
     uploadCsvExcel: 'Upload CSV/Excel',
+    uploadNotebook: 'Upload Jupyter Notebook (.ipynb)',
     deleteSelection: 'Delete selection (Delete)',
     sqlCell: 'SQL cell',
     pythonCell: 'Python cell',
@@ -582,6 +595,9 @@ const messages: Record<Locale, TranslationMessages> = {
     },
 
     shapeLabels: {
+      _categoryBasic: 'Shapes',
+      _categoryFlowchart: 'Flowchart',
+      _categoryLines: 'Lines',
       rectangle: 'Rectangle',
       'round-rectangle': 'Round Rectangle',
       circle: 'Circle',
@@ -589,11 +605,18 @@ const messages: Record<Locale, TranslationMessages> = {
       triangle: 'Triangle',
       ellipse: 'Ellipse',
       hexagon: 'Hexagon',
+      pentagon: 'Pentagon',
+      octagon: 'Octagon',
       parallelogram: 'Parallelogram',
       cylinder: 'Cylinder',
       'arrow-rectangle': 'Arrow Rectangle',
       plus: 'Plus',
       star: 'Star',
+      heart: 'Heart',
+      cloud: 'Cloud',
+      'speech-bubble': 'Speech Bubble',
+      'document-shape': 'Document',
+      banner: 'Banner',
       line: 'Line',
       arrow: 'Arrow',
     },

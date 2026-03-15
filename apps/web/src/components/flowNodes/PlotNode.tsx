@@ -1,16 +1,17 @@
 'use client';
 
+import { Download, CaretDown } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, useMemo, useCallback, memo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { ChartRenderer } from '../visualizations/ChartRenderer';
-import { usePlotData } from '../../hooks/usePlotData';
 import { useFullCsvDataForPlot } from '../../hooks/useFullCsvDataForPlot';
 import { useFullSqlDataForPlot } from '../../hooks/useFullSqlDataForPlot';
+import { usePlotData, getUpstreamNodeId } from '../../hooks/usePlotData';
 import { usePlotSnapshot } from '../../hooks/usePlotSnapshot';
 import type { PlotNodePayload } from '../../lib/visualization/chartTypes';
 import { validatePlotConfig } from '../../lib/visualization/dataAnalyzer';
+import { useExecutionStore } from '../../state/executionStore';
 import { DATA_NODE_HANDLE_CLASS } from '../BoardCanvas';
-import { Download, CaretDown } from '@phosphor-icons/react';
+import { ChartRenderer } from '../visualizations/ChartRenderer';
 
 type PlotNodeData = {
   nodeId: string;
@@ -21,6 +22,10 @@ type PlotNodeData = {
   upstreamCsvTableName?: string;
   /** When Plot is connected to SQL node - fetch up to PLOT_DATA_MAX_ROWS without loading into store */
   upstreamSqlNodeId?: string;
+  /** ExecutionStore entry ID for notebook cell output (format: "notebookId__cellId") */
+  notebookCellEntryId?: string;
+  /** Direct inline data passed from BoardCanvas (e.g. CSV data through notebook) */
+  inlineData?: { columns: string[]; rows: Array<Array<string | number | null>> };
 };
 
 function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
@@ -65,16 +70,47 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
   // Snapshot: persisted inputData of this Plot node (up to 10k rows),
   // restored from payload.execution.output on page reload.
   const snapshotData = usePlotSnapshot(data.nodeId);
+  // When connected to a notebook cell: read cell output from executionStore
+  const notebookCellData = useExecutionStore((state) => {
+    if (!data.notebookCellEntryId) return undefined;
+    const entry = state.entries[data.notebookCellEntryId];
+    if (!entry?.output) return undefined;
+    if (entry.output.kind === 'python' && entry.output.result?.table)
+      return entry.output.result.table;
+    return undefined;
+  });
   // Fallback: data from executionStore for non-CSV/SQL chains (e.g. plot→plot, python)
   const storeData = usePlotData(data.nodeId, incomingEdges);
-  // Prefer dedicated full datasets, then snapshot; for CSV/SQL мы никогда не
-  // откатываемся к превью, только к сохранённому снапшоту.
-  const plotData =
-    data.upstreamCsvTableName
-      ? fullCsvData ?? snapshotData
-      : data.upstreamSqlNodeId
-        ? fullSqlData ?? snapshotData
-        : snapshotData ?? storeData;
+
+  // Reactively detect if upstream is a notebook with executed cell data.
+  // When notebook cells have been run, their processed data should take
+  // priority over the raw CSV passthrough (inlineData / fullCsvData).
+  const upstreamNodeId = useMemo(
+    () => getUpstreamNodeId(incomingEdges, data.nodeId),
+    [incomingEdges, data.nodeId],
+  );
+  const hasNotebookCellOutput = useExecutionStore((state) => {
+    if (!upstreamNodeId) return false;
+    const prefix = `${upstreamNodeId}__`;
+    return Object.keys(state.entries).some((k) => {
+      if (!k.startsWith(prefix)) return false;
+      const entry = state.entries[k];
+      return entry?.output?.kind === 'python' && !!entry.output.result?.table;
+    });
+  });
+
+  // When connected to a specific notebook cell (via cell-out-{cellId} handle),
+  // use ONLY that cell's data. This prevents cross-contamination when multiple
+  // PlotNodes are connected to different cells of the same notebook.
+  // For generic connections (not cell-specific), use the full priority cascade.
+  const plotData = data.notebookCellEntryId
+    ? (notebookCellData ?? snapshotData)
+    : ((hasNotebookCellOutput ? storeData : undefined) ??
+      data.inlineData ??
+      (data.upstreamCsvTableName ? fullCsvData : undefined) ??
+      (data.upstreamSqlNodeId ? fullSqlData : undefined) ??
+      storeData ??
+      snapshotData);
 
   const echartsInstanceRef = useRef<any>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -88,8 +124,14 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
       // Check if there are incoming edges
       const hasIncomingEdges = incomingEdges.length > 0;
       if (hasIncomingEdges) {
-        currentStatus = 'no-data';
-        currentErrorMessage = 'Run upstream node to load data.';
+        // If CSV data is being loaded from DuckDB, show loading message instead of "run upstream"
+        if (data.upstreamCsvTableName && fullCsvLoading) {
+          currentStatus = 'no-data';
+          currentErrorMessage = 'Loading data from CSV…';
+        } else {
+          currentStatus = 'no-data';
+          currentErrorMessage = 'Run upstream node to load data.';
+        }
       } else {
         currentStatus = 'no-data';
         currentErrorMessage = 'Connect a SQL, Python, or CSV node to this chart.';
@@ -110,7 +152,14 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
     }
 
     return { status: currentStatus, errorMessage: currentErrorMessage };
-  }, [plotData, payload, incomingEdges.length, data.nodeId]);
+  }, [
+    plotData,
+    payload,
+    incomingEdges.length,
+    data.nodeId,
+    data.upstreamCsvTableName,
+    fullCsvLoading,
+  ]);
 
   const chartHeight = 360;
   const nodeWidth = data.width || 500;
@@ -339,10 +388,10 @@ export const PlotNode = memo(PlotNodeComponent, (prevProps, nextProps) => {
     .join(',');
   if (prevIncomingKey !== nextIncomingKey) return false;
 
-  if (prevProps.data.upstreamCsvTableName !== nextProps.data.upstreamCsvTableName)
-    return false;
-  if (prevProps.data.upstreamSqlNodeId !== nextProps.data.upstreamSqlNodeId)
-    return false;
+  if (prevProps.data.upstreamCsvTableName !== nextProps.data.upstreamCsvTableName) return false;
+  if (prevProps.data.upstreamSqlNodeId !== nextProps.data.upstreamSqlNodeId) return false;
+  if (prevProps.data.notebookCellEntryId !== nextProps.data.notebookCellEntryId) return false;
+  if (prevProps.data.inlineData !== nextProps.data.inlineData) return false;
 
   return true; // Props are equal, skip re-render
 });

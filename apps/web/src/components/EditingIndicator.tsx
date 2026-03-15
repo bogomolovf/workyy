@@ -9,21 +9,15 @@ type EditingIndicatorProps = {
   className?: string;
 };
 
-/**
- * Shows a badge indicating who is currently editing the node
- * Displays user names/emails with their cursor colors
- */
 export function EditingIndicator({
   editors,
   position = 'top-right',
   className = '',
 }: EditingIndicatorProps) {
-  // Don't render if no one else is editing
   if (editors.length === 0) {
     return null;
   }
 
-  // Position styles
   const positionStyles = useMemo(() => {
     switch (position) {
       case 'top-left':
@@ -39,44 +33,41 @@ export function EditingIndicator({
     }
   }, [position]);
 
-  // Format display text
   const displayText = useMemo(() => {
     if (editors.length === 1) {
       const editor = editors[0];
       const name = editor.userName || 'Someone';
-      // Truncate long names
-      return name.length > 12 ? `${name.slice(0, 10)}...` : name;
+      const truncated = name.length > 15 ? `${name.slice(0, 13)}...` : name;
+      return `${truncated} is typing`;
     }
-    return `${editors.length} users`;
+    return `${editors.length} users typing`;
   }, [editors]);
 
-  // Get primary color (first editor's color)
   const primaryColor = editors[0]?.color || '#6366f1';
 
   return (
     <div
       className={`absolute ${positionStyles} z-50 pointer-events-none ${className}`}
-      style={{ marginTop: position.startsWith('top') ? '-4px' : '4px' }}
+      style={{ marginTop: position.startsWith('top') ? '-6px' : '6px' }}
     >
       <div
-        className="flex items-center gap-1.5 px-2 py-1 rounded-md shadow-md text-xs font-medium text-white whitespace-nowrap animate-pulse"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg shadow-lg text-sm font-semibold text-white whitespace-nowrap"
         style={{
           backgroundColor: primaryColor,
-          opacity: 0.95,
+          boxShadow: `0 2px 8px ${primaryColor}66`,
         }}
       >
-        {/* Typing indicator dots */}
-        <span className="flex gap-0.5">
+        <span className="flex gap-[3px] items-center">
           <span
-            className="w-1 h-1 rounded-full bg-white animate-bounce"
+            className="w-1.5 h-1.5 rounded-full bg-white animate-bounce"
             style={{ animationDelay: '0ms' }}
           />
           <span
-            className="w-1 h-1 rounded-full bg-white animate-bounce"
+            className="w-1.5 h-1.5 rounded-full bg-white animate-bounce"
             style={{ animationDelay: '150ms' }}
           />
           <span
-            className="w-1 h-1 rounded-full bg-white animate-bounce"
+            className="w-1.5 h-1.5 rounded-full bg-white animate-bounce"
             style={{ animationDelay: '300ms' }}
           />
         </span>

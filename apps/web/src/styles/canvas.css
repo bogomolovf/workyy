@@ -215,6 +215,24 @@
 
 .react-flow__resize-control {
   pointer-events: all;
+  z-index: 100 !important;
+}
+
+.react-flow__resize-control.handle {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* Node wrappers — allow overflow so resize handles at edges are reachable */
+.react-flow__node-shapeNode,
+.react-flow__node-csvNode,
+.react-flow__node-sqlNode,
+.react-flow__node-pythonNode,
+.react-flow__node-pythonCellNode,
+.react-flow__node-markdownCellNode,
+.react-flow__node-sqlCellNode,
+.react-flow__node-notebookFrameNode {
+  overflow: visible !important;
 }
 
 /* Sticky node styles */
@@ -235,10 +253,6 @@
   border: none !important;
   box-shadow: none !important;
   overflow: visible !important;
-  /* Добавляем плавный transition для размеров, чтобы избежать "подпрыгивания" */
-  transition:
-    width 0.15s ease-out,
-    height 0.15s ease-out;
 }
 
 /* TipTap editor styles */

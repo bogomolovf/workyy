@@ -1,17 +1,25 @@
 'use client';
 
-import { Upload, Image, VideoCamera, FileText, X, SpinnerGap } from '@phosphor-icons/react';
+import {
+  Upload,
+  Image,
+  VideoCamera,
+  FileText,
+  Notebook,
+  X,
+  SpinnerGap,
+} from '@phosphor-icons/react';
 import imageCompression from 'browser-image-compression';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone, type FileRejection } from 'react-dropzone';
 import { uploadFile, getNodeTypeFromMimeType, type UploadedFile } from '../lib/api';
 
-// Supported file types
 const ACCEPTED_FILE_TYPES = {
   'image/*': ['.jpeg', '.jpg', '.png', '.webp', '.gif'],
   'video/*': ['.mp4', '.webm'],
   'application/pdf': ['.pdf'],
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+  'application/x-ipynb+json': ['.ipynb'],
 };
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -32,6 +40,7 @@ type FileDropOverlayProps = {
       dropPosition?: { x: number; y: number };
     }>,
   ) => void;
+  onNotebookDropped?: (file: File, dropPosition?: { x: number; y: number }) => void;
   getDropPosition: (clientX: number, clientY: number) => { x: number; y: number };
   disabled?: boolean;
   children: React.ReactNode;
@@ -40,6 +49,7 @@ type FileDropOverlayProps = {
 export function FileDropOverlay({
   boardId,
   onFilesUploaded,
+  onNotebookDropped,
   getDropPosition,
   disabled = false,
   children,
@@ -90,7 +100,6 @@ export function FileDropOverlay({
     async (acceptedFiles: File[], fileRejections: FileRejection[], event: any) => {
       if (disabled || acceptedFiles.length === 0) return;
 
-      // Get drop position from event
       let dropPosition: { x: number; y: number } | undefined;
       if (event && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
         dropPosition = getDropPosition(event.clientX, event.clientY);
@@ -98,7 +107,6 @@ export function FileDropOverlay({
         dropPosition = dropPositionRef.current;
       }
 
-      // Handle rejected files
       if (fileRejections.length > 0) {
         const messages = fileRejections.map((rejection) => {
           const errors = rejection.errors.map((e) => e.message).join(', ');
@@ -106,6 +114,15 @@ export function FileDropOverlay({
         });
         setError(messages.join('\n'));
       }
+
+      const notebookFiles = acceptedFiles.filter((f) => f.name.endsWith('.ipynb'));
+      const mediaFiles = acceptedFiles.filter((f) => !f.name.endsWith('.ipynb'));
+
+      for (const nbFile of notebookFiles) {
+        onNotebookDropped?.(nbFile, dropPosition);
+      }
+
+      if (mediaFiles.length === 0) return;
 
       setIsUploading(true);
       setError(null);
@@ -117,15 +134,13 @@ export function FileDropOverlay({
           dropPosition?: { x: number; y: number };
         }> = [];
 
-        // Upload files sequentially (to avoid overwhelming the server)
-        for (let i = 0; i < acceptedFiles.length; i++) {
-          const file = acceptedFiles[i];
-          setUploadProgress(`Uploading ${i + 1}/${acceptedFiles.length}: ${file.name}`);
+        for (let i = 0; i < mediaFiles.length; i++) {
+          const file = mediaFiles[i];
+          setUploadProgress(`Uploading ${i + 1}/${mediaFiles.length}: ${file.name}`);
 
           const uploaded = await processAndUploadFile(file);
           if (uploaded) {
             const nodeType = getNodeTypeFromMimeType(file.type);
-            // Offset position for multiple files
             const offsetPosition = dropPosition
               ? {
                   x: dropPosition.x + i * 50,
@@ -145,7 +160,7 @@ export function FileDropOverlay({
         dropPositionRef.current = null;
       }
     },
-    [disabled, boardId, processAndUploadFile, onFilesUploaded, getDropPosition],
+    [disabled, boardId, processAndUploadFile, onFilesUploaded, onNotebookDropped, getDropPosition],
   );
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
@@ -175,7 +190,7 @@ export function FileDropOverlay({
             <div className="bg-white/95 backdrop-blur-sm px-8 py-6 rounded-2xl shadow-lg text-center">
               <Upload size={48} className="mx-auto text-blue-500 mb-3" weight="duotone" />
               <p className="text-lg font-medium text-slate-700">Drop files here</p>
-              <p className="text-sm text-slate-500 mt-1">Images, videos, PDF, or presentations</p>
+              <p className="text-sm text-slate-500 mt-1">Images, videos, documents, or notebooks</p>
               <div className="flex justify-center gap-4 mt-4">
                 <div className="flex items-center gap-1 text-xs text-slate-400">
                   <Image size={16} /> Images
@@ -185,6 +200,9 @@ export function FileDropOverlay({
                 </div>
                 <div className="flex items-center gap-1 text-xs text-slate-400">
                   <FileText size={16} /> Documents
+                </div>
+                <div className="flex items-center gap-1 text-xs text-slate-400">
+                  <Notebook size={16} /> Notebooks
                 </div>
               </div>
             </div>
