@@ -44,6 +44,7 @@ import {
   type CanvasLayoutState,
 } from '../state/canvasLayoutStore';
 import { useChainStore } from '../state/chainStore';
+import { useCommentStore } from '../state/commentStore';
 import { DEFAULT_CURSOR, useCursorSettingsStore } from '../state/cursorSettingsStore';
 import type { ExecutionEntry, NodeStatus, ExecutionStoreState } from '../state/executionStore';
 import { useExecutionStore } from '../state/executionStore';
@@ -51,6 +52,7 @@ import { useAddNode } from '../state/useAddNode';
 import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
 import { BoardInspector } from './BoardInspector';
 import CollaborativeCursors from './CollaborativeCursors';
+import { CommentLayer } from './comments/CommentLayer';
 import { ConnectionArrow } from './ConnectionArrow';
 import {
   resolveConnectionEndpoints,
@@ -69,20 +71,20 @@ import { NotebookNode } from './flowNodes/NotebookNode';
 import { PlotNode } from './flowNodes/PlotNode';
 import { PythonCellNode } from './flowNodes/PythonCellNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
+import { SqlCellNode } from './flowNodes/SqlCellNode';
 import { VideoNode } from './flowNodes/VideoNode';
 import { VoiceNode } from './flowNodes/VoiceNode';
 import { InteractiveResultTable } from './InteractiveResultTable';
-import { PlotPreview } from './PlotPreview';
+import { EraserOverlay } from './pen/EraserOverlay';
 import { FreehandOverlay } from './pen/FreehandOverlay';
-import { ShapeDragOverlay } from './shape/ShapeDragOverlay';
 import { PenNode } from './pen/PenNode';
 import { PenToolbar } from './pen/PenToolbar';
-import { EraserOverlay } from './pen/EraserOverlay';
-// Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
-import { TextNode } from './TextNode';
-import { SHAPE_DEFAULTS, isLineType as isLineShapeType } from './shape/shapeEngine';
-import { SqlCellNode } from './flowNodes/SqlCellNode';
+import { PlotPreview } from './PlotPreview';
 import { PresentationViewer } from './PresentationViewer';
+import { ShapeDragOverlay } from './shape/ShapeDragOverlay';
+// Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
+import { SHAPE_DEFAULTS, isLineType as isLineShapeType } from './shape/shapeEngine';
+import { TextNode } from './TextNode';
 
 // SessionStorage-backed cache for voice audio data
 // Persists across HMR, re-renders, and component remounts (until tab close)
@@ -158,8 +160,10 @@ type CanvasNodeType =
   | 'image'
   | 'video'
   | 'document'
+  | 'draw'
   | 'pen'
   | 'database'
+  | 'csv'
   | 'voice'
   | 'notebook';
 
@@ -1071,8 +1075,12 @@ function InnerBoardCanvas({
         x: Number.isFinite(Number((n as any).position?.x)) ? Number((n as any).position?.x) : 0,
         y: Number.isFinite(Number((n as any).position?.y)) ? Number((n as any).position?.y) : 0,
       };
+      // Для default (legacy nodes: voice, csv, video, document) берём тип из data
+      const rawType = n.type === 'sticky' ? 'note' : n.type;
       const type = (
-        n.type === 'sticky' ? ('note' as const) : (n.type as any)
+        rawType === 'default' && typeof (n as any).payload?.type === 'string'
+          ? (n as any).payload.type
+          : rawType
       ) as BoardCanvasProps['nodes'][number]['type'];
       const basePayload = (n.payload && typeof n.payload === 'object' ? n.payload : {}) as Record<
         string,
@@ -1224,6 +1232,7 @@ function InnerBoardCanvas({
   const isTextMode = tool === 'text';
   const isShapeMode = tool === 'shape';
   const isVoiceMode = tool === 'voice';
+  const isCommentMode = tool === 'comment';
 
   // Автоматически выбираем rectangle при переключении на режим shape
   useEffect(() => {
@@ -1550,6 +1559,10 @@ function InnerBoardCanvas({
           }
           if (key === 'm') {
             setTool((prev) => (prev === 'voice' ? 'select' : 'voice'));
+            return;
+          }
+          if (key === 'c') {
+            setTool((prev) => (prev === 'comment' ? 'select' : 'comment'));
             return;
           }
         }
@@ -4809,7 +4822,8 @@ function InnerBoardCanvas({
                 !isEraserMode &&
                 !isTextMode &&
                 !isShapeMode &&
-                !isVoiceMode
+                !isVoiceMode &&
+                !isCommentMode
               }
               panOnScroll={false}
               zoomOnScroll
@@ -4823,7 +4837,8 @@ function InnerBoardCanvas({
                 !isEraserMode &&
                 !isTextMode &&
                 !isShapeMode &&
-                !isVoiceMode
+                !isVoiceMode &&
+                !isCommentMode
               }
               elementsSelectable={
                 !isStickyMode &&
@@ -4831,7 +4846,8 @@ function InnerBoardCanvas({
                 !isEraserMode &&
                 !isTextMode &&
                 !isShapeMode &&
-                !isVoiceMode
+                !isVoiceMode &&
+                !isCommentMode
               }
               proOptions={{ hideAttribution: true }}
               className="h-full bg-white"
@@ -4960,6 +4976,13 @@ function InnerBoardCanvas({
                 // Всегда снимаем выделение при клике на свободную область
                 handlePaneClick();
 
+                // Клик по доске (вне карточки комментария) закрывает открытый тред и композер
+                const commentStore = useCommentStore.getState();
+                if (commentStore.activeThreadId || commentStore.composerAnchor) {
+                  commentStore.closeThread();
+                  commentStore.cancelComposer();
+                }
+
                 const xy = getClientXY(e);
                 if (!xy) return;
                 const p = rf.screenToFlowPosition({ x: xy.x, y: xy.y });
@@ -5034,6 +5057,13 @@ function InnerBoardCanvas({
                     return next;
                   });
                   onSelectNode?.(shapeNode.id);
+                  setTool('select');
+                  return;
+                }
+
+                // Comment mode: place a comment anchor at the click point
+                if (isCommentMode) {
+                  useCommentStore.getState().startComposer({ x: p.x, y: p.y });
                   setTool('select');
                   return;
                 }
@@ -5232,6 +5262,8 @@ function InnerBoardCanvas({
               <CollaborativeCursors cursors={cursors} ownClientId={clientId} />
             </ReactFlow>
           </div>
+          {/* Comment overlay: anchors, thread cards, composer — independent layer on top of canvas */}
+          <CommentLayer boardId={board.id} />
         </div>
         <BoardCommandBar
           currentTool={tool}

@@ -19,8 +19,10 @@ export type BoardResponse = {
       | 'image'
       | 'video'
       | 'document'
+      | 'draw'
       | 'pen'
       | 'database'
+      | 'csv'
       | 'voice'
       | 'notebook';
     position: { x: number; y: number };
@@ -34,7 +36,7 @@ export type BoardResponse = {
   }>;
 };
 
-const API_URL =
+export const API_URL =
   typeof window === 'undefined'
     ? (process.env.NEXT_PUBLIC_API_URL ??
       process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ??
@@ -165,8 +167,10 @@ export type PersistedNode = {
     | 'image'
     | 'video'
     | 'document'
+    | 'draw'
     | 'pen'
     | 'database'
+    | 'csv'
     | 'voice'
     | 'notebook';
   position: { x: number; y: number };

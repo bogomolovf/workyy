@@ -52,6 +52,7 @@ const nodePayloadSchema = z
   .passthrough()
   .optional();
 
+/** All node types supported by the board (including legacy: voice, csv, video, document) */
 const nodeTypeSchema = z.enum([
   'sql',
   'python',
@@ -67,6 +68,7 @@ const nodeTypeSchema = z.enum([
   'draw',
   'pen',
   'database',
+  'csv',
   'voice',
 ]);
 

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { authRoutes } from './auth';
 import { boardsRoutes } from './boards';
+import { commentsRoutes } from './comments';
 import { connectionsRoutes } from './connections';
 import { databaseConnectionsRoutes } from './databaseConnections';
 import { drawingRoutes } from './drawing';
@@ -18,6 +19,7 @@ export async function createServiceRouter(app: FastifyInstance) {
   await app.register(authRoutes);
   await app.register(boardsRoutes);
   await app.register(workspacesRoutes);
+  await app.register(commentsRoutes);
   await app.register(runsRoutes);
   await app.register(connectionsRoutes);
   await app.register(secretsRoutes);

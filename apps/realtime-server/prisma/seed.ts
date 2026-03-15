@@ -4,8 +4,11 @@ import { PrismaClient, WorkspaceRole, NodeType, RunStatus, RunTrigger } from '@p
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.messageReaction.deleteMany();
+  await prisma.threadSubscription.deleteMany();
+  await prisma.commentMessage.deleteMany();
+  await prisma.commentThread.deleteMany();
   await prisma.run.deleteMany();
-  await prisma.comment.deleteMany();
   await prisma.snapshot.deleteMany();
   await prisma.edge.deleteMany();
   await prisma.node.deleteMany();
@@ -132,12 +135,28 @@ async function main() {
     ],
   });
 
-  await prisma.comment.create({
+  const thread = await prisma.commentThread.create({
     data: {
       boardId: board.id,
       nodeId: sqlNode.id,
+      anchorX: 120,
+      anchorY: 140,
+      createdById: user.id,
+    },
+  });
+
+  await prisma.commentMessage.create({
+    data: {
+      threadId: thread.id,
       authorId: user.id,
       body: 'Нужно добавить фильтры по регионам перед запуском.',
+    },
+  });
+
+  await prisma.threadSubscription.create({
+    data: {
+      threadId: thread.id,
+      userId: user.id,
     },
   });
 

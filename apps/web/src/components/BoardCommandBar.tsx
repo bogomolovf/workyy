@@ -2,6 +2,7 @@
 
 import {
   ArrowRight,
+  ChatCircle,
   ChartBar,
   Code,
   Cursor,
@@ -28,7 +29,16 @@ import type { NodeStatus } from '../state/executionStore';
 import type { ShapeType } from './flowNodes/ShapeNode';
 import { ShapePalette } from './ShapePalette';
 
-export type CanvasTool = 'hand' | 'select' | 'note' | 'pen' | 'text' | 'shape' | 'eraser' | 'voice';
+export type CanvasTool =
+  | 'hand'
+  | 'select'
+  | 'note'
+  | 'pen'
+  | 'text'
+  | 'shape'
+  | 'eraser'
+  | 'voice'
+  | 'comment';
 
 type BoardCommandBarProps = {
   currentTool: CanvasTool;
@@ -64,6 +74,7 @@ const canvasToolIds: Array<{ id: CanvasTool; icon: typeof Cursor; hotkey: string
   { id: 'text', icon: TextT, hotkey: 'T' },
   { id: 'shape', icon: SquaresFour, hotkey: 'S' },
   { id: 'voice', icon: Microphone, hotkey: 'M' },
+  { id: 'comment', icon: ChatCircle, hotkey: 'C' },
 ];
 
 const TOOL_LABEL_KEYS: Record<

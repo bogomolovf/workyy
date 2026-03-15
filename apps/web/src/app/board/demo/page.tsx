@@ -63,6 +63,14 @@ export default function DemoBoardPage() {
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
+  const executionNodes = useMemo(() => {
+    if (!data?.nodes) return [];
+    return data.nodes.filter(
+      (n): n is typeof n & { type: 'sql' | 'python' | 'table' | 'plot' } =>
+        n.type === 'sql' || n.type === 'python' || n.type === 'table' || n.type === 'plot',
+    );
+  }, [data?.nodes]);
+
   useEffect(() => {
     if (data?.nodes) {
       const executionNodes = data.nodes.filter(isExecutionNode);
@@ -71,7 +79,7 @@ export default function DemoBoardPage() {
         setSelectedNodeId(data.nodes[0].id);
       }
     }
-  }, [data?.nodes, initFromNodes, selectedNodeId]);
+  }, [data?.nodes, executionNodes, initFromNodes, selectedNodeId]);
 
   useEffect(() => {
     if (data?.board.id) {
@@ -116,8 +124,12 @@ export default function DemoBoardPage() {
           const upstreamEntry = upstreamEdge ? latestEntries[upstreamEdge.sourceId] : undefined;
           let upstreamResult: import('../../../state/executionStore').SqlResult | undefined;
           if (upstreamEntry?.output?.kind === 'sql') {
-            upstreamResult = upstreamEntry.output.result as import('../../../state/executionStore').SqlResult;
-          } else if (upstreamEntry?.output?.kind === 'python' && upstreamEntry.output.result?.table) {
+            upstreamResult = upstreamEntry.output
+              .result as import('../../../state/executionStore').SqlResult;
+          } else if (
+            upstreamEntry?.output?.kind === 'python' &&
+            upstreamEntry.output.result?.table
+          ) {
             upstreamResult = upstreamEntry.output.result.table;
           }
 
