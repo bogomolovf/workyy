@@ -14,11 +14,15 @@ model User {
   name         String?
   avatarUrl    String?
   createdAt    DateTime  @default(now())
-  passwordHash String?   // nullable for backward compatibility with existing users
+  passwordHash String?
   roles        UserWorkspaceRole[]
   boards       Board[]   @relation("BoardOwner")
-  comments     Comment[]
   snapshots    Snapshot[]
+  commentThreads      CommentThread[]
+  commentMessages     CommentMessage[]
+  messageReactions    MessageReaction[]
+  threadSubscriptions ThreadSubscription[]
+  resolvedThreads     CommentThread[]  @relation("ThreadResolver")
 }
 
 model Workspace {
@@ -67,7 +71,7 @@ model Board {
   edges     Edge[]
   runs      Run[]
   snapshots Snapshot[]
-  comments  Comment[]
+  commentThreads CommentThread[]
   retentionPolicies RetentionPolicy[]
   runRequests RunRequest[]
   auditEvents AuditEvent[]
@@ -90,7 +94,7 @@ model Node {
   runs  Run[]
   edgesOut Edge[] @relation("EdgeSource")
   edgesIn  Edge[] @relation("EdgeTarget")
-  comments Comment[]
+  commentThreads CommentThread[]
   runRequests RunRequest[]
 }
 
@@ -106,6 +110,10 @@ enum NodeType {
   draw
   pen
   database
+  csv
+  voice
+  video
+  document
 }
 
 model Edge {
@@ -166,19 +174,64 @@ model Snapshot {
   user  User? @relation(fields: [createdBy], references: [id], onDelete: SetNull)
 }
 
-model Comment {
-  id        String   @id @default(uuid())
-  boardId   String
-  nodeId    String?
-  authorId  String?
+model CommentThread {
+  id           String    @id @default(uuid())
+  boardId      String
+  nodeId       String?
+  anchorX      Float
+  anchorY      Float
+  resolved     Boolean   @default(false)
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  board      Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  node       Node?  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  createdBy  User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  resolvedBy User?  @relation("ThreadResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  messages   CommentMessage[]
+  subscriptions ThreadSubscription[]
+
+  @@index([boardId, resolved])
+}
+
+model CommentMessage {
+  id        String    @id @default(uuid())
+  threadId  String
+  authorId  String
   body      String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-  board  Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  node   Node? @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  thread    CommentThread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author    User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions MessageReaction[]
 
-  @@index([boardId, nodeId])
+  @@index([threadId, createdAt])
+}
+
+model MessageReaction {
+  messageId String
+  emoji     String
+  userId    String
+
+  message CommentMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, emoji, userId])
+}
+
+model ThreadSubscription {
+  threadId String
+  userId   String
+
+  thread CommentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([threadId, userId])
 }
 
 model Secret {

@@ -17,8 +17,13 @@ export type BoardResponse = {
       | 'text'
       | 'shape'
       | 'image'
+      | 'draw'
       | 'pen'
-      | 'database';
+      | 'database'
+      | 'csv'
+      | 'voice'
+      | 'video'
+      | 'document';
     position: { x: number; y: number };
     payload?: Record<string, unknown>;
   }>;
@@ -30,7 +35,7 @@ export type BoardResponse = {
   }>;
 };
 
-const API_URL =
+export const API_URL =
   typeof window === 'undefined'
     ? (process.env.NEXT_PUBLIC_API_URL ??
       process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ??
@@ -145,8 +150,13 @@ export type PersistedNode = {
     | 'text'
     | 'shape'
     | 'image'
+    | 'draw'
     | 'pen'
-    | 'database';
+    | 'database'
+    | 'csv'
+    | 'voice'
+    | 'video'
+    | 'document';
   position: { x: number; y: number };
   payload?: Record<string, unknown>;
   boardId?: string;
@@ -286,29 +296,56 @@ export async function registerUser(payload: { email: string; password: string; n
 
     return res.json();
   } catch (err: any) {
-    if (err.message) {
-      throw err;
+    const msg = err?.message ?? '';
+    const isNetworkError =
+      !msg ||
+      msg === 'Load failed' ||
+      msg === 'Failed to fetch' ||
+      msg.toLowerCase().includes('network') ||
+      err?.name === 'TypeError';
+    if (isNetworkError) {
+      console.error('Registration network error:', {
+        message: msg,
+        apiUrl: `${API_URL}/api/auth/register`,
+        err,
+      });
+      throw new Error(
+        'Cannot reach the server. Make sure the backend is running (e.g. http://localhost:4000).',
+      );
     }
-    // Network error or other issues
-    console.error('Registration network error:', err);
-    throw new Error(
-      'Failed to connect to server. Make sure backend is running on http://localhost:4000',
-    );
+    throw err;
   }
 }
 
 export async function loginUser(payload: { email: string; password: string }) {
-  const res = await fetch(`${API_URL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || 'Login failed');
+  try {
+    const res = await fetch(`${API_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || 'Login failed');
+    }
+    return res.json();
+  } catch (err: any) {
+    const msg = err?.message ?? '';
+    const isNetworkError =
+      !msg ||
+      msg === 'Load failed' ||
+      msg === 'Failed to fetch' ||
+      msg.toLowerCase().includes('network') ||
+      err?.name === 'TypeError';
+    if (isNetworkError) {
+      console.error('Login network error:', err);
+      throw new Error(
+        'Cannot reach the server. Make sure the backend is running (e.g. http://localhost:4000).',
+      );
+    }
+    throw err;
   }
-  return res.json();
 }
 
 export async function logoutUser() {

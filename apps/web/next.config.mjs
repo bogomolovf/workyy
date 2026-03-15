@@ -1,3 +1,6 @@
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
@@ -5,6 +8,7 @@ const config = {
     webpackConfig.resolve = webpackConfig.resolve ?? {};
     webpackConfig.resolve.fallback = {
       ...(webpackConfig.resolve.fallback ?? {}),
+      process: require.resolve('process/browser.js'),
       child_process: false,
       fs: false,
       path: false,

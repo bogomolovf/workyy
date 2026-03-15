@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowRight,
+  ChatCircle,
   ChartBar,
   Cursor,
   Cylinder,
@@ -22,7 +23,7 @@ import type { NodeStatus } from '../state/executionStore';
 import { ShapePalette } from './ShapePalette';
 import type { ShapeType } from './flowNodes/ShapeNode';
 
-export type CanvasTool = 'select' | 'note' | 'pen' | 'text' | 'shape';
+export type CanvasTool = 'select' | 'note' | 'pen' | 'text' | 'shape' | 'comment';
 
 type BoardCommandBarProps = {
   currentTool: CanvasTool;
@@ -57,6 +58,7 @@ const canvasTools: CanvasToolConfig[] = [
   { id: 'pen', label: 'Pen', icon: PencilSimple, hotkey: 'P' },
   { id: 'text', label: 'Text', icon: TextT, hotkey: 'T' },
   { id: 'shape', label: 'Shape', icon: SquaresFour, hotkey: 'S' },
+  { id: 'comment', label: 'Comment', icon: ChatCircle, hotkey: 'C' },
 ];
 
 const statusToneClasses: Record<NodeStatus, string> = {

@@ -7,7 +7,7 @@ import ReactFlow, {
   BackgroundVariant,
   Controls,
   Connection,
-  ConnectionStartParams,
+  OnConnectStartParams,
   Edge,
   EdgeChange,
   Handle,
@@ -53,6 +53,8 @@ import { DatabaseNode } from './flowNodes/DatabaseNode';
 import { PlotNode } from './flowNodes/PlotNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
 import CustomConnectionLine from './flowEdges/CustomConnectionLine';
+import { CommentLayer } from './comments/CommentLayer';
+import { useCommentStore } from '../state/commentStore';
 
 const MonacoEditor = dynamic(async () => import('@monaco-editor/react'), {
   ssr: false,
@@ -72,8 +74,13 @@ type CanvasNodeType =
   | 'text'
   | 'shape'
   | 'image'
+  | 'draw'
   | 'pen'
-  | 'database';
+  | 'database'
+  | 'csv'
+  | 'voice'
+  | 'video'
+  | 'document';
 
 type BoardCanvasProps = {
   board: {
@@ -501,6 +508,16 @@ const PythonNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
   );
 };
 
+/** Fallback for legacy/unknown node types (e.g. voice, csv, video, document) so old boards load without error */
+function DefaultNode({ data }: NodeProps) {
+  const typeLabel = (data?.type as string) ?? 'node';
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <span className="text-sm text-slate-500">{typeLabel}</span>
+    </div>
+  );
+}
+
 const nodeTypes = {
   sqlNode: SqlNodeComponent,
   pythonNode: PythonNodeComponent,
@@ -509,6 +526,7 @@ const nodeTypes = {
   databaseNode: DatabaseNode,
   plotNode: PlotNode,
   shapeNode: ShapeNode, // Заметки теперь тоже shape nodes
+  default: DefaultNode,
 };
 
 type ConnectionArrowsOverlayProps = {
@@ -759,8 +777,12 @@ function InnerBoardCanvas({
         x: Number.isFinite(Number((n as any).position?.x)) ? Number((n as any).position?.x) : 0,
         y: Number.isFinite(Number((n as any).position?.y)) ? Number((n as any).position?.y) : 0,
       };
+      // Для default (legacy nodes: voice, csv, video, document) берём тип из data
+      const rawType = n.type === 'sticky' ? 'note' : n.type;
       const type = (
-        n.type === 'sticky' ? ('note' as const) : (n.type as any)
+        rawType === 'default' && typeof (n as any).payload?.type === 'string'
+          ? (n as any).payload.type
+          : rawType
       ) as BoardCanvasProps['nodes'][number]['type'];
       const basePayload = (n.payload && typeof n.payload === 'object' ? n.payload : {}) as Record<
         string,
@@ -834,6 +856,7 @@ function InnerBoardCanvas({
   const isPenMode = tool === 'pen';
   const isTextMode = tool === 'text';
   const isShapeMode = tool === 'shape';
+  const isCommentMode = tool === 'comment';
 
   // Автоматически выбираем rectangle при переключении на режим shape
   useEffect(() => {
@@ -906,6 +929,10 @@ function InnerBoardCanvas({
           }
           if (key === 't') {
             setTool((prev) => (prev === 'text' ? 'select' : 'text'));
+            return;
+          }
+          if (key === 'c') {
+            setTool((prev) => (prev === 'comment' ? 'select' : 'comment'));
             return;
           }
         }
@@ -1261,18 +1288,20 @@ function InnerBoardCanvas({
                           edges: localEdges,
                           width: storedWidth,
                         }
-                      : {
-                          nodeId: node.id,
-                          nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
-                          execution: entry,
-                          onCodeChange: (code: string) => onCodeChange(node.id, code),
-                          onRun: () => onRunNode(node.id),
-                          onRunDownstream: () => onRunDownstream(node.id),
-                          onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
-                          width: storedWidth,
-                          isCodeCollapsed,
-                          nodeKind: node.type,
-                        },
+                      : type === 'default'
+                        ? { type: node.type }
+                        : {
+                            nodeId: node.id,
+                            nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
+                            execution: entry,
+                            onCodeChange: (code: string) => onCodeChange(node.id, code),
+                            onRun: () => onRunNode(node.id),
+                            onRunDownstream: () => onRunDownstream(node.id),
+                            onToggleCodeCollapsed: () => toggleCodeCollapsed(node.id),
+                            width: storedWidth,
+                            isCodeCollapsed,
+                            nodeKind: node.type,
+                          },
             // Для shape nodes (включая заметки) передаем width и height как пропсы, чтобы NodeResizer мог обновлять их в реальном времени
             ...(isShape || isNote
               ? {
@@ -1511,15 +1540,20 @@ function InnerBoardCanvas({
         const isNoteNode =
           isShapeNode &&
           ((flowNode.data as any)?.text !== undefined || (flowNode.data as any)?.onChangeText);
+        // Для default (legacy: voice, csv, video, document) сохраняем тип из data.type
         const nodeKind = isPenNode
           ? 'pen'
           : isShapeNode && isNoteNode
             ? 'note'
             : isShapeNode
               ? 'shape'
-              : (((flowNode.data as NodeData | undefined)?.nodeKind ??
-                  previous?.type ??
-                  'sql') as BoardCanvasProps['nodes'][number]['type']);
+              : flowNode.type === 'default' &&
+                  typeof (flowNode.data as Record<string, unknown>)?.type === 'string'
+                ? ((flowNode.data as Record<string, unknown>)
+                    .type as BoardCanvasProps['nodes'][number]['type'])
+                : (((flowNode.data as NodeData | undefined)?.nodeKind ??
+                    previous?.type ??
+                    'sql') as BoardCanvasProps['nodes'][number]['type']);
         // Для pen nodes сохраняем points и initialSize из data
         // Для shape nodes сохраняем размеры из flowNode (width/height) и остальной payload
         // Для заметок сохраняем размеры в ui, а текст и форматирование в payload
@@ -1967,7 +2001,7 @@ function InnerBoardCanvas({
   }, [addNodeHelpers, rf, emitNodesChange, onSelectNode, registerNode]);
 
   const handleConnectStart = useCallback(
-    (_event: React.MouseEvent | React.TouchEvent, params: ConnectionStartParams) => {
+    (_event: React.MouseEvent | React.TouchEvent, params: OnConnectStartParams) => {
       connectOriginRef.current = {
         nodeId: params?.nodeId ?? null,
         handleType: params?.handleType ?? null,
@@ -2442,13 +2476,19 @@ function InnerBoardCanvas({
             edges={flowEdges}
             fitView
             fitViewOptions={{ padding: 0.2, duration: 0 }}
-            panOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
+            panOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isCommentMode}
             panOnScroll={false}
             zoomOnScroll
-            selectionOnDrag={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
+            selectionOnDrag={
+              !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isCommentMode
+            }
             nodesDraggable={!isPenMode && !isTextMode && !isShapeMode}
-            nodesConnectable={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
-            elementsSelectable={!isStickyMode && !isPenMode && !isTextMode && !isShapeMode}
+            nodesConnectable={
+              !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isCommentMode
+            }
+            elementsSelectable={
+              !isStickyMode && !isPenMode && !isTextMode && !isShapeMode && !isCommentMode
+            }
             proOptions={{ hideAttribution: true }}
             className="h-full bg-white"
             style={{ width: '100%', height: '100%' }}
@@ -2521,6 +2561,13 @@ function InnerBoardCanvas({
               // Всегда снимаем выделение при клике на свободную область
               handlePaneClick();
 
+              // Клик по доске (вне карточки комментария) закрывает открытый тред и композер
+              const commentStore = useCommentStore.getState();
+              if (commentStore.activeThreadId || commentStore.composerAnchor) {
+                commentStore.closeThread();
+                commentStore.cancelComposer();
+              }
+
               const xy = getClientXY(e);
               if (!xy) return;
               const p = rf.screenToFlowPosition({ x: xy.x, y: xy.y });
@@ -2533,6 +2580,7 @@ function InnerBoardCanvas({
                   emitNodesChange(next);
                   return next;
                 });
+                setTool('select');
                 return;
               }
 
@@ -2552,6 +2600,14 @@ function InnerBoardCanvas({
                   return next;
                 });
                 onSelectNode?.(shapeNode.id);
+                setTool('select');
+                return;
+              }
+
+              // Comment mode: place a comment anchor at the click point
+              if (isCommentMode) {
+                useCommentStore.getState().startComposer({ x: p.x, y: p.y });
+                setTool('select');
                 return;
               }
 
@@ -2566,6 +2622,7 @@ function InnerBoardCanvas({
                 return next;
               });
               onSelectNode?.(noteNode.id);
+              setTool('select');
             }}
             onSelectionChange={handleSelectionChange}
             minZoom={0.2}
@@ -2676,10 +2733,13 @@ function InnerBoardCanvas({
                     console.log('Adding to flowNodes:', flowNode);
                     return [...prev, flowNode];
                   });
+                  setTool('select');
                 }}
               />
             )}
           </ReactFlow>
+          {/* Comment overlay: anchors, thread cards, composer — independent layer on top of canvas */}
+          <CommentLayer boardId={board.id} />
         </div>
       </div>
       <BoardCommandBar

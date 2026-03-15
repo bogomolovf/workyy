@@ -1,16 +1,26 @@
 import js from '@eslint/js';
-import eslintConfigNext from 'eslint-config-next';
 import eslintPluginImport from 'eslint-plugin-import';
+import eslintPluginJsxA11y from 'eslint-plugin-jsx-a11y';
 import eslintPluginReact from 'eslint-plugin-react';
 import eslintPluginReactHooks from 'eslint-plugin-react-hooks';
-import eslintPluginJsxA11y from 'eslint-plugin-jsx-a11y';
 
 export default [
   {
     ignores: ['**/dist/**', '**/.next/**', '**/node_modules/**', '**/coverage/**'],
   },
   js.configs.recommended,
-  ...eslintConfigNext(),
+  {
+    files: ['**/*.config.js', '**/*.config.cjs', '**/next.config.*'],
+    languageOptions: {
+      globals: {
+        module: 'readonly',
+        require: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
   {
     plugins: {
       import: eslintPluginImport,

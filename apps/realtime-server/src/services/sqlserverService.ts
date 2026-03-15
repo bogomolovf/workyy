@@ -102,9 +102,7 @@ export class SqlServerService {
       const result: IResult<Record<string, unknown>> = await request.query(query);
 
       const rows =
-        result.recordset.length > 10000
-          ? result.recordset.slice(0, 10000)
-          : result.recordset;
+        result.recordset.length > 10000 ? result.recordset.slice(0, 10000) : result.recordset;
 
       return {
         rows,

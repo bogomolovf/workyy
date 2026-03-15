@@ -52,14 +52,22 @@ export default function DemoBoardPage() {
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
+  const executionNodes = useMemo(() => {
+    if (!data?.nodes) return [];
+    return data.nodes.filter(
+      (n): n is typeof n & { type: 'sql' | 'python' | 'table' | 'plot' } =>
+        n.type === 'sql' || n.type === 'python' || n.type === 'table' || n.type === 'plot',
+    );
+  }, [data?.nodes]);
+
   useEffect(() => {
     if (data?.nodes) {
-      initFromNodes(data.nodes);
+      initFromNodes(executionNodes);
       if (!selectedNodeId && data.nodes.length > 0) {
         setSelectedNodeId(data.nodes[0].id);
       }
     }
-  }, [data?.nodes, initFromNodes, selectedNodeId]);
+  }, [data?.nodes, executionNodes, initFromNodes, selectedNodeId]);
 
   useEffect(() => {
     if (data?.board.id) {
@@ -101,12 +109,12 @@ export default function DemoBoardPage() {
         if (node.type === 'python') {
           const upstreamEdge = data.edges.find((edge) => edge.targetId === nodeId);
           const latestEntries = useExecutionStore.getState().entries;
-          const upstreamResult =
-            upstreamEdge && latestEntries[upstreamEdge.sourceId]?.output?.kind === 'sql'
-              ? latestEntries[upstreamEdge.sourceId]?.output?.result
-              : undefined;
+          const upstreamOutput = upstreamEdge
+            ? latestEntries[upstreamEdge.sourceId]?.output
+            : undefined;
+          const sqlResult = upstreamOutput?.kind === 'sql' ? upstreamOutput.result : undefined;
 
-          const pythonOutput = await runPython(code, { sqlResult: upstreamResult });
+          const pythonOutput = await runPython(code, { sqlResult });
           if (!pythonOutput.success) {
             setError(nodeId, pythonOutput.error ?? 'Execution failed');
             return;

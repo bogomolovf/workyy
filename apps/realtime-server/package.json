@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "nodemon --watch src --ext ts --exec \"tsx src/index.ts\"",
     "build": "tsup src/index.ts --format esm --dts --out-dir dist",
     "start": "node dist/index.js",
     "lint": "eslint 'src/**/*.{ts,tsx}'",
@@ -34,6 +34,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "nodemon": "^3.1.0",
     "@types/bcrypt": "^6.0.0",
     "@types/ws": "^8.5.10",
     "eslint": "^9.3.0",

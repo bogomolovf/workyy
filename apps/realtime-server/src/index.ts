@@ -22,12 +22,18 @@ async function bootstrap() {
     logger: true,
   });
 
-  // CORS configuration: allow requests from landing page and product app
-  const landingOrigin = process.env.LANDING_ORIGIN ?? 'http://localhost:5173';
-  const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:3000';
-
+  // CORS: in dev allow any localhost/127.0.0.1 origin; in prod use env list
+  const isDev = process.env.NODE_ENV !== 'production';
   await fastify.register(cors, {
-    origin: [landingOrigin, appOrigin],
+    origin: isDev
+      ? (origin, cb) => {
+          const allowed = !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+          cb(null, allowed ? (origin ?? true) : false);
+        }
+      : [
+          process.env.LANDING_ORIGIN ?? 'http://localhost:5173',
+          process.env.APP_ORIGIN ?? 'http://localhost:3000',
+        ],
     credentials: true,
   });
 
