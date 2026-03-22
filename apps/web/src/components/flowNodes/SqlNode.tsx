@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { NodeProps } from 'reactflow';
 import { InteractiveResultTable } from '../InteractiveResultTable';
 import { useExecutionStore } from '../../state/executionStore';
@@ -68,7 +68,6 @@ export function SqlNode({ data }: NodeProps<SqlNodeData>) {
   } = useNodeEditing(data.nodeId);
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   // Handle "Load All" button click
   const handleLoadAll = useCallback(() => {
@@ -91,21 +90,14 @@ export function SqlNode({ data }: NodeProps<SqlNodeData>) {
     (editor: editor.IStandaloneCodeEditor) => {
       editorRef.current = editor;
 
-      // Disable wheel capture initially so board zoom works over unfocused editor
-      editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
-
-      // Track focus — enable wheel capture for in-editor scrolling
+      // Track focus for collaborative editing presence
       editor.onDidFocusEditorWidget(() => {
         handleEditingFocus();
-        setIsEditorFocused(true);
-        editor.updateOptions({ scrollbar: { handleMouseWheel: true } });
       });
 
-      // Track blur — disable wheel capture so board zoom resumes
+      // Track blur
       editor.onDidBlurEditorWidget(() => {
         handleEditingBlur();
-        setIsEditorFocused(false);
-        editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
       });
     },
     [handleEditingFocus, handleEditingBlur],
@@ -138,7 +130,7 @@ export function SqlNode({ data }: NodeProps<SqlNodeData>) {
         </div>
       </div>
 
-      <div className={`h-44 border-b border-slate-800 nodrag${isEditorFocused ? ' nowheel' : ''}`}>
+      <div className="h-44 border-b border-slate-800 nodrag">
         <MonacoEditor
           language="sql"
           value={code}

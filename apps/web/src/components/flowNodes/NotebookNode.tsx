@@ -257,7 +257,6 @@ function CodeCellView({
   connectedData?: { columns: string[]; rows: Array<Array<string | number | null>> };
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   const status = result?.status ?? 'idle';
   const execCount = result?.executionCount ?? cell.executionCount;
@@ -328,27 +327,15 @@ function CodeCellView({
         </button>
       </div>
 
-      {/* Editor area — nodrag always; nowheel only while Monaco is focused.
-           handleMouseWheel toggled via Monaco API so wheel events pass to
-           ReactFlow for zoom when editor is not focused, while clicks always
-           reach Monaco for cursor placement. */}
+      {/* Editor area — nodrag prevents accidental node dragging;
+           handleMouseWheel always false so wheel/trackpad gestures
+           pass through to ReactFlow for board pan/zoom even while editing */}
       {isExpanded && (
-        <div className={`nodrag${isEditorFocused ? ' nowheel' : ''}`} style={{ height: editorHeight }}>
+        <div className="nodrag" style={{ height: editorHeight }}>
           <MonacoEditor
             language="python"
             value={cell.source}
             onChange={(val) => onSourceChange(val ?? '')}
-            onMount={(editor) => {
-              editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
-              editor.onDidFocusEditorWidget(() => {
-                setIsEditorFocused(true);
-                editor.updateOptions({ scrollbar: { handleMouseWheel: true } });
-              });
-              editor.onDidBlurEditorWidget(() => {
-                setIsEditorFocused(false);
-                editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
-              });
-            }}
             theme="light"
             options={{
               minimap: { enabled: false },

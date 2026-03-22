@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { NodeProps } from 'reactflow';
 import PlotlyPreview from './PlotlyPreview';
 import { InteractiveResultTable } from '../InteractiveResultTable';
@@ -75,7 +75,6 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
   } = useNodeEditing(data.nodeId);
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   // Handle code change and update editing presence
   const handleCodeChange = useCallback(
@@ -91,21 +90,14 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
     (editor: editor.IStandaloneCodeEditor) => {
       editorRef.current = editor;
 
-      // Disable wheel capture initially so board zoom works over unfocused editor
-      editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
-
-      // Track focus — enable wheel capture for in-editor scrolling
+      // Track focus for collaborative editing presence
       editor.onDidFocusEditorWidget(() => {
         handleEditingFocus();
-        setIsEditorFocused(true);
-        editor.updateOptions({ scrollbar: { handleMouseWheel: true } });
       });
 
-      // Track blur — disable wheel capture so board zoom resumes
+      // Track blur
       editor.onDidBlurEditorWidget(() => {
         handleEditingBlur();
-        setIsEditorFocused(false);
-        editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
       });
     },
     [handleEditingFocus, handleEditingBlur],
@@ -137,7 +129,7 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
         </div>
       </div>
 
-      <div className={`h-48 border-b border-slate-800 nodrag${isEditorFocused ? ' nowheel' : ''}`}>
+      <div className="h-48 border-b border-slate-800 nodrag">
         <MonacoEditor
           language="python"
           value={code}
