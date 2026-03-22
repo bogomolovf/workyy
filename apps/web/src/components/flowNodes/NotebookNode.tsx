@@ -148,7 +148,7 @@ function ExecutionResultView({ result }: { result: CellExecutionResult }) {
             </pre>
           )}
           {result.tableData && result.tableData.rows.length > 0 && (
-            <div className="nowheel max-h-64 overflow-auto border-t border-gray-100">
+            <div className="max-h-64 overflow-auto border-t border-gray-100">
               <InteractiveResultTable result={result.tableData} compact />
             </div>
           )}
@@ -209,7 +209,7 @@ function OriginalOutputView({ originalOutputs }: { originalOutputs: NotebookCell
             </pre>
           )}
           {tableData && tableData.rows.length > 0 && (
-            <div className="nowheel max-h-64 overflow-auto border-t border-gray-100">
+            <div className="max-h-64 overflow-auto border-t border-gray-100">
               <InteractiveResultTable result={tableData} compact />
             </div>
           )}
@@ -257,19 +257,7 @@ function CodeCellView({
   connectedData?: { columns: string[]; rows: Array<Array<string | number | null>> };
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [isFocused, setIsFocused] = useState(false);
-  const cellRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isFocused) return;
-    const handler = (e: MouseEvent) => {
-      if (cellRef.current && !cellRef.current.contains(e.target as Node)) {
-        setIsFocused(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [isFocused]);
+  const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   const status = result?.status ?? 'idle';
   const execCount = result?.executionCount ?? cell.executionCount;
@@ -278,7 +266,7 @@ function CodeCellView({
   const editorHeight = Math.min(Math.max(lineCount * 19 + 10, 40), 300);
 
   return (
-    <div ref={cellRef} className="border border-gray-200 rounded-md bg-white overflow-hidden">
+    <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
       {/* Cell toolbar */}
       <div className="flex items-center gap-1 px-2 py-1 bg-gray-50 border-b border-gray-200">
         <button
@@ -340,45 +328,52 @@ function CodeCellView({
         </button>
       </div>
 
-      {/* Interactive content: editor + output — pointer-events disabled until user clicks */}
-      <div
-        className={isFocused ? 'nowheel nodrag' : ''}
-        onMouseDown={() => { if (!isFocused) setIsFocused(true); }}
-      >
-        {/* Editor area */}
-        {isExpanded && (
-          <div style={{ height: editorHeight, pointerEvents: isFocused ? 'auto' : 'none' }}>
-            <MonacoEditor
-              language="python"
-              value={cell.source}
-              onChange={(val) => onSourceChange(val ?? '')}
-              theme="light"
-              options={{
-                minimap: { enabled: false },
-                fontSize: 13,
-                lineNumbers: 'on',
-                lineNumbersMinChars: 3,
-                scrollBeyondLastLine: false,
-                wordWrap: 'on',
-                folding: false,
-                renderLineHighlight: 'line',
-                overviewRulerLanes: 0,
-                hideCursorInOverviewRuler: true,
-                scrollbar: {
-                  vertical: 'hidden',
-                  horizontal: 'hidden',
-                },
-                padding: { top: 4, bottom: 4 },
-                automaticLayout: true,
-              }}
-            />
-          </div>
-        )}
-
-        <div style={{ pointerEvents: isFocused ? 'auto' : 'none' }}>
-          <CellOutputView result={result} originalOutputs={cell.outputs} />
+      {/* Editor area — nodrag always; nowheel only while Monaco is focused.
+           handleMouseWheel toggled via Monaco API so wheel events pass to
+           ReactFlow for zoom when editor is not focused, while clicks always
+           reach Monaco for cursor placement. */}
+      {isExpanded && (
+        <div className={`nodrag${isEditorFocused ? ' nowheel' : ''}`} style={{ height: editorHeight }}>
+          <MonacoEditor
+            language="python"
+            value={cell.source}
+            onChange={(val) => onSourceChange(val ?? '')}
+            onMount={(editor) => {
+              editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
+              editor.onDidFocusEditorWidget(() => {
+                setIsEditorFocused(true);
+                editor.updateOptions({ scrollbar: { handleMouseWheel: true } });
+              });
+              editor.onDidBlurEditorWidget(() => {
+                setIsEditorFocused(false);
+                editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
+              });
+            }}
+            theme="light"
+            options={{
+              minimap: { enabled: false },
+              fontSize: 13,
+              lineNumbers: 'on',
+              lineNumbersMinChars: 3,
+              scrollBeyondLastLine: false,
+              wordWrap: 'on',
+              folding: false,
+              renderLineHighlight: 'line',
+              overviewRulerLanes: 0,
+              hideCursorInOverviewRuler: true,
+              scrollbar: {
+                vertical: 'hidden',
+                horizontal: 'hidden',
+                handleMouseWheel: false,
+              },
+              padding: { top: 4, bottom: 4 },
+              automaticLayout: true,
+            }}
+          />
         </div>
-      </div>
+      )}
+
+      <CellOutputView result={result} originalOutputs={cell.outputs} />
     </div>
   );
 }

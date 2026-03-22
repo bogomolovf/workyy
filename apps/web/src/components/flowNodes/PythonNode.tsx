@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { NodeProps } from 'reactflow';
 import PlotlyPreview from './PlotlyPreview';
 import { InteractiveResultTable } from '../InteractiveResultTable';
@@ -76,18 +76,6 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [isEditorFocused, setIsEditorFocused] = useState(false);
-  const nodeRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isEditorFocused) return;
-    const handler = (e: MouseEvent) => {
-      if (nodeRef.current && !nodeRef.current.contains(e.target as Node)) {
-        setIsEditorFocused(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [isEditorFocused]);
 
   // Handle code change and update editing presence
   const handleCodeChange = useCallback(
@@ -103,14 +91,21 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
     (editor: editor.IStandaloneCodeEditor) => {
       editorRef.current = editor;
 
-      // Track focus
+      // Disable wheel capture initially so board zoom works over unfocused editor
+      editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
+
+      // Track focus — enable wheel capture for in-editor scrolling
       editor.onDidFocusEditorWidget(() => {
         handleEditingFocus();
+        setIsEditorFocused(true);
+        editor.updateOptions({ scrollbar: { handleMouseWheel: true } });
       });
 
-      // Track blur
+      // Track blur — disable wheel capture so board zoom resumes
       editor.onDidBlurEditorWidget(() => {
         handleEditingBlur();
+        setIsEditorFocused(false);
+        editor.updateOptions({ scrollbar: { handleMouseWheel: false } });
       });
     },
     [handleEditingFocus, handleEditingBlur],
@@ -118,7 +113,6 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
 
   return (
     <div
-      ref={nodeRef}
       className="w-[380px] rounded-2xl border bg-slate-900/80 shadow-lg relative"
       style={{
         borderColor: isBeingEdited ? otherEditors[0]?.color || '#6366f1' : '#334155',
@@ -143,25 +137,21 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
         </div>
       </div>
 
-      <div
-        className={`h-48 border-b border-slate-800 ${isEditorFocused ? 'nowheel nodrag' : ''}`}
-        onMouseDown={() => { if (!isEditorFocused) setIsEditorFocused(true); }}
-      >
-        <div style={{ pointerEvents: isEditorFocused ? 'auto' : 'none', height: '100%' }}>
-          <MonacoEditor
-            language="python"
-            value={code}
-            onChange={handleCodeChange}
-            onMount={handleEditorMount}
-            theme="vs-dark"
-            options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              lineNumbers: 'off',
-              scrollBeyondLastLine: false,
-            }}
-          />
-        </div>
+      <div className={`h-48 border-b border-slate-800 nodrag${isEditorFocused ? ' nowheel' : ''}`}>
+        <MonacoEditor
+          language="python"
+          value={code}
+          onChange={handleCodeChange}
+          onMount={handleEditorMount}
+          theme="vs-dark"
+          options={{
+            minimap: { enabled: false },
+            fontSize: 13,
+            lineNumbers: 'off',
+            scrollBeyondLastLine: false,
+            scrollbar: { handleMouseWheel: false },
+          }}
+        />
       </div>
 
       {shouldShowError && error && (

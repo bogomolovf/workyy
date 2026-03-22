@@ -4198,7 +4198,7 @@ export function InnerBoardCanvas({
       <div
         ref={canvasRootRef}
         className="board-canvas-root relative flex h-full min-h-0 w-full flex-1 overflow-hidden"
-        style={{ position: 'relative' }}
+        style={{ position: 'relative', overscrollBehavior: 'none', touchAction: 'none' }}
       >
         <div
           className="relative h-full w-full overflow-hidden"

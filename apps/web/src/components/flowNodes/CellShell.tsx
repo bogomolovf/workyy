@@ -14,7 +14,7 @@ import {
   Notebook,
   Stop,
 } from '@phosphor-icons/react';
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useState, type ReactNode } from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
 import type { NodeStatus } from '../../state/executionStore';
 import type { SqlResult, PythonResult } from '../../state/executionStore';
@@ -192,7 +192,7 @@ function CellOutputArea({ output }: { output: NonNullable<CellShellProps['output
         </pre>
       )}
       {hasTable && output.table && (
-        <div className="nowheel nodrag max-h-64 overflow-auto border-t border-gray-100">
+        <div className="max-h-64 overflow-auto border-t border-gray-100">
           <InteractiveResultTable
             result={output.table}
             compact
@@ -324,19 +324,6 @@ function CellShellInner({
 }: CellShellProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
-  const cellRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isFocused) return;
-    const handler = (e: MouseEvent) => {
-      if (cellRef.current && !cellRef.current.contains(e.target as Node)) {
-        setIsFocused(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [isFocused]);
   const lang = LANGUAGE_CONFIG[language];
   const showHeader =
     !!chainName &&
@@ -359,7 +346,7 @@ function CellShellInner({
   const handleMouseLeave = useCallback(() => setIsHovered(false), []);
 
   return (
-    <div ref={cellRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+    <div className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       {/* Notebook header — above the first cell */}
       {showHeader && (
         <NotebookHeader
@@ -491,30 +478,18 @@ function CellShellInner({
           )}
         </div>
 
-        {/* Interactive content: editor + output — pointer-events disabled until user clicks */}
-        <div
-          className={isFocused ? 'nowheel nodrag' : ''}
-          onMouseDown={() => { if (!isFocused) setIsFocused(true); }}
-        >
-          {/* Editor area */}
-          {!isCollapsed && (
-            <div style={{ pointerEvents: isFocused ? 'auto' : 'none' }}>{children}</div>
-          )}
+        {/* Editor area — nodrag prevents accidental node dragging from editor */}
+        {!isCollapsed && <div className="nodrag">{children}</div>}
 
-          {/* Error */}
-          {error && (
-            <div style={{ pointerEvents: isFocused ? 'auto' : 'none' }} className="px-4 py-2 text-[12px] text-red-600 font-mono whitespace-pre-wrap bg-red-50 border-t border-red-200">
-              {error}
-            </div>
-          )}
+        {/* Error */}
+        {error && (
+          <div className="px-4 py-2 text-[12px] text-red-600 font-mono whitespace-pre-wrap bg-red-50 border-t border-red-200">
+            {error}
+          </div>
+        )}
 
-          {/* Output */}
-          {output && (
-            <div style={{ pointerEvents: isFocused ? 'auto' : 'none' }}>
-              <CellOutputArea output={output} />
-            </div>
-          )}
-        </div>
+        {/* Output */}
+        {output && <CellOutputArea output={output} />}
       </div>
 
       {/* "+" button: absolute overlay on middle cells (no gap), in-flow on last cell */}
