@@ -539,13 +539,13 @@ export async function restoreDatasetsForBoard(boardId: string): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
     const { connection } = await getDuckDbContext();
-    await resetUserTables(connection);
     await ensureDemoDatasetForBoard(boardId, connection);
     const key = getDatasetsKey(boardId);
     const raw = window.localStorage.getItem(key);
     if (!raw) return;
     const datasets: PersistedDataset[] = JSON.parse(raw);
     if (!datasets.length) return;
+    const BATCH_SIZE = 500;
     for (const dataset of datasets) {
       const columnsDef = dataset.columns
         .map((column) => `${quotedIdentifier(column)} TEXT`)
@@ -555,24 +555,26 @@ export async function restoreDatasetsForBoard(boardId: string): Promise<void> {
         `CREATE TABLE ${quotedIdentifier(dataset.tableName)} (${columnsDef});`,
       );
       if (dataset.rows.length) {
-        const rowsSql = dataset.rows
-          .map((row) => {
-            const values = row
-              .map((value) => {
-                if (value === null || value === undefined) return 'NULL';
-                const text = String(value).replace(/'/g, "''");
-                return `'${text}'`;
-              })
-              .join(', ');
-            return `(${values})`;
-          })
-          .join(', ');
-        await connection.query(
-          `INSERT INTO ${quotedIdentifier(dataset.tableName)} VALUES ${rowsSql};`,
-        );
+        for (let i = 0; i < dataset.rows.length; i += BATCH_SIZE) {
+          const batch = dataset.rows.slice(i, i + BATCH_SIZE);
+          const rowsSql = batch
+            .map((row) => {
+              const values = row
+                .map((value) => {
+                  if (value === null || value === undefined) return 'NULL';
+                  const text = String(value).replace(/'/g, "''");
+                  return `'${text}'`;
+                })
+                .join(', ');
+              return `(${values})`;
+            })
+            .join(', ');
+          await connection.query(
+            `INSERT INTO ${quotedIdentifier(dataset.tableName)} VALUES ${rowsSql};`,
+          );
+        }
       }
     }
-    // Notify plot hooks so they can refetch after restore (e.g. post-reload when observer ran later)
     if (typeof window !== 'undefined' && datasets.length > 0) {
       window.dispatchEvent(new CustomEvent('workyy:datasetsRestored', { detail: { boardId } }));
     }
@@ -600,37 +602,91 @@ export async function restoreDatasetsFromBoardArray(
   if (typeof window === 'undefined' || !datasets.length) return;
   try {
     const { connection } = await getDuckDbContext();
-    await resetUserTables(connection);
     await ensureDemoDatasetForBoard(boardId, connection);
+    const BATCH_SIZE = 500;
     for (const dataset of datasets) {
-      const columnsDef = dataset.columns
+      const rows: Array<Array<string | number | null>> = Array.isArray(dataset.rows)
+        ? dataset.rows
+        : (typeof (dataset.rows as any)?.toArray === 'function'
+            ? (dataset.rows as any).toArray()
+            : Array.from(dataset.rows as any));
+      const columns: string[] = Array.isArray(dataset.columns)
+        ? dataset.columns
+        : (typeof (dataset.columns as any)?.toArray === 'function'
+            ? (dataset.columns as any).toArray()
+            : Array.from(dataset.columns as any));
+
+      const columnsDef = columns
         .map((column) => `${quotedIdentifier(column)} TEXT`)
         .join(', ');
       await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(dataset.tableName)};`);
       await connection.query(
         `CREATE TABLE ${quotedIdentifier(dataset.tableName)} (${columnsDef});`,
       );
-      if (dataset.rows.length) {
-        const rowsSql = dataset.rows
-          .map((row) => {
-            const values = row
-              .map((value) => {
-                if (value === null || value === undefined) return 'NULL';
-                const text = String(value).replace(/'/g, "''");
-                return `'${text}'`;
-              })
-              .join(', ');
-            return `(${values})`;
-          })
-          .join(', ');
-        await connection.query(
-          `INSERT INTO ${quotedIdentifier(dataset.tableName)} VALUES ${rowsSql};`,
-        );
+      if (rows.length) {
+        for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+          const batch = rows.slice(i, i + BATCH_SIZE);
+          const rowsSql = batch
+            .map((row) => {
+              const plainRow = Array.isArray(row) ? row : Array.from(row as any);
+              const values = plainRow
+                .map((value) => {
+                  if (value === null || value === undefined) return 'NULL';
+                  const text = String(value).replace(/'/g, "''");
+                  return `'${text}'`;
+                })
+                .join(', ');
+              return `(${values})`;
+            })
+            .join(', ');
+          await connection.query(
+            `INSERT INTO ${quotedIdentifier(dataset.tableName)} VALUES ${rowsSql};`,
+          );
+        }
       }
     }
     window.dispatchEvent(new CustomEvent('workyy:datasetsRestored', { detail: { boardId } }));
   } catch (err) {
     console.error('restoreDatasetsFromBoardArray failed', err);
+  }
+}
+
+/**
+ * Restore a single dataset table into DuckDB from server-fetched data.
+ * Called by CsvNode when table is missing after page refresh.
+ */
+export async function restoreDatasetIntoDuckDb(
+  tableName: string,
+  columns: string[],
+  rows: Array<Array<string | number | null>>,
+): Promise<void> {
+  const { connection } = await getDuckDbContext();
+  const columnsDef = columns
+    .map((column) => `${quotedIdentifier(column)} TEXT`)
+    .join(', ');
+  await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(tableName)};`);
+  await connection.query(
+    `CREATE TABLE ${quotedIdentifier(tableName)} (${columnsDef});`,
+  );
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    if (batch.length === 0) continue;
+    const rowsSql = batch
+      .map((row) => {
+        const values = (Array.isArray(row) ? row : Array.from(row as any))
+          .map((value) => {
+            if (value === null || value === undefined) return 'NULL';
+            const text = String(value).replace(/'/g, "''");
+            return `'${text}'`;
+          })
+          .join(', ');
+        return `(${values})`;
+      })
+      .join(', ');
+    await connection.query(
+      `INSERT INTO ${quotedIdentifier(tableName)} VALUES ${rowsSql};`,
+    );
   }
 }
 

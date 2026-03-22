@@ -30,52 +30,171 @@ export const BackgroundCursors = () => {
     // Распределяем их по всему сайту, но НЕ у краев доски
     const vw = window.innerWidth;
     const docHeight = Math.max(document.documentElement.scrollHeight, window.innerHeight);
-    
+
     // Увеличенные отступы от краев (10% от ширины/высоты) - чтобы курсоры НЕ были у края доски
-    const marginX = vw * 0.10;
-    const marginY = docHeight * 0.10;
-    
+    const marginX = vw * 0.1;
+    const marginY = docHeight * 0.1;
+
     const initialCursors: CursorPosition[] = [
       // Верхняя часть - дальше от краев
       { id: '1', x: marginX + 80, y: marginY + 100, color: '#2563eb', userName: 'Анна', delay: 0 },
-      { id: '2', x: vw - marginX + 20, y: marginY - 280, color: '#f59e0b', userName: 'Мария', delay: 0 },
+      {
+        id: '2',
+        x: vw - marginX + 20,
+        y: marginY - 280,
+        color: '#f59e0b',
+        userName: 'Мария',
+        delay: 0,
+      },
       // Средняя часть - не у краев
-      { id: '3', x: marginX + 120, y: docHeight * 0.3, color: '#16a34a', userName: 'Дмитрий', delay: 0 },
-      { id: '4', x: vw - marginX - 160, y: docHeight * 0.35, color: '#dc2626', userName: 'Иван', delay: 0 },
+      {
+        id: '3',
+        x: marginX + 120,
+        y: docHeight * 0.3,
+        color: '#16a34a',
+        userName: 'Дмитрий',
+        delay: 0,
+      },
+      {
+        id: '4',
+        x: vw - marginX - 160,
+        y: docHeight * 0.35,
+        color: '#dc2626',
+        userName: 'Иван',
+        delay: 0,
+      },
       // Нижняя часть - не у краев
-      { id: '5', x: marginX + 140, y: docHeight * 0.65, color: '#7c3aed', userName: 'Елена', delay: 0 },
-      { id: '6', x: vw - marginX - 200, y: docHeight * 0.7, color: '#059669', userName: 'Сергей', delay: 0 },
+      {
+        id: '5',
+        x: marginX + 140,
+        y: docHeight * 0.65,
+        color: '#7c3aed',
+        userName: 'Елена',
+        delay: 0,
+      },
+      {
+        id: '6',
+        x: vw - marginX - 200,
+        y: docHeight * 0.7,
+        color: '#059669',
+        userName: 'Сергей',
+        delay: 0,
+      },
       // Еще ниже - не у краев
-      { id: '7', x: marginX + 100, y: docHeight * 0.85, color: '#ea580c', userName: 'Ольга', delay: 0 },
+      {
+        id: '7',
+        x: marginX + 100,
+        y: docHeight * 0.85,
+        color: '#ea580c',
+        userName: 'Ольга',
+        delay: 0,
+      },
       // Дополнительные курсоры справа
-      { id: '8', x: vw - marginX - 150, y: docHeight * 0.52, color: '#8b5cf6', userName: 'Алексей', delay: 0 },
-      { id: '9', x: vw - marginX - 170, y: docHeight * 0.88, color: '#14b8a6', userName: 'Татьяна', delay: 0 },
+      {
+        id: '8',
+        x: vw - marginX - 150,
+        y: docHeight * 0.52,
+        color: '#8b5cf6',
+        userName: 'Алексей',
+        delay: 0,
+      },
+      {
+        id: '9',
+        x: vw - marginX - 170,
+        y: docHeight * 0.88,
+        color: '#14b8a6',
+        userName: 'Татьяна',
+        delay: 0,
+      },
     ];
 
     setCursors(initialCursors);
-    
+
     // Обработчик изменения размера окна для пересчета позиций
     const handleResize = () => {
       const vw = window.innerWidth;
       const docHeight = Math.max(document.documentElement.scrollHeight, window.innerHeight);
       // Увеличенные отступы от краев (10% от ширины/высоты) - чтобы курсоры НЕ были у края доски
-      const marginX = vw * 0.10;
-      const marginY = docHeight * 0.10;
-      
+      const marginX = vw * 0.1;
+      const marginY = docHeight * 0.1;
+
       const newCursors: CursorPosition[] = [
-        { id: '1', x: marginX + 80, y: marginY + 100, color: '#2563eb', userName: 'Анна', delay: 0 },
-        { id: '2', x: vw - marginX + 20, y: marginY - 280, color: '#f59e0b', userName: 'Мария', delay: 0 },
-        { id: '3', x: marginX + 120, y: docHeight * 0.3, color: '#16a34a', userName: 'Дмитрий', delay: 0 },
-        { id: '4', x: vw - marginX - 160, y: docHeight * 0.35, color: '#dc2626', userName: 'Иван', delay: 0 },
-        { id: '5', x: marginX + 140, y: docHeight * 0.65, color: '#7c3aed', userName: 'Елена', delay: 0 },
-        { id: '6', x: vw - marginX - 200, y: docHeight * 0.7, color: '#059669', userName: 'Сергей', delay: 0 },
-        { id: '7', x: marginX + 100, y: docHeight * 0.85, color: '#ea580c', userName: 'Ольга', delay: 0 },
-        { id: '8', x: vw - marginX - 150, y: docHeight * 0.52, color: '#8b5cf6', userName: 'Алексей', delay: 0 },
-        { id: '9', x: vw - marginX - 170, y: docHeight * 0.88, color: '#14b8a6', userName: 'Татьяна', delay: 0 },
+        {
+          id: '1',
+          x: marginX + 80,
+          y: marginY + 100,
+          color: '#2563eb',
+          userName: 'Анна',
+          delay: 0,
+        },
+        {
+          id: '2',
+          x: vw - marginX + 20,
+          y: marginY - 280,
+          color: '#f59e0b',
+          userName: 'Мария',
+          delay: 0,
+        },
+        {
+          id: '3',
+          x: marginX + 120,
+          y: docHeight * 0.3,
+          color: '#16a34a',
+          userName: 'Дмитрий',
+          delay: 0,
+        },
+        {
+          id: '4',
+          x: vw - marginX - 160,
+          y: docHeight * 0.35,
+          color: '#dc2626',
+          userName: 'Иван',
+          delay: 0,
+        },
+        {
+          id: '5',
+          x: marginX + 140,
+          y: docHeight * 0.65,
+          color: '#7c3aed',
+          userName: 'Елена',
+          delay: 0,
+        },
+        {
+          id: '6',
+          x: vw - marginX - 200,
+          y: docHeight * 0.7,
+          color: '#059669',
+          userName: 'Сергей',
+          delay: 0,
+        },
+        {
+          id: '7',
+          x: marginX + 100,
+          y: docHeight * 0.85,
+          color: '#ea580c',
+          userName: 'Ольга',
+          delay: 0,
+        },
+        {
+          id: '8',
+          x: vw - marginX - 150,
+          y: docHeight * 0.52,
+          color: '#8b5cf6',
+          userName: 'Алексей',
+          delay: 0,
+        },
+        {
+          id: '9',
+          x: vw - marginX - 170,
+          y: docHeight * 0.88,
+          color: '#14b8a6',
+          userName: 'Татьяна',
+          delay: 0,
+        },
       ];
       setCursors(newCursors);
     };
-    
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -115,13 +234,9 @@ export const BackgroundCursors = () => {
                 filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))',
               }}
             >
-              <path
-                d={cursorPath}
-                fill={cursor.color}
-                opacity={1}
-              />
+              <path d={cursorPath} fill={cursor.color} opacity={1} />
             </g>
-            
+
             {/* User name label - такое же расстояние как в продукте (18px, 18px) */}
             <g
               style={{
@@ -130,7 +245,7 @@ export const BackgroundCursors = () => {
             >
               {(() => {
                 const labelWidth = Math.min(Math.max(cursor.userName.length * 6.5 + 12, 50), 150);
-                const labelCenterX = (labelWidth / 2) - 6; // Центр прямоугольника относительно начала группы
+                const labelCenterX = labelWidth / 2 - 6; // Центр прямоугольника относительно начала группы
                 return (
                   <>
                     <rect
@@ -156,7 +271,9 @@ export const BackgroundCursors = () => {
                         textAnchor: 'middle',
                       }}
                     >
-                      {cursor.userName.length > 20 ? `${cursor.userName.substring(0, 17)}...` : cursor.userName}
+                      {cursor.userName.length > 20
+                        ? `${cursor.userName.substring(0, 17)}...`
+                        : cursor.userName}
                     </text>
                   </>
                 );

@@ -4,6 +4,8 @@ import { Doc } from 'yjs';
 // Store Yjs documents and providers per board
 const boardDocs = new Map<string, Doc>();
 const boardProviders = new Map<string, WebsocketProvider>();
+// Track sync status per board
+const boardSyncStatus = new Map<string, boolean>();
 // Track usage count per board to prevent premature cleanup
 const boardUsageCount = new Map<string, number>();
 // Store pending cleanup timers — allows cancellation if a component re-mounts
@@ -51,38 +53,15 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
     const wsUrl = getWebSocketUrl();
     const provider = new WebsocketProvider(wsUrl, boardId, doc, { connect: true });
 
-    // Log connection status for debugging
+    // Track connection status
     provider.on('status', (event: { status: string }) => {
-      console.log(`[Yjs WebSocket] Board ${boardId} status:`, event.status);
       if (event.status === 'disconnected') {
         console.warn(`[Yjs WebSocket] Board ${boardId} disconnected`);
-      }
-      if (event.status === 'connected') {
-        const actualUrl = provider.url;
-        const hasQueryParams = actualUrl?.includes('?');
-        console.log(`[Yjs WebSocket] Board ${boardId} connected successfully`, {
-          url: actualUrl,
-          hasQueryParams,
-          roomName: (provider as any).roomName || boardId,
-          wsconnected: provider.wsconnected,
-          docClientID: doc.clientID.toString(),
-          note: hasQueryParams
-            ? 'WARNING: URL contains query params (should not)'
-            : 'OK: URL format correct',
-        });
       }
     });
 
     provider.on('sync', (isSynced: boolean) => {
-      console.log(`[Yjs WebSocket] Board ${boardId} synced:`, isSynced);
-      if (isSynced) {
-        console.log(`[Yjs WebSocket] Board ${boardId} fully synchronized with server`, {
-          docClientID: doc.clientID.toString(),
-          cursorsMapSize: doc.getMap('cursors').size,
-          nodesMapSize: doc.getMap('nodes').size,
-          edgesMapSize: doc.getMap('edges').size,
-        });
-      }
+      boardSyncStatus.set(boardId, isSynced);
     });
 
     provider.on('connection-error', (error: Error) => {
@@ -105,6 +84,13 @@ export function getBoardProvider(boardId: string): WebsocketProvider {
     boardProviders.set(boardId, provider);
   }
   return boardProviders.get(boardId)!;
+}
+
+/**
+ * Check if a board's Yjs provider has completed initial sync.
+ */
+export function isBoardSynced(boardId: string): boolean {
+  return boardSyncStatus.get(boardId) ?? false;
 }
 
 /**
@@ -190,6 +176,7 @@ export function cleanupBoardYdoc(boardId: string): void {
     }
 
     boardUsageCount.delete(boardId);
+    boardSyncStatus.delete(boardId);
 
     if (process.env.NODE_ENV === 'development') {
       console.log(`[Yjs] Cleaned up board ${boardId} — provider and doc destroyed`);

@@ -26,4 +26,3 @@ export const updateWorkspaceMemberRoleBodySchema = z.object({
 });
 
 export type UpdateWorkspaceMemberRoleInput = z.infer<typeof updateWorkspaceMemberRoleBodySchema>;
-

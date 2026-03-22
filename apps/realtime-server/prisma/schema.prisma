@@ -62,6 +62,7 @@ model Board {
   title        String
   description  String?
   snapshotCount Int      @default(0)
+  yjsState     Bytes?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -77,8 +78,25 @@ model Board {
   auditEvents AuditEvent[]
   drawing   BoardDrawing?
   files     File[]
+  datasets  BoardDataset[]
 
   @@unique([workspaceId, title])
+}
+
+model BoardDataset {
+  id        String   @id @default(uuid())
+  boardId   String
+  tableName String
+  fileName  String
+  columns   Json
+  fileData  Bytes
+  rowCount  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, tableName])
 }
 
 model Node {
@@ -115,6 +133,11 @@ enum NodeType {
   database
   csv
   voice
+  notebook
+  pythonCell
+  markdownCell
+  sqlCell
+  notebookFrame
 }
 
 model Edge {

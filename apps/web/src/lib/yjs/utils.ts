@@ -17,4 +17,3 @@ export function stringToColor(str: string): string {
 
   return colour.substring(0, 7);
 }
-

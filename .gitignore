@@ -27,6 +27,7 @@ logs/
 # Editor
 .idea/
 .vscode/
+.obsidian/
 *.swp
 *.swo
 *.DS_Store
@@ -45,3 +46,7 @@ apps/realtime-server/uploads/
 # Large binaries / disk images
 *.dmg
 *.bak
+*.har
+
+# Cursor debug logs
+.cursor/debug-*.log

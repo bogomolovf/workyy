@@ -27,7 +27,7 @@ type CursorSettingsState = {
 export const useCursorSettingsStore = create<CursorSettingsState>()(
   persist(
     (set) => ({
-      cursorColor: CURSOR_COLORS[5], // Default to blue
+      cursorColor: DEFAULT_CURSOR, // Default to system cursor; other users still see colored cursor
       setCursorColor: (color: CursorColor) => set({ cursorColor: color }),
     }),
     {

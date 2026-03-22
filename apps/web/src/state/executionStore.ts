@@ -238,7 +238,8 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
     const existing = get().entries;
     let next = existing;
     for (const node of nodes) {
-      const savedExecution = (node.payload as Record<string, unknown> | undefined)?.execution as
+      const payload = (node.payload ?? {}) as Record<string, unknown>;
+      const savedExecution = payload.execution as
         | {
             status?: NodeStatus;
             output?: NodeExecutionOutput;
@@ -246,6 +247,36 @@ export const useExecutionStore = create<ExecutionStoreState>((set, get) => ({
             hiddenOutputs?: HiddenOutputs;
           }
         | undefined;
+
+      // For plot nodes: restore _dataSnapshot as a 'plot' execution entry
+      // so usePlotSnapshot can return it after page refresh.
+      if (node.type === 'plot' && !savedExecution) {
+        const snap = payload._dataSnapshot as { columns?: string[]; rows?: unknown[] } | undefined;
+        if (snap && snap.columns && snap.rows) {
+          const prev = existing[node.id];
+          if (!prev?.output) {
+            if (next === existing) next = { ...existing };
+            next[node.id] = {
+              nodeType: 'plot',
+              status: 'success',
+              code: '',
+              error: null,
+              output: {
+                kind: 'plot',
+                result: {
+                  inputData: snap as SqlResult,
+                  chartType: (payload.chartType as ChartType) ?? 'bar',
+                  config: (payload.mapping ?? {}) as PlotConfig,
+                },
+                code: '',
+              },
+              hiddenOutputs: resolveInitialHiddenOutputs(node.id),
+            };
+          }
+        }
+        continue;
+      }
+
       if (!savedExecution) continue;
       const prev = existing[node.id];
       const hiddenOutputs = resolveInitialHiddenOutputs(node.id, savedExecution.hiddenOutputs);

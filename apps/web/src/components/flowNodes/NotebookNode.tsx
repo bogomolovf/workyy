@@ -36,6 +36,27 @@ import { useExecutionStore } from '../../state/executionStore';
 import { InteractiveResultTable } from '../InteractiveResultTable';
 import PlotlyPreview from './PlotlyPreview';
 
+/** Convert CellExecutionResult to NotebookCellOutput[] for persistence */
+function cellResultToOutputs(result: CellExecutionResult): NotebookCellOutput[] {
+  const outputs: NotebookCellOutput[] = [];
+  if (result.stdout) {
+    outputs.push({ outputType: 'stream', text: result.stdout });
+  }
+  if (result.error) {
+    outputs.push({ outputType: 'error', ename: 'ExecutionError', evalue: result.error, traceback: [result.error] });
+  }
+  if (result.tableData) {
+    outputs.push({ outputType: 'execute_result', data: { 'application/json': result.tableData } });
+  }
+  if (result.plotJson) {
+    outputs.push({ outputType: 'display_data', data: { 'application/json': result.plotJson } });
+  }
+  if (outputs.length === 0 && result.status === 'success') {
+    outputs.push({ outputType: 'execute_result', text: '' });
+  }
+  return outputs;
+}
+
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
   loading: () => <div className="h-16 bg-gray-50 animate-pulse rounded" />,
@@ -127,7 +148,7 @@ function ExecutionResultView({ result }: { result: CellExecutionResult }) {
             </pre>
           )}
           {result.tableData && result.tableData.rows.length > 0 && (
-            <div className="nowheel nodrag max-h-64 overflow-auto border-t border-gray-100">
+            <div className="nowheel max-h-64 overflow-auto border-t border-gray-100">
               <InteractiveResultTable result={result.tableData} compact />
             </div>
           )}
@@ -145,7 +166,17 @@ function ExecutionResultView({ result }: { result: CellExecutionResult }) {
 function OriginalOutputView({ originalOutputs }: { originalOutputs: NotebookCellOutput[] }) {
   const [collapsed, setCollapsed] = useState(false);
   const textParts = originalOutputs.map(extractPlainText).filter(Boolean);
-  if (textParts.length === 0) return null;
+  // Extract table data from persisted outputs
+  const tableData = useMemo(() => {
+    for (const out of originalOutputs) {
+      const json = out.data?.['application/json'] as any;
+      if (json && json.columns && json.rows) return json as { columns: string[]; rows: Array<Array<string | number | null>> };
+    }
+    return null;
+  }, [originalOutputs]);
+  const errorOutput = originalOutputs.find((o) => o.outputType === 'error');
+  const hasContent = textParts.length > 0 || tableData || errorOutput;
+  if (!hasContent) return null;
   const text = textParts.join('\n');
 
   return (
@@ -166,9 +197,23 @@ function OriginalOutputView({ originalOutputs }: { originalOutputs: NotebookCell
         )}
       </button>
       {!collapsed && (
-        <pre className="px-4 py-2 text-[12px] text-gray-500 font-mono whitespace-pre-wrap max-h-48 overflow-auto">
-          {truncateText(text, MAX_OUTPUT_LINES)}
-        </pre>
+        <>
+          {text && (
+            <pre className="px-4 py-2 text-[12px] text-gray-500 font-mono whitespace-pre-wrap max-h-48 overflow-auto">
+              {truncateText(text, MAX_OUTPUT_LINES)}
+            </pre>
+          )}
+          {errorOutput && (
+            <pre className="px-4 py-2 text-[12px] text-red-600 font-mono whitespace-pre-wrap bg-red-50 max-h-32 overflow-auto">
+              {errorOutput.ename}: {errorOutput.evalue}
+            </pre>
+          )}
+          {tableData && tableData.rows.length > 0 && (
+            <div className="nowheel max-h-64 overflow-auto border-t border-gray-100">
+              <InteractiveResultTable result={tableData} compact />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -212,6 +257,20 @@ function CodeCellView({
   connectedData?: { columns: string[]; rows: Array<Array<string | number | null>> };
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isFocused, setIsFocused] = useState(false);
+  const cellRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    const handler = (e: MouseEvent) => {
+      if (cellRef.current && !cellRef.current.contains(e.target as Node)) {
+        setIsFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isFocused]);
+
   const status = result?.status ?? 'idle';
   const execCount = result?.executionCount ?? cell.executionCount;
 
@@ -219,7 +278,7 @@ function CodeCellView({
   const editorHeight = Math.min(Math.max(lineCount * 19 + 10, 40), 300);
 
   return (
-    <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
+    <div ref={cellRef} className="border border-gray-200 rounded-md bg-white overflow-hidden">
       {/* Cell toolbar */}
       <div className="flex items-center gap-1 px-2 py-1 bg-gray-50 border-b border-gray-200">
         <button
@@ -281,37 +340,45 @@ function CodeCellView({
         </button>
       </div>
 
-      {/* Editor area */}
-      {isExpanded && (
-        <div className="nowheel nodrag" style={{ height: editorHeight }}>
-          <MonacoEditor
-            language="python"
-            value={cell.source}
-            onChange={(val) => onSourceChange(val ?? '')}
-            theme="light"
-            options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              lineNumbers: 'on',
-              lineNumbersMinChars: 3,
-              scrollBeyondLastLine: false,
-              wordWrap: 'on',
-              folding: false,
-              renderLineHighlight: 'line',
-              overviewRulerLanes: 0,
-              hideCursorInOverviewRuler: true,
-              scrollbar: {
-                vertical: 'hidden',
-                horizontal: 'hidden',
-              },
-              padding: { top: 4, bottom: 4 },
-              automaticLayout: true,
-            }}
-          />
-        </div>
-      )}
+      {/* Interactive content: editor + output — pointer-events disabled until user clicks */}
+      <div
+        className={isFocused ? 'nowheel nodrag' : ''}
+        onMouseDown={() => { if (!isFocused) setIsFocused(true); }}
+      >
+        {/* Editor area */}
+        {isExpanded && (
+          <div style={{ height: editorHeight, pointerEvents: isFocused ? 'auto' : 'none' }}>
+            <MonacoEditor
+              language="python"
+              value={cell.source}
+              onChange={(val) => onSourceChange(val ?? '')}
+              theme="light"
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                lineNumbers: 'on',
+                lineNumbersMinChars: 3,
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                folding: false,
+                renderLineHighlight: 'line',
+                overviewRulerLanes: 0,
+                hideCursorInOverviewRuler: true,
+                scrollbar: {
+                  vertical: 'hidden',
+                  horizontal: 'hidden',
+                },
+                padding: { top: 4, bottom: 4 },
+                automaticLayout: true,
+              }}
+            />
+          </div>
+        )}
 
-      <CellOutputView result={result} originalOutputs={cell.outputs} />
+        <div style={{ pointerEvents: isFocused ? 'auto' : 'none' }}>
+          <CellOutputView result={result} originalOutputs={cell.outputs} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -390,7 +457,7 @@ function MarkdownCellView({
         </div>
       ) : (
         <div
-          className="nowheel nodrag px-4 py-2 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap cursor-text min-h-[32px]"
+          className="px-4 py-2 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap cursor-text min-h-[32px]"
           onClick={() => setIsEditing(true)}
         >
           {cell.source || '(empty markdown cell — click to edit)'}
@@ -513,12 +580,20 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
     [cellResults],
   );
 
+  // Use ref to always have the latest notebook state — avoids stale-closure
+  // issues during sequential cell execution in handleRunAll where React
+  // batches state updates and the captured `notebook` value may be outdated.
+  const notebookRef = useRef(notebook);
+  notebookRef.current = notebook;
+
   const updateNotebook = useCallback(
     (updater: (nb: ParsedNotebook) => ParsedNotebook) => {
       if (!onNotebookChange) return;
-      onNotebookChange(updater(notebook));
+      const latest = updater(notebookRef.current);
+      notebookRef.current = latest;
+      onNotebookChange(latest);
     },
-    [notebook, onNotebookChange],
+    [onNotebookChange],
   );
 
   const handleCellSourceChange = useCallback(
@@ -605,6 +680,16 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
               },
               code: '',
             });
+
+            // Persist cell output to notebook payload (survives page refresh)
+            updateNotebook((nb) => ({
+              ...nb,
+              cells: nb.cells.map((c) =>
+                c.id === cellId
+                  ? { ...c, outputs: cellResultToOutputs(result), executionCount: result.executionCount }
+                  : c,
+              ),
+            }));
           }
         },
         upstreamData,
@@ -617,7 +702,7 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
       setCurrentCellId(null);
       abortRef.current = null;
     }
-  }, [isRunningAll, codeCells, upstreamData, cellDataMap, csvUpstreamFilename]);
+  }, [isRunningAll, codeCells, upstreamData, cellDataMap, csvUpstreamFilename, updateNotebook, data.nodeId]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -663,9 +748,20 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
         },
         code: cell.source,
       });
+
+      // Persist cell output to notebook payload (survives page refresh)
+      updateNotebook((nb) => ({
+        ...nb,
+        cells: nb.cells.map((c) =>
+          c.id === cell.id
+            ? { ...c, outputs: cellResultToOutputs(result), executionCount: result.executionCount }
+            : c,
+        ),
+      }));
+
       setCurrentCellId(null);
     },
-    [isRunningAll, cellResults, upstreamData, cellDataMap],
+    [isRunningAll, cellResults, upstreamData, cellDataMap, csvUpstreamFilename, updateNotebook, data.nodeId],
   );
 
   return (
@@ -734,8 +830,8 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
         }}
       />
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-gray-200 shrink-0 rounded-t-xl">
+      {/* Header — drag handle for moving the notebook on canvas */}
+      <div className="drag-handle flex items-center justify-between px-4 py-2.5 bg-white border-b border-gray-200 shrink-0 rounded-t-xl cursor-grab active:cursor-grabbing">
         <div className="flex items-center gap-2 min-w-0">
           <Notebook size={20} weight="duotone" className="text-orange-500 shrink-0" />
           <div className="min-w-0">
@@ -813,7 +909,7 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
 
       {/* Cells */}
       {!isCollapsed && (
-        <div className="nowheel nodrag px-3 py-2 space-y-0 bg-gray-50/50 overflow-visible rounded-b-xl">
+        <div className="px-3 py-2 space-y-0 bg-gray-50/50 overflow-visible rounded-b-xl">
           <AddCellButton onAdd={(type) => handleAddCell(-1, type)} />
 
           {notebook.cells.map((cell, idx) => (

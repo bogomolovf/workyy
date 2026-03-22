@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NodeTypeSchema, PositionSchema } from '@workyy/core-domain';
 import { uuidSchema } from './common';
 
 export const createBoardBodySchema = z.object({
@@ -32,11 +33,6 @@ export const updateBoardMetadataSchema = z
 
 export type UpdateBoardMetadataInput = z.infer<typeof updateBoardMetadataSchema>;
 
-const positionSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-});
-
 const nodePayloadSchema = z
   .object({
     sql: z.string().max(100_000).optional(),
@@ -52,30 +48,10 @@ const nodePayloadSchema = z
   .passthrough()
   .optional();
 
-/** All node types supported by the board (including legacy: voice, csv, video, document) */
-const nodeTypeSchema = z.enum([
-  'sql',
-  'python',
-  'table',
-  'plot',
-  'csv',
-  'note',
-  'text',
-  'shape',
-  'image',
-  'video',
-  'document',
-  'draw',
-  'pen',
-  'database',
-  'csv',
-  'voice',
-]);
-
 const updateNodeSchema = z.object({
   id: uuidSchema,
-  type: nodeTypeSchema,
-  position: positionSchema,
+  type: NodeTypeSchema,
+  position: PositionSchema,
   payload: nodePayloadSchema,
 });
 

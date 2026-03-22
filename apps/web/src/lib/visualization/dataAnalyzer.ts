@@ -194,30 +194,32 @@ export function validateFieldMapping(
   const analyses = analyzeDataColumns(result);
   const columnMap = new Map(analyses.map((a) => [a.name, a]));
 
+  const mapping = config.mapping ?? {};
+
   // X axis is required for most chart types
-  const noXRequired = ['pie', 'doughnut', 'treemap', 'histogram'];
-  if (!noXRequired.includes(config.chartType) && !config.mapping.x) {
+  const noXRequired = ['pie', 'doughnut', 'treemap', 'histogram', 'gauge', 'liquidfill', 'wordcloud', 'graph', 'radar', 'parallel'];
+  if (!noXRequired.includes(config.chartType) && !mapping.x) {
     return { valid: false, message: 'X axis is required for this chart type' };
   }
 
   // Y axis is required for most chart types
-  const noYRequired = ['pie', 'doughnut', 'treemap', 'histogram'];
+  const noYRequired = ['pie', 'doughnut', 'treemap', 'histogram', 'gauge', 'liquidfill', 'wordcloud', 'graph', 'radar', 'parallel', 'candlestick'];
   if (
     !noYRequired.includes(config.chartType) &&
-    !config.mapping.y &&
-    !Array.isArray(config.mapping.y)
+    !mapping.y &&
+    !Array.isArray(mapping.y)
   ) {
     return { valid: false, message: 'Y axis is required for this chart type' };
   }
 
   // Validate X field exists
-  if (config.mapping.x && !columnMap.has(config.mapping.x)) {
-    return { valid: false, message: `X field "${config.mapping.x}" not found in data` };
+  if (mapping.x && !columnMap.has(mapping.x)) {
+    return { valid: false, message: `X field "${mapping.x}" not found in data` };
   }
 
   // Validate Y field(s) exist
-  if (config.mapping.y) {
-    const yFields = Array.isArray(config.mapping.y) ? config.mapping.y : [config.mapping.y];
+  if (mapping.y) {
+    const yFields = Array.isArray(mapping.y) ? mapping.y : [mapping.y];
     for (const yField of yFields) {
       if (!columnMap.has(yField)) {
         return { valid: false, message: `Y field "${yField}" not found in data` };
@@ -226,8 +228,8 @@ export function validateFieldMapping(
   }
 
   // Type-specific validations
-  if (config.mapping.x) {
-    const xCol = columnMap.get(config.mapping.x);
+  if (mapping.x) {
+    const xCol = columnMap.get(mapping.x);
     if (config.chartType === 'scatter' && xCol && xCol.type !== 'numeric') {
       return { valid: false, message: 'X axis must be numeric for scatter plots' };
     }
@@ -236,8 +238,8 @@ export function validateFieldMapping(
     }
   }
 
-  if (config.mapping.y) {
-    const yFields = Array.isArray(config.mapping.y) ? config.mapping.y : [config.mapping.y];
+  if (mapping.y) {
+    const yFields = Array.isArray(mapping.y) ? mapping.y : [mapping.y];
     for (const yField of yFields) {
       const yCol = columnMap.get(yField);
       // For histogram, accept both numeric and temporal (temporal can be numeric values)
@@ -269,7 +271,7 @@ export function validateFieldMapping(
 
     // Combo chart requires at least 2 Y fields
     if (config.chartType === 'combo-bar-line') {
-      if (!Array.isArray(config.mapping.y) || config.mapping.y.length < 2) {
+      if (!Array.isArray(mapping.y) || mapping.y.length < 2) {
         return { valid: false, message: 'Combo chart requires at least 2 Y fields' };
       }
     }
@@ -284,14 +286,15 @@ export function validateFieldMapping(
 
     // Check if the selected field (X or Y) is numeric or temporal
     let hasValidField = false;
-    if (config.mapping.x) {
-      const xCol = columnMap.get(config.mapping.x);
+    if (mapping.x) {
+      const xCol = columnMap.get(mapping.x);
       if (xCol && (xCol.type === 'numeric' || xCol.type === 'temporal')) {
         hasValidField = true;
       }
     }
-    if (config.mapping.y) {
-      const yCol = columnMap.get(config.mapping.y);
+    if (mapping.y) {
+      const yFieldStr = Array.isArray(mapping.y) ? mapping.y[0] : mapping.y;
+      const yCol = yFieldStr ? columnMap.get(yFieldStr) : undefined;
       if (yCol && (yCol.type === 'numeric' || yCol.type === 'temporal')) {
         hasValidField = true;
       }
@@ -303,21 +306,22 @@ export function validateFieldMapping(
     }
 
     // If a field is selected, validate it's numeric or temporal
-    if (config.mapping.x) {
-      const xCol = columnMap.get(config.mapping.x);
+    if (mapping.x) {
+      const xCol = columnMap.get(mapping.x);
       if (xCol && xCol.type !== 'numeric' && xCol.type !== 'temporal') {
         return {
           valid: false,
-          message: `X field "${config.mapping.x}" must be numeric or temporal for histogram`,
+          message: `X field "${mapping.x}" must be numeric or temporal for histogram`,
         };
       }
     }
-    if (config.mapping.y) {
-      const yCol = columnMap.get(config.mapping.y);
+    if (mapping.y) {
+      const yFieldStr = Array.isArray(mapping.y) ? mapping.y[0] : mapping.y;
+      const yCol = yFieldStr ? columnMap.get(yFieldStr) : undefined;
       if (yCol && yCol.type !== 'numeric' && yCol.type !== 'temporal') {
         return {
           valid: false,
-          message: `Y field "${config.mapping.y}" must be numeric or temporal for histogram`,
+          message: `Y field "${yFieldStr}" must be numeric or temporal for histogram`,
         };
       }
     }
@@ -325,7 +329,7 @@ export function validateFieldMapping(
 
   // Heatmap validation
   if (config.chartType === 'heatmap') {
-    if (!config.mapping.x || !config.mapping.y) {
+    if (!mapping.x || !mapping.y) {
       return { valid: false, message: 'Heatmap requires both X and Y fields' };
     }
   }
@@ -334,8 +338,8 @@ export function validateFieldMapping(
   if (config.chartType === 'treemap') {
     const hasGroupBy = config.aggregation?.groupBy && config.aggregation.groupBy.length > 0;
     const hasYField =
-      config.mapping.y && (Array.isArray(config.mapping.y) ? config.mapping.y.length > 0 : true);
-    if (!hasGroupBy && !config.mapping.x) {
+      mapping.y && (Array.isArray(mapping.y) ? mapping.y.length > 0 : true);
+    if (!hasGroupBy && !mapping.x) {
       return { valid: false, message: 'Treemap requires groupBy fields or X field' };
     }
     if (!hasYField) {
@@ -353,7 +357,7 @@ export function validateFieldMapping(
 
   // Sankey validation
   if (config.chartType === 'sankey') {
-    if (!config.mapping.x || !config.mapping.y) {
+    if (!mapping.x || !mapping.y) {
       return { valid: false, message: 'Sankey requires source (X) and target (Y) fields' };
     }
   }
@@ -366,8 +370,66 @@ export function validateFieldMapping(
     }
   }
 
-  if (config.mapping.color) {
-    const colorCol = columnMap.get(config.mapping.color);
+  // Candlestick validation
+  if (config.chartType === 'candlestick') {
+    if (!mapping.open || !mapping.close || !mapping.high || !mapping.low) {
+      return { valid: false, message: 'Candlestick requires Open, High, Low, Close fields' };
+    }
+  }
+
+  // Graph validation
+  if (config.chartType === 'graph') {
+    if (!mapping.source && !mapping.x) {
+      return { valid: false, message: 'Graph requires Source and Target fields' };
+    }
+    if (!mapping.target && !mapping.y) {
+      return { valid: false, message: 'Graph requires Source and Target fields' };
+    }
+  }
+
+  // Parallel validation
+  if (config.chartType === 'parallel') {
+    const numericFields = analyses.filter((a) => a.type === 'numeric');
+    if (numericFields.length < 2) {
+      return { valid: false, message: 'Parallel coordinates requires at least 2 numeric columns' };
+    }
+  }
+
+  // 3D chart validation
+  if (['scatter3d', 'bar3d', 'surface3d', 'line3d'].includes(config.chartType)) {
+    if (!mapping.x || !mapping.y || !mapping.z) {
+      return { valid: false, message: '3D charts require X, Y, and Z fields' };
+    }
+  }
+
+  // Funnel validation (same as pie - needs label + value)
+  if (config.chartType === 'funnel') {
+    if (!mapping.x && !mapping.y) {
+      return { valid: false, message: 'Funnel requires label (X) and value (Y) fields' };
+    }
+  }
+
+  // Sunburst validation
+  if (config.chartType === 'sunburst') {
+    const hasGroupBy = config.aggregation?.groupBy && config.aggregation.groupBy.length > 0;
+    if (!hasGroupBy && !mapping.x) {
+      return { valid: false, message: 'Sunburst requires groupBy or X field for hierarchy' };
+    }
+    if (!mapping.y) {
+      return { valid: false, message: 'Sunburst requires a numeric value field (Y)' };
+    }
+  }
+
+  // Tree validation
+  if (config.chartType === 'tree') {
+    const hasGroupBy = config.aggregation?.groupBy && config.aggregation.groupBy.length > 0;
+    if (!hasGroupBy && !mapping.x) {
+      return { valid: false, message: 'Tree requires groupBy fields for hierarchy' };
+    }
+  }
+
+  if (mapping.color) {
+    const colorCol = columnMap.get(mapping.color);
     if (
       colorCol &&
       colorCol.type !== 'categorical' &&
@@ -380,8 +442,8 @@ export function validateFieldMapping(
   }
 
   // Facet validation
-  if (config.mapping.facet) {
-    const facetCol = columnMap.get(config.mapping.facet);
+  if (mapping.facet) {
+    const facetCol = columnMap.get(mapping.facet);
     if (facetCol) {
       const uniqueCount = facetCol.uniqueCount ?? 0;
       if (uniqueCount > 12) {

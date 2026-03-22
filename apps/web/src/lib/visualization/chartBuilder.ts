@@ -18,72 +18,9 @@ type TransformedSeriesData = {
   rawRows: Array<Record<string, unknown>>;
 };
 
-// ECharts option type - using a simplified version for now
-type EChartsOption = {
-  title?: {
-    text?: string;
-    left?: string | number;
-    top?: string | number;
-    textStyle?: {
-      fontSize?: number;
-      fontWeight?: string;
-      color?: string;
-    };
-  };
-  tooltip?: {
-    trigger?: string;
-    axisPointer?: {
-      type?: string;
-    };
-    formatter?: string;
-  };
-  legend?: {
-    show?: boolean;
-    orient?: string;
-    left?: string | number;
-    top?: string | number;
-  };
-  grid?: {
-    show?: boolean;
-    left?: string | number;
-    right?: string | number;
-    bottom?: string | number;
-    top?: string | number;
-  };
-  color?: string[];
-  xAxis?: {
-    type?: string;
-    data?: string[];
-    name?: string;
-    axisLabel?: {
-      rotate?: number;
-    };
-  };
-  yAxis?: {
-    type?: string;
-    name?: string;
-  };
-  series?: Array<{
-    name?: string;
-    type?: string;
-    data?: unknown[] | number[][];
-    smooth?: boolean;
-    radius?: string | string[];
-    center?: string[];
-    areaStyle?: Record<string, unknown>;
-    emphasis?: {
-      itemStyle?: {
-        shadowBlur?: number;
-        shadowOffsetX?: number;
-        shadowColor?: string;
-      };
-    };
-  }>;
-  dataZoom?: Array<{
-    type: string;
-    show?: boolean;
-  }>;
-};
+// ECharts option type - permissive to support all chart types including 3D, extensions, etc.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type EChartsOption = Record<string, any>;
 
 /** Find column index by name (case-insensitive) */
 function findColumnIndex(columns: string[], field: string): number {
@@ -93,17 +30,65 @@ function findColumnIndex(columns: string[], field: string): number {
   return idx >= 0 ? idx : columns.indexOf(field);
 }
 
+/** Coerce a cell value to a number. Returns NaN if not convertible. */
+function toNum(v: unknown): number {
+  if (typeof v === 'number') return v;
+  if (v === null || v === undefined || v === '') return NaN;
+  const n = Number(v);
+  return isFinite(n) ? n : NaN;
+}
+
+/** Coerce a cell value to number, defaulting to 0 if NaN */
+function toNum0(v: unknown): number {
+  const n = toNum(v);
+  return isNaN(n) ? 0 : n;
+}
+
+/**
+ * Sort X-axis values smartly: numeric/temporal values get sorted numerically,
+ * strings alphabetically. This prevents zigzag lines when data isn't pre-sorted.
+ */
+function sortXValues(values: string[]): string[] {
+  // Check if most values look numeric/temporal (years, numbers)
+  const numericCount = values.filter((v) => !isNaN(Number(v)) && v.trim() !== '').length;
+  if (numericCount > values.length * 0.7) {
+    // Sort numerically
+    return [...values].sort((a, b) => Number(a) - Number(b));
+  }
+  // Check if values look like dates (ISO format, etc.)
+  const dateCount = values.filter((v) => !isNaN(Date.parse(v)) && v.length > 4).length;
+  if (dateCount > values.length * 0.5) {
+    return [...values].sort((a, b) => Date.parse(a) - Date.parse(b));
+  }
+  // Keep original order for categorical data
+  return values;
+}
+
+/**
+ * Split data rows into multiple series grouped by a categorical "color" column.
+ * Returns an array of { name, rows } where each entry is one series.
+ */
+function splitByColor(
+  rows: SqlResult['rows'],
+  colorIdx: number,
+): { name: string; rows: SqlResult['rows'] }[] {
+  if (colorIdx < 0) return [{ name: '', rows }];
+  const map = new Map<string, SqlResult['rows']>();
+  for (const row of rows) {
+    const key = String(row[colorIdx] ?? '');
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(row);
+  }
+  return Array.from(map.entries()).map(([name, rows]) => ({ name, rows }));
+}
+
 type FilterOperator = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'contains';
 
 /**
  * Evaluate a single filter condition for a cell value.
  * Returns true if the row passes this filter.
  */
-function passesFilter(
-  cellValue: unknown,
-  filterValue: unknown,
-  operator: FilterOperator,
-): boolean {
+function passesFilter(cellValue: unknown, filterValue: unknown, operator: FilterOperator): boolean {
   switch (operator) {
     case 'eq':
       return String(cellValue ?? '') === String(filterValue ?? '');
@@ -561,8 +546,11 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
   const colorIndex = colorField ? transformedData.columns.indexOf(colorField) : -1;
 
   // Downsample for display when data is large (keeps browser responsive)
-  const { data: dataForChart, totalRows: totalRowsBeforeSample, sampled: displaySampled } =
-    sampleRowsForDisplay(transformedData, config.chartType, xIndex, yIndices);
+  const {
+    data: dataForChart,
+    totalRows: totalRowsBeforeSample,
+    sampled: displaySampled,
+  } = sampleRowsForDisplay(transformedData, config.chartType, xIndex, yIndices);
 
   // Build data points from (possibly sampled) data
   const dataPoints: Array<Record<string, unknown>> = [];
@@ -661,24 +649,47 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
     ],
   };
 
+  // Universal transition for smooth chart type switching
+  const useUniversalTransition = config.styling.universalTransition === true;
+
   // Build series based on chart type
   switch (config.chartType) {
     case 'bar': {
       const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
-      const seriesData =
-        yIndices.length > 0
-          ? yIndices.map((yIdx, seriesIdx) => ({
-              name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-              type: 'bar',
-              data: dataForChart.rows.map((row) => row[yIdx]),
-            }))
-          : [];
+      let seriesData: any[];
+
+      if (colorIndex >= 0 && yIndices.length === 1) {
+        // Split by color field into multiple series
+        const groups = splitByColor(dataForChart.rows, colorIndex);
+        const allX = Array.from(new Set(xAxisData));
+        seriesData = groups.map((g) => {
+          const xToVal = new Map<string, number>();
+          for (const row of g.rows) {
+            const xKey = String(row[xIndex] ?? '');
+            xToVal.set(xKey, toNum0(row[yIndices[0]]));
+          }
+          return {
+            name: g.name,
+            type: 'bar',
+            data: allX.map((x) => xToVal.get(x) ?? 0),
+          };
+        });
+      } else {
+        seriesData =
+          yIndices.length > 0
+            ? yIndices.map((yIdx, seriesIdx) => ({
+                name: Array.isArray(yField) ? yField[seriesIdx] : yField,
+                type: 'bar',
+                data: dataForChart.rows.map((row) => toNum0(row[yIdx])),
+              }))
+            : [];
+      }
 
       const option: EChartsOption = {
         ...baseOption,
         xAxis: {
           type: 'category',
-          data: xAxisData,
+          data: colorIndex >= 0 && yIndices.length === 1 ? Array.from(new Set(xAxisData)) : xAxisData,
           axisLabel: { rotate: xAxisData.length > 10 ? 45 : 0 },
         },
         yAxis: {
@@ -687,7 +698,6 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         series: seriesData,
       };
 
-      // Add zoom/pan if enabled
       if (config.styling.enableZoomPan) {
         (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
       }
@@ -702,7 +712,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           ? yIndices.map((yIdx, seriesIdx) => ({
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
               type: 'bar',
-              data: dataForChart.rows.map((row) => row[yIdx]),
+              data: dataForChart.rows.map((row) => toNum0(row[yIdx])),
             }))
           : [];
 
@@ -732,34 +742,69 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
     case 'line': {
       const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
       const useLargeMode = dataForChart.rows.length > 2000 || displaySampled;
-      const seriesData =
-        yIndices.length > 0
-          ? yIndices.map((yIdx, seriesIdx) => ({
+      let seriesData: any[];
+      let finalXAxisData: string[];
+
+      if (colorIndex >= 0 && yIndices.length === 1) {
+        const groups = splitByColor(dataForChart.rows, colorIndex);
+        const allX = sortXValues(Array.from(new Set(xAxisData)));
+        finalXAxisData = allX;
+        seriesData = groups.map((g) => {
+          const xToVal = new Map<string, number>();
+          for (const row of g.rows) xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIndices[0]]));
+          return {
+            name: g.name, type: 'line', smooth: false,
+            data: allX.map((x) => xToVal.get(x) ?? null),
+            connectNulls: true,
+            ...(useLargeMode && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
+          };
+        });
+      } else {
+        // For non-color-split line charts, also sort when X looks temporal/numeric
+        const uniqueX = Array.from(new Set(xAxisData));
+        const sorted = sortXValues(uniqueX);
+        const needsSort = sorted.some((v, i) => v !== uniqueX[i]);
+
+        if (needsSort && yIndices.length > 0) {
+          finalXAxisData = sorted;
+          // Build x→y maps and re-order
+          seriesData = yIndices.map((yIdx, seriesIdx) => {
+            const xToVal = new Map<string, number>();
+            for (const row of dataForChart.rows) xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIdx]));
+            return {
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
               type: 'line',
-              data: dataForChart.rows.map((row) => row[yIdx]),
-              smooth: true,
-              ...(useLargeMode && {
-                sampling: 'lttb',
-                large: true,
-                largeThreshold: 2000,
-              }),
-            }))
-          : [];
+              data: sorted.map((x) => xToVal.get(x) ?? null),
+              smooth: false,
+              connectNulls: true,
+              ...(useLargeMode && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
+            };
+          });
+        } else {
+          finalXAxisData = xAxisData;
+          seriesData =
+            yIndices.length > 0
+              ? yIndices.map((yIdx, seriesIdx) => ({
+                  name: Array.isArray(yField) ? yField[seriesIdx] : yField,
+                  type: 'line',
+                  data: dataForChart.rows.map((row) => toNum0(row[yIdx])),
+                  smooth: false,
+                  ...(useLargeMode && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
+                }))
+              : [];
+        }
+      }
 
       const option: EChartsOption = {
         ...baseOption,
         xAxis: {
           type: 'category',
-          data: xAxisData,
+          data: finalXAxisData,
         },
-        yAxis: {
-          type: 'value',
-        },
+        yAxis: { type: 'value' },
         series: seriesData,
       };
 
-      // Add zoom/pan if enabled
       if (config.styling.enableZoomPan) {
         (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
       }
@@ -770,35 +815,66 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
     case 'area': {
       const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
       const useLargeModeArea = dataForChart.rows.length > 2000 || displaySampled;
-      const seriesData =
-        yIndices.length > 0
-          ? yIndices.map((yIdx, seriesIdx) => ({
+      let seriesData: any[];
+      let finalXAxisDataArea: string[];
+
+      if (colorIndex >= 0 && yIndices.length === 1) {
+        const groups = splitByColor(dataForChart.rows, colorIndex);
+        const allX = sortXValues(Array.from(new Set(xAxisData)));
+        finalXAxisDataArea = allX;
+        seriesData = groups.map((g) => {
+          const xToVal = new Map<string, number>();
+          for (const row of g.rows) xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIndices[0]]));
+          return {
+            name: g.name, type: 'line', areaStyle: {}, smooth: false,
+            data: allX.map((x) => xToVal.get(x) ?? null),
+            connectNulls: true,
+            ...(useLargeModeArea && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
+          };
+        });
+      } else {
+        const uniqueX = Array.from(new Set(xAxisData));
+        const sorted = sortXValues(uniqueX);
+        const needsSort = sorted.some((v, i) => v !== uniqueX[i]);
+
+        if (needsSort && yIndices.length > 0) {
+          finalXAxisDataArea = sorted;
+          seriesData = yIndices.map((yIdx, seriesIdx) => {
+            const xToVal = new Map<string, number>();
+            for (const row of dataForChart.rows) xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIdx]));
+            return {
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-              type: 'line',
-              areaStyle: {},
-              data: dataForChart.rows.map((row) => row[yIdx]),
-              smooth: true,
-              ...(useLargeModeArea && {
-                sampling: 'lttb',
-                large: true,
-                largeThreshold: 2000,
-              }),
-            }))
-          : [];
+              type: 'line', areaStyle: {},
+              data: sorted.map((x) => xToVal.get(x) ?? null),
+              smooth: false, connectNulls: true,
+              ...(useLargeModeArea && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
+            };
+          });
+        } else {
+          finalXAxisDataArea = xAxisData;
+          seriesData =
+            yIndices.length > 0
+              ? yIndices.map((yIdx, seriesIdx) => ({
+                  name: Array.isArray(yField) ? yField[seriesIdx] : yField,
+                  type: 'line', areaStyle: {},
+                  data: dataForChart.rows.map((row) => toNum0(row[yIdx])),
+                  smooth: false,
+                  ...(useLargeModeArea && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
+                }))
+              : [];
+        }
+      }
 
       const option: EChartsOption = {
         ...baseOption,
         xAxis: {
           type: 'category',
-          data: xAxisData,
+          data: finalXAxisDataArea,
         },
-        yAxis: {
-          type: 'value',
-        },
+        yAxis: { type: 'value' },
         series: seriesData,
       };
 
-      // Add zoom/pan if enabled
       if (config.styling.enableZoomPan) {
         (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
       }
@@ -807,32 +883,33 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
     }
 
     case 'scatter': {
-      const seriesData =
-        yIndices.length > 0
-          ? yIndices.map((yIdx, seriesIdx) => {
-              const scatterData = dataForChart.rows.map((row) => [row[xIndex], row[yIdx]]);
-              return {
+      let seriesData: any[];
+
+      if (colorIndex >= 0 && yIndices.length === 1) {
+        const groups = splitByColor(dataForChart.rows, colorIndex);
+        seriesData = groups.map((g) => ({
+          name: g.name,
+          type: 'scatter',
+          data: g.rows.map((row) => [toNum0(row[xIndex]), toNum0(row[yIndices[0]])]),
+        }));
+      } else {
+        seriesData =
+          yIndices.length > 0
+            ? yIndices.map((yIdx, seriesIdx) => ({
                 name: Array.isArray(yField) ? yField[seriesIdx] : yField,
                 type: 'scatter',
-                data: scatterData,
-              };
-            })
-          : [];
+                data: dataForChart.rows.map((row) => [toNum0(row[xIndex]), toNum0(row[yIdx])]),
+              }))
+            : [];
+      }
 
       const option: EChartsOption = {
         ...baseOption,
-        xAxis: {
-          type: 'value',
-          name: xField,
-        },
-        yAxis: {
-          type: 'value',
-          name: Array.isArray(yField) ? yField[0] : yField,
-        },
+        xAxis: { type: 'value', name: xField },
+        yAxis: { type: 'value', name: Array.isArray(yField) ? yField[0] : yField },
         series: seriesData,
       };
 
-      // Add zoom/pan if enabled
       if (config.styling.enableZoomPan) {
         (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
       }
@@ -846,9 +923,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const labelField = xField || dataForChart.columns[0];
       const valueField = Array.isArray(yField)
         ? yField[0]
-        : yField ||
-          dataForChart.columns.find((c) => c !== labelField) ||
-          dataForChart.columns[1];
+        : yField || dataForChart.columns.find((c) => c !== labelField) || dataForChart.columns[1];
 
       const labelIndex = dataForChart.columns.indexOf(labelField);
       const valueIndex = valueField ? dataForChart.columns.indexOf(valueField) : -1;
@@ -942,11 +1017,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         return false;
       };
 
+      const yFieldStr = Array.isArray(yField) ? yField[0] : yField;
       const numericField =
         xField && isNumericField(xField)
           ? xField
-          : yField && isNumericField(yField)
-            ? yField
+          : yFieldStr && isNumericField(yFieldStr)
+            ? yFieldStr
             : dataForChart.columns.find((c) => isNumericField(c));
 
       if (!numericField) {
@@ -956,7 +1032,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         };
       }
 
-      const fieldIndex = dataForChart.columns.indexOf(numericField);
+      const fieldIndex = dataForChart.columns.indexOf(numericField as string);
       const values = dataForChart.rows
         .map((row) => row[fieldIndex])
         .filter((v) => v !== null && v !== undefined)
@@ -1047,12 +1123,14 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
       // Aggregate (sum by default)
       const heatmapData: number[][] = [];
+      const xArr = Array.from(xValues);
+      const yArr = Array.from(yValues);
       for (const [key, vals] of cellMap.entries()) {
         const [xVal, yVal] = key.split('|');
         const sum = vals.reduce((a, b) => a + b, 0);
         heatmapData.push([
-          xValues.size - Array.from(xValues).indexOf(xVal) - 1,
-          Array.from(yValues).indexOf(yVal),
+          xArr.indexOf(xVal),
+          yArr.indexOf(yVal),
           sum,
         ]);
       }
@@ -1062,21 +1140,19 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         tooltip: {
           position: 'top',
           formatter: (params: any) => {
-            const xIdx = Math.floor(params.value[0]);
-            const yIdx = Math.floor(params.value[1]);
-            const xVal = Array.from(xValues)[xValues.size - 1 - xIdx];
-            const yVal = Array.from(yValues)[yIdx];
-            return `${xVal}<br/>${yVal}<br/>Value: ${params.value[2]}`;
+            const xi = Math.floor(params.value[0]);
+            const yi = Math.floor(params.value[1]);
+            return `${xArr[xi] ?? ''}<br/>${yArr[yi] ?? ''}<br/>Value: ${params.value[2]}`;
           },
         },
         xAxis: {
           type: 'category',
-          data: Array.from(xValues),
+          data: xArr,
           splitArea: { show: true },
         },
         yAxis: {
           type: 'category',
-          data: Array.from(yValues),
+          data: yArr,
           splitArea: { show: true },
         },
         visualMap: {
@@ -1514,13 +1590,13 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           {
             name: barField,
             type: 'bar',
-            data: dataForChart.rows.map((row) => row[barIndex]),
+            data: dataForChart.rows.map((row) => toNum0(row[barIndex])),
             yAxisIndex: 0,
           },
           {
             name: lineField,
             type: 'line',
-            data: dataForChart.rows.map((row) => row[lineIndex]),
+            data: dataForChart.rows.map((row) => toNum0(row[lineIndex])),
             yAxisIndex: 1,
             smooth: true,
             ...((dataForChart.rows.length > 2000 || displaySampled) && {
@@ -1528,6 +1604,742 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
               large: true,
               largeThreshold: 2000,
             }),
+          },
+        ],
+      };
+    }
+
+    // ========== PHASE 1: New 2D chart types ==========
+
+    case 'funnel': {
+      // Funnel: uses X as label, Y as value (like pie)
+      const labelField = xField || dataForChart.columns[0];
+      const valueFieldName = Array.isArray(yField)
+        ? yField[0]
+        : yField || dataForChart.columns.find((c) => c !== labelField) || dataForChart.columns[1];
+
+      const labelIdx = dataForChart.columns.indexOf(labelField);
+      const valueIdx = valueFieldName ? dataForChart.columns.indexOf(valueFieldName) : -1;
+
+      if (labelIdx < 0 || valueIdx < 0) {
+        return {
+          ...baseOption,
+          title: { text: 'Invalid configuration for funnel', left: 'center', top: 'middle' },
+        };
+      }
+
+      const funnelData = dataForChart.rows
+        .map((row) => ({
+          name: String(row[labelIdx] ?? ''),
+          value:
+            typeof row[valueIdx] === 'number'
+              ? row[valueIdx]
+              : parseFloat(String(row[valueIdx] ?? 0)) || 0,
+        }))
+        .sort((a, b) => (b.value as number) - (a.value as number));
+
+      return {
+        ...baseOption,
+        tooltip: { trigger: 'item', formatter: '{a} <br/>{b}: {c}' },
+        series: [
+          {
+            name: valueFieldName,
+            type: 'funnel',
+            left: '10%',
+            top: gridTop,
+            bottom: '12%',
+            width: '80%',
+            sort: 'descending',
+            gap: 2,
+            label: { show: true, position: 'inside' },
+            labelLine: { length: 10 },
+            itemStyle: { borderColor: '#fff', borderWidth: 1 },
+            emphasis: { label: { fontSize: 16 } },
+            data: funnelData,
+          },
+        ],
+      };
+    }
+
+    case 'gauge': {
+      const gaugeConfig = config.gaugeConfig || {};
+      const valueFieldName = gaugeConfig.valueField || (Array.isArray(yField) ? yField[0] : yField) || dataForChart.columns[0];
+      const valIdx = dataForChart.columns.indexOf(valueFieldName);
+
+      let gaugeValue = 0;
+      if (valIdx >= 0 && dataForChart.rows.length > 0) {
+        const raw = dataForChart.rows[0][valIdx];
+        gaugeValue = typeof raw === 'number' ? raw : parseFloat(String(raw ?? 0)) || 0;
+      }
+
+      const minVal = gaugeConfig.min ?? 0;
+      const maxVal = gaugeConfig.max ?? 100;
+
+      return {
+        ...baseOption,
+        series: [
+          {
+            type: 'gauge',
+            min: minVal,
+            max: maxVal,
+            progress: { show: true, width: 18 },
+            axisLine: { lineStyle: { width: 18 } },
+            axisTick: { show: false },
+            splitLine: { length: 12, lineStyle: { width: 2, color: '#999' } },
+            axisLabel: { distance: 25, fontSize: 11 },
+            anchor: { show: true, showAbove: true, size: 18, itemStyle: { borderWidth: 8 } },
+            title: { show: true },
+            detail: {
+              valueAnimation: true,
+              fontSize: 24,
+              offsetCenter: [0, '70%'],
+            },
+            data: [{ value: gaugeValue, name: valueFieldName }],
+          },
+        ],
+      };
+    }
+
+    case 'sunburst': {
+      // Sunburst: hierarchical like treemap, uses groupBy for levels
+      const groupByFields = config.aggregation?.groupBy || (xField ? [xField] : []);
+      const sizeField = Array.isArray(yField) ? yField[0] : yField;
+
+      if (groupByFields.length === 0 || !sizeField) {
+        return {
+          ...baseOption,
+          title: {
+            text: 'Sunburst requires groupBy and a numeric field (Y)',
+            left: 'center',
+            top: 'middle',
+          },
+        };
+      }
+
+      // Build hierarchical data (same logic as treemap but nested for multi-level)
+      const sizeIdx = dataForChart.columns.indexOf(sizeField);
+      const nodeMap = new Map<string, { name: string; value: number; children: Map<string, any> }>();
+
+      for (const row of dataForChart.rows) {
+        const val = row[sizeIdx];
+        const numVal = typeof val === 'number' ? val : parseFloat(String(val ?? 0)) || 0;
+        if (numVal <= 0) continue;
+
+        // Use first groupBy field as top level
+        const topIdx = dataForChart.columns.indexOf(groupByFields[0]);
+        const topKey = String(row[topIdx] ?? '');
+
+        if (!nodeMap.has(topKey)) {
+          nodeMap.set(topKey, { name: topKey, value: 0, children: new Map() });
+        }
+        const topNode = nodeMap.get(topKey)!;
+        topNode.value += numVal;
+
+        // If there are more groupBy fields, create children
+        if (groupByFields.length > 1) {
+          const childIdx = dataForChart.columns.indexOf(groupByFields[1]);
+          const childKey = String(row[childIdx] ?? '');
+          if (!topNode.children.has(childKey)) {
+            topNode.children.set(childKey, { name: childKey, value: 0 });
+          }
+          topNode.children.get(childKey)!.value += numVal;
+        }
+      }
+
+      const sunburstData = Array.from(nodeMap.values()).map((node) => ({
+        name: node.name,
+        value: node.value,
+        children:
+          node.children.size > 0
+            ? Array.from(node.children.values()).map((c) => ({ name: c.name, value: c.value }))
+            : undefined,
+      }));
+
+      return {
+        ...baseOption,
+        series: [
+          {
+            type: 'sunburst',
+            data: sunburstData,
+            radius: [0, '90%'],
+            label: { rotate: 'radial', fontSize: 10 },
+            itemStyle: { borderRadius: 4, borderWidth: 2 },
+            emphasis: { focus: 'ancestor' },
+          },
+        ],
+      };
+    }
+
+    case 'candlestick': {
+      // Candlestick: X = date/category, OHLC fields from mapping
+      const dateField = xField || dataForChart.columns[0];
+      const openField = config.mapping.open;
+      const closeField = config.mapping.close;
+      const highField = config.mapping.high;
+      const lowField = config.mapping.low;
+
+      if (!openField || !closeField || !highField || !lowField) {
+        return {
+          ...baseOption,
+          title: {
+            text: 'Candlestick requires Open, High, Low, Close fields',
+            left: 'center',
+            top: 'middle',
+          },
+        };
+      }
+
+      const dateIdx = dataForChart.columns.indexOf(dateField);
+      const openIdx = dataForChart.columns.indexOf(openField);
+      const closeIdx = dataForChart.columns.indexOf(closeField);
+      const highIdx = dataForChart.columns.indexOf(highField);
+      const lowIdx = dataForChart.columns.indexOf(lowField);
+
+      if (openIdx < 0 || closeIdx < 0 || highIdx < 0 || lowIdx < 0) {
+        return {
+          ...baseOption,
+          title: { text: 'OHLC fields not found in data', left: 'center', top: 'middle' },
+        };
+      }
+
+      const xData = dataForChart.rows.map((row) => String(row[dateIdx] ?? ''));
+      const ohlcData = dataForChart.rows.map((row) => [
+        parseFloat(String(row[openIdx] ?? 0)) || 0,
+        parseFloat(String(row[closeIdx] ?? 0)) || 0,
+        parseFloat(String(row[lowIdx] ?? 0)) || 0,
+        parseFloat(String(row[highIdx] ?? 0)) || 0,
+      ]);
+
+      const option: EChartsOption = {
+        ...baseOption,
+        xAxis: {
+          type: 'category',
+          data: xData,
+          axisLabel: { rotate: xData.length > 20 ? 45 : 0 },
+        },
+        yAxis: { type: 'value' },
+        series: [
+          {
+            type: 'candlestick',
+            data: ohlcData,
+            itemStyle: {
+              color: '#ec4899',
+              color0: '#22c55e',
+              borderColor: '#ec4899',
+              borderColor0: '#22c55e',
+            },
+          },
+        ],
+      };
+
+      if (config.styling.enableZoomPan) {
+        (option as any).dataZoom = [{ type: 'inside' }, { type: 'slider', show: true }];
+      }
+      return option;
+    }
+
+    case 'graph': {
+      // Graph: source/target from mapping, weight optional
+      const sourceField = config.mapping.source || xField;
+      const targetFieldName = config.mapping.target || (Array.isArray(yField) ? yField[0] : yField);
+      const weightField = config.mapping.weight || config.mapping.size;
+
+      if (!sourceField || !targetFieldName) {
+        return {
+          ...baseOption,
+          title: {
+            text: 'Graph requires Source and Target fields',
+            left: 'center',
+            top: 'middle',
+          },
+        };
+      }
+
+      const srcIdx = dataForChart.columns.indexOf(sourceField);
+      const tgtIdx = dataForChart.columns.indexOf(targetFieldName);
+      const wIdx = weightField ? dataForChart.columns.indexOf(weightField) : -1;
+
+      const nodeSet = new Set<string>();
+      const links: Array<{ source: string; target: string; value?: number }> = [];
+
+      for (const row of dataForChart.rows) {
+        const src = String(row[srcIdx] ?? '');
+        const tgt = String(row[tgtIdx] ?? '');
+        nodeSet.add(src);
+        nodeSet.add(tgt);
+        const link: { source: string; target: string; value?: number } = { source: src, target: tgt };
+        if (wIdx >= 0) {
+          link.value = typeof row[wIdx] === 'number' ? row[wIdx] as number : parseFloat(String(row[wIdx] ?? 1)) || 1;
+        }
+        links.push(link);
+      }
+
+      // Calculate node degree for sizing
+      const degreeMap = new Map<string, number>();
+      for (const link of links) {
+        degreeMap.set(link.source, (degreeMap.get(link.source) || 0) + 1);
+        degreeMap.set(link.target, (degreeMap.get(link.target) || 0) + 1);
+      }
+
+      const maxDegree = Math.max(...degreeMap.values(), 1);
+      const nodes = Array.from(nodeSet).map((name) => ({
+        name,
+        symbolSize: 10 + ((degreeMap.get(name) || 1) / maxDegree) * 40,
+        label: { show: (degreeMap.get(name) || 0) > 1 },
+      }));
+
+      return {
+        ...baseOption,
+        tooltip: {},
+        series: [
+          {
+            type: 'graph',
+            layout: 'force',
+            data: nodes,
+            links,
+            roam: true,
+            label: { show: true, position: 'right', fontSize: 10 },
+            force: {
+              repulsion: 100,
+              gravity: 0.1,
+              edgeLength: [50, 200],
+            },
+            lineStyle: { color: 'source', curveness: 0.3 },
+            emphasis: { focus: 'adjacency', lineStyle: { width: 3 } },
+          },
+        ],
+      };
+    }
+
+    case 'parallel': {
+      // Parallel coordinates: all numeric columns as dimensions
+      const analyses = analyzeDataColumns(dataForChart);
+      const numericCols = analyses.filter((a) => a.type === 'numeric');
+
+      if (numericCols.length < 2) {
+        return {
+          ...baseOption,
+          title: {
+            text: 'Parallel coordinates requires at least 2 numeric columns',
+            left: 'center',
+            top: 'middle',
+          },
+        };
+      }
+
+      const dims = numericCols.slice(0, 10); // Limit to 10 axes
+      const parallelAxis = dims.map((col, idx) => {
+        const colIdx = dataForChart.columns.indexOf(col.name);
+        const values = dataForChart.rows
+          .map((row) => {
+            const v = row[colIdx];
+            return typeof v === 'number' ? v : parseFloat(String(v ?? 0)) || 0;
+          });
+        return {
+          dim: idx,
+          name: col.name,
+          min: Math.min(...values),
+          max: Math.max(...values),
+        };
+      });
+
+      const parallelData = dataForChart.rows.slice(0, 500).map((row) => {
+        return dims.map((col) => {
+          const idx = dataForChart.columns.indexOf(col.name);
+          const v = row[idx];
+          return typeof v === 'number' ? v : parseFloat(String(v ?? 0)) || 0;
+        });
+      });
+
+      return {
+        ...baseOption,
+        parallelAxis,
+        parallel: {
+          left: '5%',
+          right: '13%',
+          bottom: '10%',
+          top: gridTop,
+        },
+        series: [
+          {
+            type: 'parallel',
+            lineStyle: { width: 1, opacity: 0.3 },
+            data: parallelData,
+          },
+        ],
+      };
+    }
+
+    case 'tree': {
+      // Tree: hierarchical from groupBy fields
+      const groupByFields = config.aggregation?.groupBy || (xField ? [xField] : []);
+      const sizeField = Array.isArray(yField) ? yField[0] : yField;
+
+      if (groupByFields.length === 0) {
+        return {
+          ...baseOption,
+          title: {
+            text: 'Tree requires groupBy fields for hierarchy',
+            left: 'center',
+            top: 'middle',
+          },
+        };
+      }
+
+      // Build tree from first groupBy field
+      const sizeIdx = sizeField ? dataForChart.columns.indexOf(sizeField) : -1;
+      const topIdx = dataForChart.columns.indexOf(groupByFields[0]);
+      const childIdx = groupByFields.length > 1 ? dataForChart.columns.indexOf(groupByFields[1]) : -1;
+
+      const treeMap = new Map<string, Map<string, number>>();
+      for (const row of dataForChart.rows) {
+        const topKey = String(row[topIdx] ?? '');
+        if (!treeMap.has(topKey)) treeMap.set(topKey, new Map());
+
+        if (childIdx >= 0) {
+          const childKey = String(row[childIdx] ?? '');
+          const val = sizeIdx >= 0 ? (typeof row[sizeIdx] === 'number' ? row[sizeIdx] as number : parseFloat(String(row[sizeIdx] ?? 1)) || 1) : 1;
+          const childMap = treeMap.get(topKey)!;
+          childMap.set(childKey, (childMap.get(childKey) || 0) + val);
+        }
+      }
+
+      const treeData = {
+        name: config.styling.title || 'Root',
+        children: Array.from(treeMap.entries()).map(([key, children]) => ({
+          name: key,
+          children: children.size > 0
+            ? Array.from(children.entries()).map(([name, value]) => ({ name, value }))
+            : undefined,
+        })),
+      };
+
+      return {
+        ...baseOption,
+        tooltip: { trigger: 'item', triggerOn: 'mousemove' },
+        series: [
+          {
+            type: 'tree',
+            data: [treeData],
+            left: '5%',
+            right: '20%',
+            top: gridTop,
+            bottom: '10%',
+            symbol: 'emptyCircle',
+            symbolSize: 8,
+            orient: 'LR',
+            expandAndCollapse: true,
+            initialTreeDepth: 2,
+            label: { position: 'left', verticalAlign: 'middle', fontSize: 10 },
+            leaves: { label: { position: 'right', verticalAlign: 'middle' } },
+            animationDurationUpdate: 750,
+          },
+        ],
+      };
+    }
+
+    case 'themeRiver': {
+      // ThemeRiver: X = date/time, Y = value, color = category
+      const dateField2 = xField || dataForChart.columns[0];
+      const valueField2 = Array.isArray(yField) ? yField[0] : yField;
+      const categoryField = colorField || dataForChart.columns.find((c) => c !== dateField2 && c !== valueField2);
+
+      if (!dateField2 || !valueField2) {
+        return {
+          ...baseOption,
+          title: { text: 'ThemeRiver requires X (time) and Y (value)', left: 'center', top: 'middle' },
+        };
+      }
+
+      const dateIdx2 = dataForChart.columns.indexOf(dateField2);
+      const valIdx2 = dataForChart.columns.indexOf(valueField2);
+      const catIdx2 = categoryField ? dataForChart.columns.indexOf(categoryField) : -1;
+
+      const riverData: [string, number, string][] = [];
+      for (const row of dataForChart.rows) {
+        const date = String(row[dateIdx2] ?? '');
+        const val = typeof row[valIdx2] === 'number' ? row[valIdx2] as number : parseFloat(String(row[valIdx2] ?? 0)) || 0;
+        const cat = catIdx2 >= 0 ? String(row[catIdx2] ?? '') : valueField2;
+        riverData.push([date, val, cat]);
+      }
+
+      return {
+        ...baseOption,
+        singleAxis: {
+          top: gridTop,
+          bottom: '15%',
+          axisTick: {},
+          axisLabel: {},
+          type: 'time',
+          axisPointer: { animation: true, label: { show: true } },
+        },
+        series: [
+          {
+            type: 'themeRiver',
+            emphasis: { itemStyle: { shadowBlur: 20, shadowColor: 'rgba(0, 0, 0, 0.3)' } },
+            data: riverData,
+          },
+        ],
+      };
+    }
+
+    case 'waterfall': {
+      // Waterfall: built via custom bar series with stacking
+      const xAxisData = dataPoints.map((p) => String(p.x ?? ''));
+      const yIdx = yIndices[0];
+
+      if (yIdx === undefined || yIdx < 0) {
+        return {
+          ...baseOption,
+          title: { text: 'Waterfall requires X and Y fields', left: 'center', top: 'middle' },
+        };
+      }
+
+      const values = dataForChart.rows.map((row) => {
+        const v = row[yIdx];
+        return typeof v === 'number' ? v : parseFloat(String(v ?? 0)) || 0;
+      });
+
+      // Calculate running sum and create transparent + positive + negative stacks
+      const transparentData: number[] = [];
+      const positiveData: (number | '-')[] = [];
+      const negativeData: (number | '-')[] = [];
+      let runningSum = 0;
+
+      for (let i = 0; i < values.length; i++) {
+        const val = values[i];
+        if (val >= 0) {
+          transparentData.push(runningSum);
+          positiveData.push(val);
+          negativeData.push('-');
+        } else {
+          transparentData.push(runningSum + val);
+          positiveData.push('-');
+          negativeData.push(Math.abs(val));
+        }
+        runningSum += val;
+      }
+
+      return {
+        ...baseOption,
+        xAxis: {
+          type: 'category',
+          data: xAxisData,
+          axisLabel: { rotate: xAxisData.length > 10 ? 45 : 0 },
+        },
+        yAxis: { type: 'value' },
+        series: [
+          {
+            name: 'Transparent',
+            type: 'bar',
+            stack: 'waterfall',
+            itemStyle: { borderColor: 'transparent', color: 'transparent' },
+            emphasis: { itemStyle: { borderColor: 'transparent', color: 'transparent' } },
+            data: transparentData,
+          },
+          {
+            name: 'Прирост',
+            type: 'bar',
+            stack: 'waterfall',
+            itemStyle: { color: '#22c55e' },
+            label: { show: true, position: 'top', fontSize: 10 },
+            data: positiveData,
+          },
+          {
+            name: 'Убыток',
+            type: 'bar',
+            stack: 'waterfall',
+            itemStyle: { color: '#ef4444' },
+            label: { show: true, position: 'bottom', fontSize: 10 },
+            data: negativeData,
+          },
+        ],
+      };
+    }
+
+    // ========== PHASE 2: 3D chart types (echarts-gl) ==========
+
+    case 'scatter3d':
+    case 'bar3d':
+    case 'surface3d':
+    case 'line3d': {
+      const zField = config.mapping.z;
+      const yFieldStr3d = Array.isArray(yField) ? yField[0] : yField;
+      if (!xField || !yFieldStr3d || !zField) {
+        return {
+          ...baseOption,
+          title: { text: '3D charts require X, Y, Z fields', left: 'center', top: 'middle', textStyle: { color: '#94a3b8' } },
+        };
+      }
+
+      const zIdx = dataForChart.columns.indexOf(zField);
+      if (xIndex < 0 || yIndices.length === 0 || zIdx < 0) {
+        return {
+          ...baseOption,
+          title: { text: '3D fields not found in data', left: 'center', top: 'middle', textStyle: { color: '#94a3b8' } },
+        };
+      }
+
+      // Common data extraction with proper numeric coercion
+      const pts3d = dataForChart.rows.map((row) => [
+        toNum0(row[xIndex]), toNum0(row[yIndices[0]]), toNum0(row[zIdx]),
+      ]);
+
+      if (config.chartType === 'scatter3d') {
+        return {
+          ...baseOption,
+          grid3D: { viewControl: { autoRotate: false } },
+          xAxis3D: { type: 'value', name: xField },
+          yAxis3D: { type: 'value', name: yFieldStr3d },
+          zAxis3D: { type: 'value', name: zField },
+          series: [{
+            type: 'scatter3D', data: pts3d, symbolSize: 5,
+            itemStyle: { opacity: 0.8 },
+            emphasis: { itemStyle: { color: '#f59e0b' } },
+          }],
+        };
+      }
+
+      if (config.chartType === 'bar3d') {
+        const xCats = Array.from(new Set(dataForChart.rows.map((r) => String(r[xIndex] ?? ''))));
+        const yCats = Array.from(new Set(dataForChart.rows.map((r) => String(r[yIndices[0]] ?? ''))));
+        const bar3dData = dataForChart.rows.map((row) => [
+          xCats.indexOf(String(row[xIndex] ?? '')),
+          yCats.indexOf(String(row[yIndices[0]] ?? '')),
+          toNum0(row[zIdx]),
+        ]);
+        const zMax = Math.max(...bar3dData.map((d) => d[2] as number), 1);
+        return {
+          ...baseOption,
+          grid3D: { boxWidth: 100, boxDepth: 80, viewControl: { distance: 200, autoRotate: false } },
+          xAxis3D: { type: 'category', data: xCats, name: xField },
+          yAxis3D: { type: 'category', data: yCats, name: yFieldStr3d },
+          zAxis3D: { type: 'value', name: zField },
+          visualMap: { max: zMax, inRange: { color: ['#313695', '#4575b4', '#74add1', '#fee090', '#f46d43', '#d73027', '#a50026'] } },
+          series: [{
+            type: 'bar3D', data: bar3dData, shading: 'lambert',
+            label: { show: false }, emphasis: { label: { show: true, fontSize: 12 } },
+          }],
+        };
+      }
+
+      if (config.chartType === 'surface3d') {
+        // Surface needs sorted grid data for proper rendering
+        // Sort by X then Y to create a proper grid
+        const sortedPts = [...pts3d].sort((a, b) => (a[0] as number) - (b[0] as number) || (a[1] as number) - (b[1] as number));
+        const zNums = sortedPts.map((d) => d[2] as number);
+        const zMin = zNums.length > 0 ? Math.min(...zNums) : 0;
+        const zMax = zNums.length > 0 ? Math.max(...zNums) : 1;
+        return {
+          ...baseOption,
+          grid3D: { viewControl: { autoRotate: false } },
+          xAxis3D: { type: 'value', name: xField },
+          yAxis3D: { type: 'value', name: yFieldStr3d },
+          zAxis3D: { type: 'value', name: zField },
+          visualMap: {
+            show: true, dimension: 2, min: zMin, max: zMax,
+            inRange: { color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026'] },
+          },
+          series: [{ type: 'surface', wireframe: { show: true }, data: sortedPts }],
+        };
+      }
+
+      // line3d
+      return {
+        ...baseOption,
+        grid3D: { viewControl: { autoRotate: false } },
+        xAxis3D: { type: 'value', name: xField },
+        yAxis3D: { type: 'value', name: yFieldStr3d },
+        zAxis3D: { type: 'value', name: zField },
+        series: [{ type: 'line3D', data: pts3d, lineStyle: { width: 3 } }],
+      };
+    }
+
+    // ========== PHASE 3: Extensions ==========
+
+    case 'wordcloud': {
+      // WordCloud: X = text/word, weight = size
+      const textField = xField || dataForChart.columns[0];
+      const weightFieldName = config.mapping.weight || (Array.isArray(yField) ? yField[0] : yField) || dataForChart.columns.find((c) => c !== textField);
+
+      const textIdx = dataForChart.columns.indexOf(textField);
+      const weightIdx = weightFieldName ? dataForChart.columns.indexOf(weightFieldName) : -1;
+
+      if (textIdx < 0) {
+        return {
+          ...baseOption,
+          title: { text: 'WordCloud requires a text field', left: 'center', top: 'middle' },
+        };
+      }
+
+      const wordData = dataForChart.rows.map((row) => ({
+        name: String(row[textIdx] ?? ''),
+        value: weightIdx >= 0
+          ? (typeof row[weightIdx] === 'number' ? row[weightIdx] as number : parseFloat(String(row[weightIdx] ?? 1)) || 1)
+          : 1,
+      }));
+
+      // Sort by value desc for visual priority
+      wordData.sort((a, b) => b.value - a.value);
+
+      return {
+        ...baseOption,
+        tooltip: { show: true },
+        series: [
+          {
+            type: 'wordCloud',
+            shape: 'circle',
+            sizeRange: [12, 60],
+            rotationRange: [-45, 90],
+            rotationStep: 45,
+            gridSize: 8,
+            drawOutOfBound: false,
+            layoutAnimation: true,
+            textStyle: {
+              fontFamily: 'sans-serif',
+              fontWeight: 'bold',
+            },
+            emphasis: {
+              textStyle: { color: '#1e293b', shadowBlur: 10, shadowColor: '#999' },
+            },
+            data: wordData.slice(0, 200), // Limit words for performance
+          },
+        ],
+      };
+    }
+
+    case 'liquidfill': {
+      // LiquidFill: single value as percentage
+      const valueFieldName = (Array.isArray(yField) ? yField[0] : yField) || dataForChart.columns[0];
+      const valIdx = dataForChart.columns.indexOf(valueFieldName);
+
+      let fillValue = 0;
+      if (valIdx >= 0 && dataForChart.rows.length > 0) {
+        const raw = dataForChart.rows[0][valIdx];
+        fillValue = typeof raw === 'number' ? raw : parseFloat(String(raw ?? 0)) || 0;
+      }
+
+      // Normalize to 0-1 range if value is > 1 (assume percentage)
+      if (fillValue > 1) fillValue = fillValue / 100;
+      fillValue = Math.max(0, Math.min(1, fillValue));
+
+      const shape = config.liquidfillConfig?.shape || 'circle';
+
+      return {
+        ...baseOption,
+        series: [
+          {
+            type: 'liquidFill',
+            data: [fillValue, fillValue * 0.9, fillValue * 0.8],
+            radius: '80%',
+            shape,
+            outline: { show: true },
+            label: {
+              show: true,
+              fontSize: 28,
+              fontWeight: 'bold',
+            },
+            backgroundStyle: { borderWidth: 1, borderColor: '#156ACF', color: 'rgb(244,244,244)' },
           },
         ],
       };

@@ -15,6 +15,7 @@ import {
 } from '@phosphor-icons/react';
 import dynamic from 'next/dynamic';
 import { memo, useCallback, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { NodeProps } from 'reactflow';
 import { Handle, Position, NodeResizer } from 'reactflow';
 
@@ -254,7 +255,7 @@ function MarkdownCellNodeInner({ data, selected }: NodeProps<MarkdownCellNodeDat
 
         {/* Content */}
         {!isCollapsed && (
-          <div className="nowheel nodrag">
+          <div className={isEditing ? 'nowheel nodrag' : ''}>
             {isEditing ? (
               <div style={{ height: editorHeight }}>
                 <MonacoEditor
@@ -278,10 +279,14 @@ function MarkdownCellNodeInner({ data, selected }: NodeProps<MarkdownCellNodeDat
               </div>
             ) : (
               <div
-                className="px-4 py-2 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap cursor-text min-h-[32px]"
+                className="markdown-rendered px-4 py-2 text-sm text-gray-700 leading-relaxed cursor-text min-h-[32px]"
                 onClick={() => setIsEditing(true)}
               >
-                {source || '(empty markdown cell — click to edit)'}
+                {source ? (
+                  <ReactMarkdown>{source}</ReactMarkdown>
+                ) : (
+                  <span className="text-gray-400 italic">(empty markdown cell — click to edit)</span>
+                )}
               </div>
             )}
           </div>

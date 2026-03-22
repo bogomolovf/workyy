@@ -2,7 +2,11 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { Map as YMapType } from 'yjs';
-import { useEditingPresence, type EditingUser, type EditingMapValue } from '../hooks/useEditingPresence';
+import {
+  useEditingPresence,
+  type EditingUser,
+  type EditingMapValue,
+} from '../hooks/useEditingPresence';
 
 type EditingPresenceContextValue = {
   editingMap: YMapType<EditingMapValue> | undefined;
@@ -29,12 +33,11 @@ export function EditingPresenceProvider({
   userInfo,
   children,
 }: EditingPresenceProviderProps) {
-  const {
-    getEditorsForNode,
-    startEditing,
-    updateEditing,
-    stopEditing,
-  } = useEditingPresence(editingMap, clientId, userInfo);
+  const { getEditorsForNode, startEditing, updateEditing, stopEditing } = useEditingPresence(
+    editingMap,
+    clientId,
+    userInfo,
+  );
 
   const value = useMemo(
     () => ({
@@ -46,13 +49,11 @@ export function EditingPresenceProvider({
       updateEditing,
       stopEditing,
     }),
-    [editingMap, clientId, userInfo, getEditorsForNode, startEditing, updateEditing, stopEditing]
+    [editingMap, clientId, userInfo, getEditorsForNode, startEditing, updateEditing, stopEditing],
   );
 
   return (
-    <EditingPresenceContext.Provider value={value}>
-      {children}
-    </EditingPresenceContext.Provider>
+    <EditingPresenceContext.Provider value={value}>{children}</EditingPresenceContext.Provider>
   );
 }
 
@@ -81,17 +82,10 @@ export function useEditingPresenceContext() {
  * Hook for a specific node to track editing and show indicator
  */
 export function useNodeEditing(nodeId: string) {
-  const {
-    getEditorsForNode,
-    startEditing,
-    updateEditing,
-    stopEditing,
-  } = useEditingPresenceContext();
+  const { getEditorsForNode, startEditing, updateEditing, stopEditing } =
+    useEditingPresenceContext();
 
-  const otherEditors = useMemo(
-    () => getEditorsForNode(nodeId),
-    [getEditorsForNode, nodeId]
-  );
+  const otherEditors = useMemo(() => getEditorsForNode(nodeId), [getEditorsForNode, nodeId]);
 
   return {
     otherEditors,

@@ -187,12 +187,12 @@ const workerApi = {
     let stderr = '';
     const restoreStdout = pyodide.setStdout({
       batched: (msg: string) => {
-        stdout += msg;
+        stdout += msg + '\n';
       },
     });
     const restoreStderr = pyodide.setStderr({
       batched: (msg: string) => {
-        stderr += msg;
+        stderr += msg + '\n';
       },
     });
 
@@ -246,9 +246,27 @@ if "_workyy_last_plot" in globals():
 
       // #region agent log
       try {
-        const dfCols = pyodide.runPython('list(df.columns) if "df" in globals() and df is not None else []');
-        const dfShape = pyodide.runPython('df.shape if "df" in globals() and df is not None else (0,0)');
-        fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'python.worker.ts:afterCode',message:'After user code execution',data:{dfColumns:Array.isArray(dfCols)?dfCols:[],dfShape:Array.isArray(dfShape)?dfShape:[],hasDf:'df' in pyodide.runPython('"df" in globals()')},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+        const dfCols = pyodide.runPython(
+          'list(df.columns) if "df" in globals() and df is not None else []',
+        );
+        const dfShape = pyodide.runPython(
+          'df.shape if "df" in globals() and df is not None else (0,0)',
+        );
+        fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location: 'python.worker.ts:afterCode',
+            message: 'After user code execution',
+            data: {
+              dfColumns: Array.isArray(dfCols) ? dfCols : [],
+              dfShape: Array.isArray(dfShape) ? dfShape : [],
+              hasDf: 'df' in pyodide.runPython('"df" in globals()'),
+            },
+            timestamp: Date.now(),
+            hypothesisId: 'A',
+          }),
+        }).catch(() => {});
       } catch (_) {}
       // #endregion
 
@@ -320,7 +338,6 @@ else:
 json.dumps(_debug_info)
 `);
         const dfDebugParsed = JSON.parse(dfDebug);
-        console.log('[WORKER DEBUG] df state:', dfDebugParsed);
 
         const candidateProbe = pyodide.runPython(`
 import json
@@ -390,15 +407,6 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
         }
         // #endregion
 
-        // #region agent log
-        console.log('[WORKER DEBUG] candidate result:', {
-          hasCandidate: resolvedResultPayload?.hasCandidate,
-          hasExplicitResult: resolvedResultPayload?.hasExplicitResult,
-          tableColumns: resolvedResultPayload?.table?.columns,
-          tableRowsCount: resolvedResultPayload?.table?.rows?.length,
-        });
-        fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'python.worker.ts:candidate',message:'Candidate selection result',data:{hasCandidate:resolvedResultPayload?.hasCandidate,hasExplicitResult:resolvedResultPayload?.hasExplicitResult,tableColumns:resolvedResultPayload?.table?.columns,tableRowsCount:resolvedResultPayload?.table?.rows?.length,dfDebug:dfDebugParsed},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
       } catch (error) {
         console.warn('Failed to interpret python result payload', error);
       }
@@ -411,13 +419,9 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
       ) {
         tablePayload = resolvedResultPayload.table as WorkerTablePayload;
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6e6ee5ce-7ada-48d4-be5c-54bb656f1b89',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'python.worker.ts:tablePayload',message:'Table payload created',data:{columns:tablePayload.columns,rowsCount:tablePayload.rows.length},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
       }
 
       if (tablePayload) {
-        console.log('[WORKER] Returning table columns:', tablePayload.columns);
         const cleanedStderr = cleanStderr(stderr);
         return {
           success: true,

@@ -166,7 +166,6 @@ export const useCanvasHistoryStore = create<CanvasHistoryStore>((set, get) => ({
 
     // Check if snapshot is meaningfully different from present
     if (present && snapshotsEqual(present, newSnapshot)) {
-      console.log('📸 Skipping duplicate snapshot');
       return;
     }
 
@@ -187,13 +186,6 @@ export const useCanvasHistoryStore = create<CanvasHistoryStore>((set, get) => ({
       newPast.shift();
     }
 
-    console.log('📸 Saving snapshot:', {
-      nodesCount: nodes.length,
-      edgesCount: edges.length,
-      pastLength: newPast.length,
-      nodeIds: nodes.map((n) => n.id.slice(0, 8)),
-    });
-
     set({
       past: newPast,
       present: newSnapshot,
@@ -207,7 +199,6 @@ export const useCanvasHistoryStore = create<CanvasHistoryStore>((set, get) => ({
     const { past, present, future } = get();
 
     if (past.length === 0) {
-      console.log('❌ Cannot undo: no history');
       return null;
     }
 
@@ -217,13 +208,6 @@ export const useCanvasHistoryStore = create<CanvasHistoryStore>((set, get) => ({
 
     // Current present goes to future
     const newFuture = present ? [present, ...future] : future;
-
-    console.log('⏪ Undo:', {
-      nodesCount: previous.nodes.length,
-      pastLength: newPast.length,
-      futureLength: newFuture.length,
-      nodeIds: previous.nodes.map((n) => n.id.slice(0, 8)),
-    });
 
     set({
       past: newPast,
@@ -241,7 +225,6 @@ export const useCanvasHistoryStore = create<CanvasHistoryStore>((set, get) => ({
     const { past, present, future } = get();
 
     if (future.length === 0) {
-      console.log('❌ Cannot redo: no future');
       return null;
     }
 
@@ -251,13 +234,6 @@ export const useCanvasHistoryStore = create<CanvasHistoryStore>((set, get) => ({
 
     // Current present goes to past
     const newPast = present ? [...past, present] : past;
-
-    console.log('⏩ Redo:', {
-      nodesCount: next.nodes.length,
-      pastLength: newPast.length,
-      futureLength: newFuture.length,
-      nodeIds: next.nodes.map((n) => n.id.slice(0, 8)),
-    });
 
     set({
       past: newPast,
@@ -271,7 +247,6 @@ export const useCanvasHistoryStore = create<CanvasHistoryStore>((set, get) => ({
   },
 
   clear: () => {
-    console.log('🗑️ Clearing history');
     set({
       past: [],
       present: null,

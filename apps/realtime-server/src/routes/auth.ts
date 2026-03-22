@@ -16,7 +16,9 @@ const loginSchema = z.object({
 });
 
 export async function authRoutes(app: FastifyInstance) {
-  app.post('/auth/register', async (request, reply) => {
+  app.post('/auth/register', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const result = registerSchema.safeParse(request.body);
     if (!result.success) {
       reply.code(400).send({
@@ -75,7 +77,9 @@ export async function authRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post('/auth/login', async (request, reply) => {
+  app.post('/auth/login', {
+    config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const result = loginSchema.safeParse(request.body);
     if (!result.success) {
       reply.code(400).send({

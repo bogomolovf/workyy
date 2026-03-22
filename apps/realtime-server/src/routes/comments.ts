@@ -260,10 +260,12 @@ export async function commentsRoutes(app: FastifyInstance) {
             anchorX: true,
             anchorY: true,
             resolved: true,
+            resolvedAt: true,
             createdById: true,
             createdAt: true,
             updatedAt: true,
             createdBy: { select: { id: true, name: true, email: true, avatarUrl: true } },
+            resolvedBy: { select: { id: true, name: true } },
             messages: {
               orderBy: { createdAt: 'asc' },
               select: {
@@ -275,14 +277,32 @@ export async function commentsRoutes(app: FastifyInstance) {
                 updatedAt: true,
                 deletedAt: true,
                 author: { select: { id: true, name: true, email: true, avatarUrl: true } },
-                reactions: true,
+                reactions: {
+                  select: { messageId: true, emoji: true, userId: true },
+                },
               },
             },
           },
         });
       });
 
-      return reply.code(201).send({ ...thread, subscribed: true });
+      if (!thread) {
+        return sendProblem(reply, {
+          title: 'Internal error',
+          status: 500,
+          detail: 'Failed to create thread',
+        });
+      }
+
+      return reply.code(201).send({
+        ...thread,
+        subscribed: true,
+        messages: thread.messages.map((m) => ({
+          ...m,
+          body: m.deletedAt ? '' : m.body,
+          deleted: !!m.deletedAt,
+        })),
+      });
     },
   );
 
@@ -523,8 +543,11 @@ export async function commentsRoutes(app: FastifyInstance) {
             body: true,
             createdAt: true,
             updatedAt: true,
+            deletedAt: true,
             author: { select: { id: true, name: true, email: true, avatarUrl: true } },
-            reactions: true,
+            reactions: {
+              select: { messageId: true, emoji: true, userId: true },
+            },
           },
         });
 
@@ -538,7 +561,10 @@ export async function commentsRoutes(app: FastifyInstance) {
         return msg;
       });
 
-      return reply.code(201).send(message);
+      return reply.code(201).send({
+        ...message,
+        deleted: !!message.deletedAt,
+      });
     },
   );
 

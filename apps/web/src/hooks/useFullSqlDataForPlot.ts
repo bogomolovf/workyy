@@ -4,10 +4,7 @@ import type { SqlResult } from '../state/executionStore';
 import { useExecutionStore } from '../state/executionStore';
 
 /** Cache for plot data by upstream node + code to avoid refetching */
-const sqlPlotCache = new Map<
-  string,
-  { data: SqlResult; fetchedAt: number }
->();
+const sqlPlotCache = new Map<string, { data: SqlResult; fetchedAt: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function cacheKey(nodeId: string, code: string): string {
@@ -18,11 +15,13 @@ function cacheKey(nodeId: string, code: string): string {
  * Fetches the full result from the upstream SQL node for plot visualization.
  * Does not write to executionStore — chart is built from the full dataset volume.
  */
-export function useFullSqlDataForPlot(
-  upstreamNodeId: string | undefined,
-): { data: SqlResult | undefined; loading: boolean; error: string | null } {
+export function useFullSqlDataForPlot(upstreamNodeId: string | undefined): {
+  data: SqlResult | undefined;
+  loading: boolean;
+  error: string | null;
+} {
   const code = useExecutionStore((state) =>
-    upstreamNodeId ? state.entries[upstreamNodeId]?.code ?? '' : '',
+    upstreamNodeId ? (state.entries[upstreamNodeId]?.code ?? '') : '',
   );
 
   const [data, setData] = useState<SqlResult | undefined>(undefined);

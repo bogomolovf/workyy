@@ -1,359 +1,103 @@
-export type BoardResponse = {
-  board: {
-    id: string;
-    workspaceId: string;
-    title: string;
-    description: string | null;
-  };
-  nodes: Array<{
-    id: string;
-    boardId: string;
-    type:
-      | 'sql'
-      | 'python'
-      | 'table'
-      | 'plot'
-      | 'note'
-      | 'text'
-      | 'shape'
-      | 'image'
-      | 'video'
-      | 'document'
-      | 'draw'
-      | 'pen'
-      | 'database'
-      | 'csv'
-      | 'voice'
-      | 'notebook';
-    position: { x: number; y: number };
-    payload?: Record<string, unknown>;
-  }>;
-  edges: Array<{
-    id: string;
-    sourceId: string;
-    targetId: string;
-    metadata: Record<string, unknown>;
-  }>;
+import { apiFetch, API_URL, isValidUuid } from './apiClient';
+import type {
+  BoardResponse,
+  BoardSummary,
+  CreateBoardInput,
+  CreatedBoard,
+  PersistedEdge,
+  PersistedNode,
+  SaveBoardStructureInput,
+  UpdateBoardMetadataInput,
+  UploadedFile,
+  WorkspaceMember,
+  EdgeHandleMetadata,
+  NodeType,
+} from './api.types';
+
+// Re-export everything consumers need
+export { API_URL, isValidUuid } from './apiClient';
+export type {
+  BoardResponse,
+  BoardSummary,
+  CreateBoardInput,
+  CreatedBoard,
+  EdgeHandleMetadata,
+  NodeType,
+  PersistedEdge,
+  PersistedNode,
+  SaveBoardStructureInput,
+  UpdateBoardMetadataInput,
+  UploadedFile,
+  WorkspaceMember,
 };
 
-export const API_URL =
-  typeof window === 'undefined'
-    ? (process.env.NEXT_PUBLIC_API_URL ??
-      process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ??
-      'http://localhost:4000')
-    : (process.env.NEXT_PUBLIC_API_URL ??
-      process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ??
-      'http://localhost:4000');
-
-const NETWORK_ERROR_MESSAGE =
-  'Не удалось подключиться к серверу. Убедитесь, что бэкенд запущен (./start.sh или pnpm dev).';
-
-function isNetworkError(err: unknown): boolean {
-  if (err instanceof TypeError) return true;
-  const msg = (err as Error)?.message ?? '';
-  return (
-    msg === 'Load failed' ||
-    msg === 'Failed to fetch' ||
-    msg === 'NetworkError when attempting to fetch resource' ||
-    /^fetch failed$/i.test(msg)
-  );
-}
-
-export function isValidUuid(value: string | null | undefined): value is string {
-  return (
-    !!value &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-  );
-}
+// ─── Board API ───────────────────────────────────────────────────────
 
 export async function fetchBoard(boardId: string): Promise<BoardResponse> {
-  if (!isValidUuid(boardId)) {
-    throw new Error('invalid-board-id');
-  }
-
-  const res = await fetch(`${API_URL}/api/boards/${boardId}`, {
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    throw new Error('Failed to load board');
-  }
-  return res.json();
+  if (!isValidUuid(boardId)) throw new Error('invalid-board-id');
+  return apiFetch<BoardResponse>(`${API_URL}/api/boards/${boardId}`);
 }
-
-export type BoardSummary = {
-  id: string;
-  workspaceId: string;
-  title: string;
-  description: string | null;
-  createdAt: string;
-  updatedAt: string;
-  stats: {
-    nodes: number;
-    edges: number;
-  };
-};
 
 export async function fetchBoards(workspaceId?: string): Promise<BoardSummary[]> {
   const params = new URLSearchParams();
-  if (workspaceId) {
-    params.set('workspaceId', workspaceId);
-  }
-
-  const res = await fetch(`${API_URL}/api/boards${params.size ? `?${params.toString()}` : ''}`, {
-    headers: { Accept: 'application/json' },
-    credentials: 'include',
+  if (workspaceId) params.set('workspaceId', workspaceId);
+  const qs = params.size ? `?${params.toString()}` : '';
+  const data = await apiFetch<{ boards: BoardSummary[] }>(`${API_URL}/api/boards${qs}`, {
     cache: 'no-store',
   });
-
-  if (!res.ok) {
-    throw new Error('Failed to load boards');
-  }
-
-  const data = await res.json();
-  return Array.isArray(data.boards) ? (data.boards as BoardSummary[]) : [];
+  return Array.isArray(data.boards) ? data.boards : [];
 }
-
-export type CreateBoardInput = {
-  workspaceId: string;
-  title: string;
-  description?: string | null;
-};
-
-export type CreatedBoard = {
-  id: string;
-  workspaceId: string;
-  title: string;
-  description: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
 
 export async function createBoard(payload: CreateBoardInput): Promise<CreatedBoard> {
-  const res = await fetch(`${API_URL}/api/boards`, {
+  return apiFetch<CreatedBoard>(`${API_URL}/api/boards`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(payload),
+    body: payload,
   });
-
-  if (!res.ok) {
-    let detail = 'Failed to create board';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
-
-  return res.json();
 }
-
-// Persisted node type must accept all types that server API supports
-export type PersistedNode = {
-  id: string;
-  type:
-    | 'sql'
-    | 'python'
-    | 'table'
-    | 'plot'
-    | 'note'
-    | 'text'
-    | 'shape'
-    | 'image'
-    | 'video'
-    | 'document'
-    | 'draw'
-    | 'pen'
-    | 'database'
-    | 'csv'
-    | 'voice'
-    | 'notebook';
-  position: { x: number; y: number };
-  payload?: Record<string, unknown>;
-  boardId?: string;
-};
-
-export type EdgeHandleMetadata = {
-  sourceHandleId?: string; // "left" | "top" | "right" | "bottom" | undefined
-  targetHandleId?: string;
-};
-
-export type PersistedEdge = {
-  id: string;
-  sourceId: string;
-  targetId: string;
-  metadata?: EdgeHandleMetadata & Record<string, unknown>;
-};
-
-export type SaveBoardStructureInput = {
-  nodes: PersistedNode[];
-  edges: PersistedEdge[];
-};
 
 export async function saveBoardStructure(
   boardId: string,
   payload: SaveBoardStructureInput,
 ): Promise<void> {
-  const res = await fetch(`${API_URL}/api/boards/${boardId}/nodes`, {
+  return apiFetch(`${API_URL}/api/boards/${boardId}/nodes`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(payload),
+    body: payload,
   });
-
-  if (!res.ok) {
-    let detail = 'Failed to save board';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
 }
 
 export async function deleteBoard(boardId: string): Promise<void> {
-  if (!isValidUuid(boardId)) {
-    throw new Error('invalid-board-id');
-  }
-
-  const res = await fetch(`${API_URL}/api/boards/${boardId}`, {
-    method: 'DELETE',
-    headers: {
-      Accept: 'application/json',
-    },
-    credentials: 'include',
-  });
-
-  if (!res.ok) {
-    let detail = 'Failed to delete board';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
+  if (!isValidUuid(boardId)) throw new Error('invalid-board-id');
+  return apiFetch(`${API_URL}/api/boards/${boardId}`, { method: 'DELETE' });
 }
-
-export type UpdateBoardMetadataInput = {
-  title?: string;
-  description?: string | null;
-};
 
 export async function updateBoardMetadata(
   boardId: string,
   payload: UpdateBoardMetadataInput,
 ): Promise<void> {
-  if (!isValidUuid(boardId)) {
-    throw new Error('invalid-board-id');
-  }
-
+  if (!isValidUuid(boardId)) throw new Error('invalid-board-id');
   if (payload.title === undefined && payload.description === undefined) {
     throw new Error('No fields provided for update');
   }
-
-  const res = await fetch(`${API_URL}/api/boards/${boardId}`, {
+  return apiFetch(`${API_URL}/api/boards/${boardId}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(payload),
+    body: payload,
   });
-
-  if (!res.ok) {
-    let detail = 'Failed to update board';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
 }
 
-// Auth API functions
+// ─── Auth API ────────────────────────────────────────────────────────
 
 export async function registerUser(payload: { email: string; password: string; name?: string }) {
-  try {
-    const res = await fetch(`${API_URL}/api/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      let errorDetail = 'Registration failed';
-      try {
-        const error = await res.json();
-        errorDetail = error.detail || error.title || errorDetail;
-        console.error('Registration error:', error);
-      } catch {
-        const text = await res.text().catch(() => '');
-        errorDetail = text || errorDetail;
-        console.error('Registration failed with status:', res.status, text);
-      }
-      throw new Error(errorDetail);
-    }
-
-    return res.json();
-  } catch (err: unknown) {
-    if (isNetworkError(err)) {
-      console.error('Registration network error:', err);
-      throw new Error(NETWORK_ERROR_MESSAGE);
-    }
-    if (err instanceof Error && err.message) throw err;
-    console.error('Registration error:', err);
-    throw new Error(NETWORK_ERROR_MESSAGE);
-  }
+  return apiFetch<{ id: string; email: string }>(`${API_URL}/api/auth/register`, {
+    method: 'POST',
+    body: payload,
+  });
 }
 
 export async function loginUser(payload: { email: string; password: string }) {
-  try {
-    const res = await fetch(`${API_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      let errorDetail = 'Login failed';
-      try {
-        const error = (await res.json()) as { detail?: string; title?: string };
-        errorDetail = error.detail ?? error.title ?? errorDetail;
-      } catch {
-        // non-JSON response
-      }
-      throw new Error(errorDetail);
-    }
-    return res.json();
-  } catch (err: unknown) {
-    if (isNetworkError(err)) {
-      console.error('Login network error:', err);
-      throw new Error(NETWORK_ERROR_MESSAGE);
-    }
-    throw err;
-  }
+  return apiFetch<{ id: string; email: string }>(`${API_URL}/api/auth/login`, {
+    method: 'POST',
+    body: payload,
+  });
 }
 
 export async function logoutUser() {
@@ -364,75 +108,31 @@ export async function logoutUser() {
 }
 
 export async function fetchCurrentUser() {
-  const res = await fetch(`${API_URL}/api/auth/me`, {
-    credentials: 'include',
-  });
+  const res = await fetch(`${API_URL}/api/auth/me`, { credentials: 'include' });
   if (res.status === 401) return null;
-  if (!res.ok) {
-    throw new Error('Failed to fetch current user');
-  }
+  if (!res.ok) throw new Error('Failed to fetch current user');
   return res.json();
 }
 
-// Workspace members API
-
-export type WorkspaceMember = {
-  userId: string;
-  email: string;
-  name: string | null;
-  avatarUrl: string | null;
-  role: 'owner' | 'editor' | 'viewer';
-  addedAt: string;
-};
+// ─── Workspace Members API ──────────────────────────────────────────
 
 export async function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
-  if (!isValidUuid(workspaceId)) {
-    throw new Error('invalid-workspace-id');
-  }
-  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    let detail = 'Failed to load workspace members';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
-  const data = await res.json();
-  const list = Array.isArray(data.members) ? data.members : [];
-  return list as WorkspaceMember[];
+  if (!isValidUuid(workspaceId)) throw new Error('invalid-workspace-id');
+  const data = await apiFetch<{ members: WorkspaceMember[] }>(
+    `${API_URL}/api/workspaces/${workspaceId}/members`,
+  );
+  return Array.isArray(data.members) ? data.members : [];
 }
 
 export async function addWorkspaceMember(
   workspaceId: string,
   payload: { email: string; role: 'owner' | 'editor' | 'viewer' },
 ): Promise<void> {
-  if (!isValidUuid(workspaceId)) {
-    throw new Error('invalid-workspace-id');
-  }
-  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
+  if (!isValidUuid(workspaceId)) throw new Error('invalid-workspace-id');
+  return apiFetch(`${API_URL}/api/workspaces/${workspaceId}/members`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(payload),
+    body: payload,
   });
-  if (!res.ok) {
-    let detail = 'Failed to add member';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
 }
 
 export async function removeWorkspaceMember(
@@ -442,20 +142,9 @@ export async function removeWorkspaceMember(
   if (!isValidUuid(workspaceId) || !isValidUuid(memberUserId)) {
     throw new Error('invalid-workspace-or-user-id');
   }
-  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`, {
+  return apiFetch(`${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`, {
     method: 'DELETE',
-    credentials: 'include',
   });
-  if (!res.ok) {
-    let detail = 'Failed to remove member';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
 }
 
 export async function updateWorkspaceMemberRole(
@@ -466,87 +155,95 @@ export async function updateWorkspaceMemberRole(
   if (!isValidUuid(workspaceId) || !isValidUuid(memberUserId)) {
     throw new Error('invalid-workspace-or-user-id');
   }
-  const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`, {
+  return apiFetch(`${API_URL}/api/workspaces/${workspaceId}/members/${memberUserId}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(payload),
+    body: payload,
   });
-  if (!res.ok) {
-    let detail = 'Failed to update role';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
 }
 
-// File upload API
-
-export type UploadedFile = {
-  id: string;
-  filename: string;
-  originalName: string;
-  mimeType: string;
-  size: number;
-  url: string;
-};
+// ─── File Upload API ────────────────────────────────────────────────
 
 export async function uploadFile(boardId: string, file: File): Promise<UploadedFile> {
   const formData = new FormData();
   formData.append('file', file);
-
-  const res = await fetch(`${API_URL}/api/files/upload?boardId=${encodeURIComponent(boardId)}`, {
-    method: 'POST',
-    credentials: 'include',
-    body: formData,
-  });
-
-  if (!res.ok) {
-    let detail = 'Failed to upload file';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
-
-  return res.json();
+  return apiFetch<UploadedFile>(
+    `${API_URL}/api/files/upload?boardId=${encodeURIComponent(boardId)}`,
+    {
+      method: 'POST',
+      body: formData,
+      rawBody: true,
+    },
+  );
 }
 
 export async function deleteFile(fileId: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/files/${fileId}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-
-  if (!res.ok && res.status !== 204) {
-    let detail = 'Failed to delete file';
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? detail;
-    } catch {
-      detail = await res.text().catch(() => detail);
-    }
-    throw new Error(detail);
-  }
+  return apiFetch(`${API_URL}/api/files/${fileId}`, { method: 'DELETE' });
 }
 
 export function getFileUrl(fileId: string): string {
   return `${API_URL}/api/files/${fileId}`;
 }
 
-// Determine node type from MIME type
 export function getNodeTypeFromMimeType(mimeType: string): 'image' | 'video' | 'document' {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
   return 'document';
+}
+
+// ── Dataset server storage ──
+
+export type DatasetPayload = {
+  tableName: string;
+  fileName: string;
+  columns: string[];
+  rows: Array<Array<string | number | null>>;
+};
+
+export type DatasetMeta = {
+  id: string;
+  tableName: string;
+  fileName: string;
+  columns: string[];
+  rowCount: number;
+};
+
+/** Upload dataset rows to server for persistent storage */
+export async function saveDatasetToServer(
+  boardId: string,
+  dataset: DatasetPayload,
+): Promise<DatasetMeta> {
+  return apiFetch<DatasetMeta>(`${API_URL}/api/boards/${boardId}/datasets`, {
+    method: 'POST',
+    body: dataset,
+  });
+}
+
+/** Fetch dataset rows from server (for DuckDB restore after page refresh) */
+export async function fetchDatasetFromServer(
+  boardId: string,
+  tableName: string,
+): Promise<DatasetPayload & { rowCount: number }> {
+  return apiFetch<DatasetPayload & { rowCount: number }>(
+    `${API_URL}/api/boards/${boardId}/datasets/${encodeURIComponent(tableName)}`,
+  );
+}
+
+/** List all datasets on a board (metadata only, no rows) */
+export async function listBoardDatasets(
+  boardId: string,
+): Promise<{ datasets: DatasetMeta[] }> {
+  return apiFetch<{ datasets: DatasetMeta[] }>(
+    `${API_URL}/api/boards/${boardId}/datasets`,
+  );
+}
+
+/** Delete a dataset from server */
+export async function deleteDatasetFromServer(
+  boardId: string,
+  tableName: string,
+): Promise<void> {
+  return apiFetch<void>(
+    `${API_URL}/api/boards/${boardId}/datasets/${encodeURIComponent(tableName)}`,
+    { method: 'DELETE' },
+  );
 }

@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeProps } from 'reactflow';
 import { InteractiveResultTable } from '../InteractiveResultTable';
 import { useExecutionStore } from '../../state/executionStore';
@@ -68,6 +68,19 @@ export function SqlNode({ data }: NodeProps<SqlNodeData>) {
   } = useNodeEditing(data.nodeId);
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const [isEditorFocused, setIsEditorFocused] = useState(false);
+  const nodeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isEditorFocused) return;
+    const handler = (e: MouseEvent) => {
+      if (nodeRef.current && !nodeRef.current.contains(e.target as Node)) {
+        setIsEditorFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isEditorFocused]);
 
   // Handle "Load All" button click
   const handleLoadAll = useCallback(() => {
@@ -82,38 +95,39 @@ export function SqlNode({ data }: NodeProps<SqlNodeData>) {
       data.onChangeCode(value ?? '');
       handleEditingChange();
     },
-    [data.onChangeCode, handleEditingChange]
+    [data.onChangeCode, handleEditingChange],
   );
 
   // Handle Monaco editor mount to set up focus/blur listeners
   const handleEditorMount = useCallback(
     (editor: editor.IStandaloneCodeEditor) => {
       editorRef.current = editor;
-      
+
       // Track focus
       editor.onDidFocusEditorWidget(() => {
         handleEditingFocus();
       });
-      
+
       // Track blur
       editor.onDidBlurEditorWidget(() => {
         handleEditingBlur();
       });
     },
-    [handleEditingFocus, handleEditingBlur]
+    [handleEditingFocus, handleEditingBlur],
   );
 
   return (
     <div
+      ref={nodeRef}
       className="w-[360px] rounded-2xl border bg-slate-900/80 shadow-lg relative"
       style={{
-        borderColor: isBeingEdited ? (otherEditors[0]?.color || '#6366f1') : '#334155',
+        borderColor: isBeingEdited ? otherEditors[0]?.color || '#6366f1' : '#334155',
         borderWidth: isBeingEdited ? 2 : 1,
       }}
     >
       {/* Show editing indicator when others are editing this SQL node */}
       {isBeingEdited && <EditingIndicator editors={otherEditors} position="top-right" />}
-      
+
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           SQL Node
@@ -130,20 +144,25 @@ export function SqlNode({ data }: NodeProps<SqlNodeData>) {
         </div>
       </div>
 
-      <div className="h-44 border-b border-slate-800">
-        <MonacoEditor
-          language="sql"
-          value={code}
-          onChange={handleCodeChange}
-          onMount={handleEditorMount}
-          theme="vs-dark"
-          options={{
-            minimap: { enabled: false },
-            fontSize: 13,
-            lineNumbers: 'off',
-            scrollBeyondLastLine: false,
-          }}
-        />
+      <div
+        className={`h-44 border-b border-slate-800 ${isEditorFocused ? 'nowheel nodrag' : ''}`}
+        onMouseDown={() => { if (!isEditorFocused) setIsEditorFocused(true); }}
+      >
+        <div style={{ pointerEvents: isEditorFocused ? 'auto' : 'none', height: '100%' }}>
+          <MonacoEditor
+            language="sql"
+            value={code}
+            onChange={handleCodeChange}
+            onMount={handleEditorMount}
+            theme="vs-dark"
+            options={{
+              minimap: { enabled: false },
+              fontSize: 13,
+              lineNumbers: 'off',
+              scrollBeyondLastLine: false,
+            }}
+          />
+        </div>
       </div>
 
       {error && (

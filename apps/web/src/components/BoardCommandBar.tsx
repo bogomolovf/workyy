@@ -51,8 +51,6 @@ type BoardCommandBarProps = {
   onRunDownstreamSelectedNode?: () => void;
   canRunSelectedNode?: boolean;
   canRunDownstream?: boolean;
-  onAddSqlNode?: () => void;
-  onAddPythonNode?: () => void;
   onAddDatabaseNode?: () => void;
   onAddPlotNode?: () => void;
   onAddVoiceNode?: () => void;
@@ -63,18 +61,16 @@ type BoardCommandBarProps = {
   onUploadNotebook?: (file: File) => void;
   onDeleteSelection?: () => void;
   hasSelection?: boolean;
-  // Undo/Redo moved to UndoRedoControls in board header
   portalRoot?: HTMLElement | null;
 };
 
+/* ── Canvas drawing tools ─────────────────────────────── */
 const canvasToolIds: Array<{ id: CanvasTool; icon: typeof Cursor; hotkey: string }> = [
   { id: 'select', icon: Cursor, hotkey: 'V' },
   { id: 'note', icon: NotePencil, hotkey: 'N' },
   { id: 'pen', icon: PencilSimple, hotkey: 'P' },
   { id: 'text', icon: TextT, hotkey: 'T' },
   { id: 'shape', icon: SquaresFour, hotkey: 'S' },
-  { id: 'voice', icon: Microphone, hotkey: 'M' },
-  { id: 'comment', icon: ChatCircle, hotkey: 'C' },
 ];
 
 const TOOL_LABEL_KEYS: Record<
@@ -119,6 +115,11 @@ function StatusPill({ status, label }: { status: NodeStatus; label: string }) {
 
 const TOOLTIP_DELAY = 150;
 
+/* ── Divider between groups ───────────────────────────── */
+function Divider() {
+  return <div className="h-6 w-px bg-slate-200" />;
+}
+
 export const BoardCommandBar = memo(function BoardCommandBar({
   currentTool,
   onChangeTool,
@@ -130,8 +131,6 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   onRunDownstreamSelectedNode,
   canRunSelectedNode,
   canRunDownstream,
-  onAddSqlNode,
-  onAddPythonNode,
   onAddDatabaseNode,
   onAddPlotNode,
   onAddVoiceNode,
@@ -202,14 +201,14 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   const dataRunDisabled = !canRunSelectedNode || selectedNodeStatus === 'running';
   const downstreamDisabled = !canRunDownstream || selectedNodeStatus === 'running';
 
-  // Закрываем палитру при изменении инструмента
+  // Close shape palette when tool changes
   useEffect(() => {
     if (currentTool !== 'shape') {
       setIsShapePaletteOpen(false);
     }
   }, [currentTool]);
 
-  // Закрываем палитру при клике вне её
+  // Close shape palette on outside click
   useEffect(() => {
     if (!isShapePaletteOpen) return;
 
@@ -235,18 +234,19 @@ export const BoardCommandBar = memo(function BoardCommandBar({
       ? 'absolute left-1/2 bottom-4 -translate-x-1/2 z-[100]'
       : 'fixed left-1/2 bottom-4 -translate-x-1/2 z-[100000]';
 
-  const baseButtonClass =
-    'grid h-9 w-9 place-items-center rounded-lg border border-transparent text-black transition-all duration-150 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400';
-  const activeButtonClass =
+  const btnBase =
+    'grid h-8 w-8 place-items-center rounded-lg border border-transparent text-slate-700 transition-all duration-150 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400';
+  const btnActive =
     'bg-indigo-600 text-white border-indigo-600 shadow-[0_4px_12px_rgba(79,70,229,0.3)]';
-  const disabledButtonClass = 'opacity-50 cursor-not-allowed hover:bg-transparent';
-  const ghostButtonClass = 'border border-slate-200 text-black';
-  const dangerButtonClass = 'text-black hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600';
+  const btnDisabled = 'opacity-50 cursor-not-allowed hover:bg-transparent';
+  const btnDanger = 'text-slate-700 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600';
 
   const card = (
     <div className={`pointer-events-none ${positioningClass}`} data-board-command-bar="true">
-      <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-[0_12px_30px_rgba(15,23,42,0.15)]">
-        <div className="flex items-center gap-1.5">
+      <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-1.5 py-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
+
+        {/* ── Group 1: Canvas Tools (Select, Note, Pen, Text, Shape) ── */}
+        <div className="flex items-center gap-0.5">
           {canvasToolIds.map((tool) => {
             const Icon = tool.icon;
             const isActive = currentTool === tool.id;
@@ -258,13 +258,10 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                 <button
                   ref={isShapeTool ? shapeButtonRef : undefined}
                   type="button"
-                  className={`${baseButtonClass} ${isActive ? activeButtonClass : ''}`}
+                  className={`${btnBase} ${isActive ? btnActive : ''}`}
                   onClick={() => {
-                    // Shape tool - особая логика для палитры
                     if (isShapeTool) {
                       if (isActive) {
-                        // Если палитра открыта - закрываем и снимаем выделение (hand mode)
-                        // Если палитра закрыта - открываем её
                         if (isShapePaletteOpen) {
                           setIsShapePaletteOpen(false);
                           onChangeTool('hand');
@@ -277,7 +274,6 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                       }
                       return;
                     }
-                    // Все инструменты - toggle: повторный клик снимает выделение (hand mode)
                     if (isActive) {
                       onChangeTool('hand');
                     } else {
@@ -288,7 +284,7 @@ export const BoardCommandBar = memo(function BoardCommandBar({
                   title={`${label} (${tool.hotkey.toUpperCase()})`}
                   data-delay={TOOLTIP_DELAY}
                 >
-                  <Icon size={18} weight={isActive ? 'fill' : 'regular'} />
+                  <Icon size={17} weight={isActive ? 'fill' : 'regular'} />
                 </button>
                 {isShapeTool && isShapePaletteOpen && onSelectShape && (
                   <div className="shape-palette-popover absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[100001] pointer-events-auto">
@@ -304,13 +300,14 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               </div>
             );
           })}
-          {/* Eraser tool */}
+
+          {/* Eraser */}
           <button
             type="button"
-            className={`${baseButtonClass} ${currentTool === 'eraser' ? activeButtonClass : ''}`}
+            className={`${btnBase} ${currentTool === 'eraser' ? btnActive : ''}`}
             onClick={() => {
               if (currentTool === 'eraser') {
-                onChangeTool('hand'); // Toggle back to hand mode
+                onChangeTool('hand');
               } else {
                 onChangeTool('eraser');
               }
@@ -318,101 +315,116 @@ export const BoardCommandBar = memo(function BoardCommandBar({
             }}
             title={`${t.toolEraser} (E)`}
           >
-            <Eraser size={18} weight={currentTool === 'eraser' ? 'fill' : 'regular'} />
+            <Eraser size={17} weight={currentTool === 'eraser' ? 'fill' : 'regular'} />
           </button>
         </div>
-        <div className="h-6 w-px bg-slate-200" />
-        <div className="flex items-center gap-1.5">
-          {onAddSqlNode && (
+
+        <Divider />
+
+        {/* ── Group 2: Collaboration (Voice, Comment) ── */}
+        <div className="flex items-center gap-0.5">
+          {onAddVoiceNode && (
             <button
               type="button"
-              className={`${baseButtonClass} ${ghostButtonClass} relative`}
-              onClick={onAddSqlNode}
-              title={t.addSqlNode}
+              className={`${btnBase} ${currentTool === 'voice' ? btnActive : ''}`}
+              onClick={() => {
+                if (currentTool === 'voice') {
+                  onChangeTool('hand');
+                } else {
+                  onChangeTool('voice');
+                }
+              }}
+              title={`${t.toolVoice} (M)`}
             >
-              <Database size={18} weight="regular" />
-              <Plus
-                size={10}
-                weight="bold"
-                className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-0.5"
-              />
+              <Microphone size={17} weight={currentTool === 'voice' ? 'fill' : 'regular'} />
             </button>
           )}
-          {onAddPythonNode && (
+          <button
+            type="button"
+            className={`${btnBase} ${currentTool === 'comment' ? btnActive : ''}`}
+            onClick={() => {
+              if (currentTool === 'comment') {
+                onChangeTool('hand');
+              } else {
+                onChangeTool('comment');
+              }
+            }}
+            title="Comment (C)"
+          >
+            <ChatCircle size={17} weight={currentTool === 'comment' ? 'fill' : 'regular'} />
+          </button>
+        </div>
+
+        <Divider />
+
+        {/* ── Group 3: Data & Code (SQL Cell, Python Cell, Database, Plot) ── */}
+        <div className="flex items-center gap-0.5">
+          {onAddSqlCell && (
             <button
               type="button"
-              className={`${baseButtonClass} ${ghostButtonClass} relative`}
-              onClick={onAddPythonNode}
-              title={t.addPythonNode}
+              className={`${btnBase} relative`}
+              onClick={onAddSqlCell}
+              title={t.sqlCell}
             >
-              <Terminal size={18} weight="regular" />
+              <Database size={17} weight="regular" />
               <Plus
-                size={10}
+                size={9}
                 weight="bold"
-                className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-0.5"
+                className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-px"
               />
             </button>
           )}
           {onAddPythonCell && (
             <button
               type="button"
-              className={`${baseButtonClass} ${ghostButtonClass} relative`}
+              className={`${btnBase} relative`}
               onClick={onAddPythonCell}
-              title="Python Cell"
+              title={t.pythonCell}
             >
-              <Code size={18} weight="regular" className="text-blue-600" />
+              <Code size={17} weight="regular" />
               <Plus
-                size={10}
+                size={9}
                 weight="bold"
-                className="absolute -top-0.5 -right-0.5 bg-blue-600 text-white rounded-full p-0.5"
-              />
-            </button>
-          )}
-          {onAddSqlCell && (
-            <button
-              type="button"
-              className={`${baseButtonClass} ${ghostButtonClass} relative`}
-              onClick={onAddSqlCell}
-              title="SQL Cell"
-            >
-              <Database size={18} weight="regular" className="text-emerald-600" />
-              <Plus
-                size={10}
-                weight="bold"
-                className="absolute -top-0.5 -right-0.5 bg-emerald-600 text-white rounded-full p-0.5"
+                className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-px"
               />
             </button>
           )}
           {onAddDatabaseNode && (
             <button
               type="button"
-              className={`${baseButtonClass} ${ghostButtonClass} relative`}
+              className={`${btnBase} relative`}
               onClick={onAddDatabaseNode}
               title={t.addDatabaseNode}
             >
-              <Cylinder size={18} weight="regular" />
+              <Cylinder size={17} weight="regular" />
               <Plus
-                size={10}
+                size={9}
                 weight="bold"
-                className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-0.5"
+                className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-px"
               />
             </button>
           )}
           {onAddPlotNode && (
             <button
               type="button"
-              className={`${baseButtonClass} ${ghostButtonClass} relative`}
+              className={`${btnBase} relative`}
               onClick={onAddPlotNode}
               title={t.addPlotNode}
             >
-              <ChartBar size={18} weight="regular" />
+              <ChartBar size={17} weight="regular" />
               <Plus
-                size={10}
+                size={9}
                 weight="bold"
-                className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-0.5"
+                className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-px"
               />
             </button>
           )}
+        </div>
+
+        <Divider />
+
+        {/* ── Group 4: Import (CSV/Excel, Notebook) ── */}
+        <div className="flex items-center gap-0.5">
           {onUploadSpreadsheet && (
             <>
               <input
@@ -424,15 +436,15 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               />
               <button
                 type="button"
-                className={`${baseButtonClass} ${ghostButtonClass} relative`}
+                className={`${btnBase} relative`}
                 onClick={handleFileUploadClick}
                 title={t.uploadCsvExcel}
               >
-                <FileArrowUp size={18} weight="regular" />
+                <FileArrowUp size={17} weight="regular" />
                 <Plus
-                  size={10}
+                  size={9}
                   weight="bold"
-                  className="absolute -top-0.5 -right-0.5 bg-emerald-600 text-white rounded-full p-0.5"
+                  className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-px"
                 />
               </button>
             </>
@@ -448,40 +460,44 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               />
               <button
                 type="button"
-                className={`${baseButtonClass} ${ghostButtonClass} relative`}
+                className={`${btnBase} relative`}
                 onClick={handleNotebookUploadClick}
                 title={t.uploadNotebook ?? 'Upload Jupyter Notebook'}
               >
-                <Notebook size={18} weight="regular" />
+                <Notebook size={17} weight="regular" />
                 <Plus
-                  size={10}
+                  size={9}
                   weight="bold"
-                  className="absolute -top-0.5 -right-0.5 bg-orange-600 text-white rounded-full p-0.5"
+                  className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white rounded-full p-px"
                 />
               </button>
             </>
           )}
-          {onDeleteSelection && hasSelection && (
+        </div>
+
+        {/* ── Delete selection (contextual) ── */}
+        {onDeleteSelection && hasSelection && (
+          <>
+            <Divider />
             <button
               type="button"
-              className={`${baseButtonClass} ${dangerButtonClass}`}
+              className={`${btnBase} ${btnDanger}`}
               onClick={onDeleteSelection}
               title={t.deleteSelection}
             >
-              <Trash size={18} weight="regular" />
+              <Trash size={17} weight="regular" />
             </button>
-          )}
-        </div>
+          </>
+        )}
+
+        {/* ── Group 5: Execution controls (contextual — shown when data node selected) ── */}
         {showDataCluster && selectedNodeStatus && (
           <>
-            <div className="h-6 w-px bg-slate-200" />
-            <div className="flex items-center gap-1.5">
+            <Divider />
+            <div className="flex items-center gap-1">
               {NodeTypeIcon && (
-                <span
-                  className={`${baseButtonClass} ${ghostButtonClass}`}
-                  title={selectedNodeType === 'sql' ? t.sqlCell : t.pythonCell}
-                >
-                  <NodeTypeIcon size={16} weight="regular" />
+                <span className={`${btnBase}`} title={selectedNodeType === 'sql' ? t.sqlCell : t.pythonCell}>
+                  <NodeTypeIcon size={15} weight="regular" />
                 </span>
               )}
               <StatusPill
@@ -490,28 +506,27 @@ export const BoardCommandBar = memo(function BoardCommandBar({
               />
               <button
                 type="button"
-                className={`${baseButtonClass} ${dataRunDisabled ? disabledButtonClass : ''}`}
+                className={`${btnBase} ${dataRunDisabled ? btnDisabled : ''}`}
                 onClick={onRunSelectedNode}
                 disabled={dataRunDisabled}
                 title={t.runCell}
               >
-                <Play size={18} weight={selectedNodeStatus === 'running' ? 'fill' : 'regular'} />
+                <Play size={17} weight={selectedNodeStatus === 'running' ? 'fill' : 'regular'} />
               </button>
               {onRunDownstreamSelectedNode && (
                 <button
                   type="button"
-                  className={`${baseButtonClass} ${downstreamDisabled ? disabledButtonClass : ''}`}
+                  className={`${btnBase} ${downstreamDisabled ? btnDisabled : ''}`}
                   onClick={onRunDownstreamSelectedNode}
                   disabled={downstreamDisabled}
                   title={t.runDownstream}
                 >
-                  <ArrowRight size={18} weight="regular" />
+                  <ArrowRight size={17} weight="regular" />
                 </button>
               )}
             </div>
           </>
         )}
-        {/* Undo/Redo moved to UndoRedoControls in board header */}
       </div>
     </div>
   );

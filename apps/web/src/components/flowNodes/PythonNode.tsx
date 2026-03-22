@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeProps } from 'reactflow';
 import PlotlyPreview from './PlotlyPreview';
 import { InteractiveResultTable } from '../InteractiveResultTable';
@@ -75,6 +75,19 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
   } = useNodeEditing(data.nodeId);
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const [isEditorFocused, setIsEditorFocused] = useState(false);
+  const nodeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isEditorFocused) return;
+    const handler = (e: MouseEvent) => {
+      if (nodeRef.current && !nodeRef.current.contains(e.target as Node)) {
+        setIsEditorFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isEditorFocused]);
 
   // Handle code change and update editing presence
   const handleCodeChange = useCallback(
@@ -82,32 +95,33 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
       data.onChangeCode(value ?? '');
       handleEditingChange();
     },
-    [data.onChangeCode, handleEditingChange]
+    [data.onChangeCode, handleEditingChange],
   );
 
   // Handle Monaco editor mount to set up focus/blur listeners
   const handleEditorMount = useCallback(
     (editor: editor.IStandaloneCodeEditor) => {
       editorRef.current = editor;
-      
+
       // Track focus
       editor.onDidFocusEditorWidget(() => {
         handleEditingFocus();
       });
-      
+
       // Track blur
       editor.onDidBlurEditorWidget(() => {
         handleEditingBlur();
       });
     },
-    [handleEditingFocus, handleEditingBlur]
+    [handleEditingFocus, handleEditingBlur],
   );
 
   return (
     <div
+      ref={nodeRef}
       className="w-[380px] rounded-2xl border bg-slate-900/80 shadow-lg relative"
       style={{
-        borderColor: isBeingEdited ? (otherEditors[0]?.color || '#6366f1') : '#334155',
+        borderColor: isBeingEdited ? otherEditors[0]?.color || '#6366f1' : '#334155',
         borderWidth: isBeingEdited ? 2 : 1,
       }}
     >
@@ -129,20 +143,25 @@ export function PythonNode({ data }: NodeProps<PythonNodeData>) {
         </div>
       </div>
 
-      <div className="h-48 border-b border-slate-800">
-        <MonacoEditor
-          language="python"
-          value={code}
-          onChange={handleCodeChange}
-          onMount={handleEditorMount}
-          theme="vs-dark"
-          options={{
-            minimap: { enabled: false },
-            fontSize: 13,
-            lineNumbers: 'off',
-            scrollBeyondLastLine: false,
-          }}
-        />
+      <div
+        className={`h-48 border-b border-slate-800 ${isEditorFocused ? 'nowheel nodrag' : ''}`}
+        onMouseDown={() => { if (!isEditorFocused) setIsEditorFocused(true); }}
+      >
+        <div style={{ pointerEvents: isEditorFocused ? 'auto' : 'none', height: '100%' }}>
+          <MonacoEditor
+            language="python"
+            value={code}
+            onChange={handleCodeChange}
+            onMount={handleEditorMount}
+            theme="vs-dark"
+            options={{
+              minimap: { enabled: false },
+              fontSize: 13,
+              lineNumbers: 'off',
+              scrollBeyondLastLine: false,
+            }}
+          />
+        </div>
       </div>
 
       {shouldShowError && error && (

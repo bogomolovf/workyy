@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeChange, EdgeChange, Node, Edge } from 'reactflow';
 import { Doc } from 'yjs';
 import {
@@ -28,6 +28,12 @@ export function useBoardCollaboration(
   initialEdges?: CanvasEdge[],
 ) {
   const initializedRef = useRef(false);
+  const [isSynced, setIsSynced] = useState(false);
+
+  // Fallback timeout: if Yjs provider does not sync within this time (e.g. WS
+  // connection is down), proceed with DB-data initialization anyway so the board
+  // is not stuck empty.
+  const SYNC_TIMEOUT_MS = 5000;
 
   // Get Yjs document and provider
   const ydoc = useMemo(() => getBoardYdoc(boardId), [boardId]);
@@ -43,6 +49,8 @@ export function useBoardCollaboration(
   const datasetsMap = useMemo(() => ydoc.getMap('datasets'), [ydoc]);
   // Map for tracking which users are editing which nodes (key: clientId:nodeId)
   const editingMap = useMemo(() => ydoc.getMap('editing'), [ydoc]);
+  // Map for real-time comment drag sync (key: threadId, value: { x, y })
+  const commentDragMap = useMemo(() => ydoc.getMap('commentDrag'), [ydoc]);
   // Map for presentation broadcasts: key = presentationNodeId, value = { isActive, presenterUserId, presenterName, slideIndex, updatedAt }
   const presentationBroadcastsMap = useMemo(() => ydoc.getMap('presentationBroadcasts'), [ydoc]);
   // Map for audio call signaling and participant state (WebRTC offers/answers/ICE/presence)
@@ -112,36 +120,81 @@ export function useBoardCollaboration(
   // Get client ID for cursor tracking (exposed for use in BoardCanvas)
   const clientId = useMemo(() => ydoc.clientID.toString(), [ydoc]);
 
-  // Initialize Yjs maps with initial data (only once)
+  // Initialize Yjs maps with DB data after sync completes (only once).
+  // Wait for isSynced so that server-persisted Yjs state (via setPersistence/bindState)
+  // is loaded first. Only populate from DB if Yjs is still empty after sync.
   useEffect(() => {
-    if (initializedRef.current || !initialNodes || !initialEdges) {
+    if (initializedRef.current || !initialNodes || !initialEdges || !isSynced) {
       return;
     }
 
-    // CRITICAL FIX: Initialize from DB data if Yjs is empty (first load)
-    // This ensures positions from DB are applied on first load
-    // If Yjs already contains data (from another client), don't overwrite it
-    if (nodesMap.size === 0 && edgesMap.size === 0) {
-      // Convert CanvasNodes to ReactFlow Nodes and store in Yjs
-      // This preserves positions from DB on first load
-      for (const canvasNode of initialNodes) {
-        const reactFlowNode = canvasNodeToReactFlowNode(canvasNode);
-        // Ensure position is preserved from DB data
-        nodesMap.set(canvasNode.id, {
-          ...reactFlowNode,
-          position: canvasNode.position, // Use position from DB
-        });
-      }
-
-      // Convert CanvasEdges to ReactFlow Edges and store in Yjs
-      for (const canvasEdge of initialEdges) {
-        const reactFlowEdge = canvasEdgeToReactFlowEdge(canvasEdge);
-        edgesMap.set(canvasEdge.id, reactFlowEdge);
-      }
-
-      initializedRef.current = true;
+    // After sync: if Yjs already has data (from server persistence or another client),
+    // don't overwrite it — that data is the source of truth
+    if (nodesMap.size === 0 && edgesMap.size === 0 && initialNodes.length > 0) {
+      ydoc.transact(() => {
+        for (const canvasNode of initialNodes) {
+          const reactFlowNode = canvasNodeToReactFlowNode(canvasNode);
+          nodesMap.set(canvasNode.id, {
+            ...reactFlowNode,
+            position: canvasNode.position,
+          });
+        }
+        for (const canvasEdge of initialEdges) {
+          const reactFlowEdge = canvasEdgeToReactFlowEdge(canvasEdge);
+          edgesMap.set(canvasEdge.id, reactFlowEdge);
+        }
+      });
+    } else if (nodesMap.size > 0 && initialNodes && initialNodes.length > 0) {
+      // Yjs has data but may have incomplete CSV node payloads (large data field was stripped).
+      // Merge missing metadata from the API (DB) data so CSV nodes keep filename, tableName, etc.
+      const apiNodeMap = new Map(initialNodes.map((n) => [n.id, n]));
+      ydoc.transact(() => {
+        for (const [id, yjsValue] of nodesMap.entries()) {
+          const yjsNode = yjsValue as any;
+          const nodeType =
+            yjsNode?.type ?? yjsNode?.data?._canvasNode?.type;
+          if (nodeType !== 'csv' && nodeType !== 'csvNode') continue;
+          const apiNode = apiNodeMap.get(id);
+          if (!apiNode?.payload) continue;
+          const yjsData = yjsNode?.data ?? {};
+          // Check if Yjs node is missing CSV metadata that the API node has
+          const apiPayload = apiNode.payload as Record<string, unknown>;
+          const needsMerge =
+            (!yjsData.filename && apiPayload.filename) ||
+            (!yjsData.tableName && apiPayload.tableName);
+          if (needsMerge) {
+            const mergedData = {
+              ...yjsData,
+              filename: yjsData.filename || apiPayload.filename,
+              tableName: yjsData.tableName || apiPayload.tableName,
+              totalRowCount: yjsData.totalRowCount ?? apiPayload.totalRowCount,
+              originalColumns: yjsData.originalColumns || apiPayload.originalColumns,
+              uploadedAt: yjsData.uploadedAt || apiPayload.uploadedAt,
+              fileType: yjsData.fileType || apiPayload.fileType,
+            };
+            // Update _canvasNode payload as well
+            if (mergedData._canvasNode) {
+              mergedData._canvasNode = {
+                ...mergedData._canvasNode,
+                payload: {
+                  ...(mergedData._canvasNode.payload ?? {}),
+                  filename: mergedData.filename,
+                  tableName: mergedData.tableName,
+                  totalRowCount: mergedData.totalRowCount,
+                  originalColumns: mergedData.originalColumns,
+                  uploadedAt: mergedData.uploadedAt,
+                  fileType: mergedData.fileType,
+                },
+              };
+            }
+            nodesMap.set(id, { ...yjsNode, data: mergedData });
+          }
+        }
+      });
     }
-  }, [initialNodes, initialEdges, nodesMap, edgesMap]);
+
+    initializedRef.current = true;
+  }, [initialNodes, initialEdges, nodesMap, edgesMap, isSynced, ydoc]);
 
   // Use synced hooks with ydoc and clientId for UndoManager tracking
   const [reactFlowNodes, setReactFlowNodes, onNodesChange] = useNodesStateSynced(
@@ -169,6 +222,43 @@ export function useBoardCollaboration(
   // Note: onNodesChange and onEdgesChange from hooks work with ReactFlow format
   // and automatically sync through Yjs. We expose them directly.
   // For Canvas format compatibility, we provide conversion helpers
+
+  // Track provider sync status with fallback timeout
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const handleSync = (synced: boolean) => {
+      setIsSynced(synced);
+      if (synced && timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    // Check current state (provider may already be synced)
+    if (provider.synced) {
+      setIsSynced(true);
+    } else {
+      // Fallback: if sync doesn't happen within SYNC_TIMEOUT_MS, treat as synced
+      // so the board is not stuck empty when WS is down or slow
+      timeoutId = setTimeout(() => {
+        setIsSynced((current) => {
+          if (!current) {
+            console.warn(
+              `[Yjs] Board ${boardId}: sync timeout (${SYNC_TIMEOUT_MS}ms) — proceeding with DB data`,
+            );
+          }
+          return true;
+        });
+      }, SYNC_TIMEOUT_MS);
+    }
+
+    provider.on('sync', handleSync);
+    return () => {
+      provider.off('sync', handleSync);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [provider, boardId, SYNC_TIMEOUT_MS]);
 
   // Lifecycle: retain on mount, release on unmount.
   // retainBoardYdoc increments the usage count and cancels any pending delayed cleanup.
@@ -208,7 +298,11 @@ export function useBoardCollaboration(
       const incomingIds = new Set(reactFlowNodes.map((n) => n.id));
       const removedFromMap = currentNodes.filter((n) => !incomingIds.has(n.id)).map((n) => n.id);
 
-      // Compute changes: add new nodes, update existing ones
+      // Compute changes: add/update nodes only.
+      // IMPORTANT: Do NOT remove nodes that are in Yjs but not in the incoming list.
+      // In multi-user scenarios, the incoming list is local state which may lag behind Yjs.
+      // Removing nodes here would delete other users' additions that haven't synced locally.
+      // Deletions must go through explicit yjsOnNodesChange([{ type: 'remove' }]) calls.
       const changes: NodeChange[] = [];
 
       for (const newNode of reactFlowNodes) {
@@ -308,6 +402,7 @@ export function useBoardCollaboration(
     cursorsMap,
     datasetsMap,
     editingMap, // For tracking who is editing which node
+    commentDragMap, // For real-time comment drag sync
     presentationBroadcastsMap, // For presentation broadcast (single presenter per node)
     audioCallMap, // For audio call signaling and participant state
     nodesMap, // Exported for UndoManager
@@ -315,5 +410,6 @@ export function useBoardCollaboration(
     clientId,
     provider,
     ydoc,
+    isSynced,
   };
 }

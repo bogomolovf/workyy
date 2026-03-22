@@ -28,9 +28,10 @@ function useNodeDimensions(id: string) {
 }
 
 export type ShapeNodeData = {
+  /** Explicit flag: true when this is a sticky-note node, false for regular shapes */
+  isNoteNode?: boolean;
   shapeType?: ShapeType;
   shapeColor?: string;
-  shapeLabel?: string;
   width?: number;
   height?: number;
   fill?: string;
@@ -54,27 +55,6 @@ export type ShapeNodeData = {
   onChangeFontFamily?: (id: string, fontFamily: string) => void;
   onChangeBold?: (id: string, isBold: boolean) => void;
   onChangeItalic?: (id: string, isItalic: boolean) => void;
-  // Legacy shape-specific callbacks (kept for backward compat but not used by toolbar)
-  onChangeFill?: (id: string, fill: string) => void;
-  onChangeStroke?: (id: string, stroke: string) => void;
-  onChangeStrokeWidth?: (id: string, strokeWidth: number) => void;
-  onChangeOpacity?: (id: string, opacity: number) => void;
-  onChangeCornerRadius?: (id: string, cornerRadius: number) => void;
-  onChangeArrowHead?: (id: string, arrowHead: boolean) => void;
-  onChangeFormat?: (
-    id: string,
-    patch: Partial<{
-      text: string;
-      richContent: string;
-      fontSize: number;
-      fontFamily: string;
-      color: string;
-      textAlign: 'left' | 'center' | 'right';
-    }>,
-  ) => void;
-  richContentHtml?: string | null;
-  textAlign?: 'left' | 'center' | 'right';
-  color?: string;
 };
 
 export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
@@ -92,11 +72,12 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
     isItalic = false,
   } = data ?? {};
 
-  // Notes are shapes rendered via the note type — they have onChangeText but no onChangeFormat
-  const isNote = Boolean((text !== undefined || data?.onChangeText) && !data?.onChangeFormat);
+  // Use explicit isNoteNode flag set by BoardCanvas/InnerBoardCanvas.
+  // Notes always have isNoteNode=true, shapes have isNoteNode=false.
+  const isNote = data?.isNoteNode === true;
 
   const fontSize = dataFontSize ?? (isNote ? 48 : 16);
-  const fontFamily = dataFontFamily ?? (isNote ? 'Inter, sans-serif' : 'Inter, sans-serif');
+  const fontFamily = dataFontFamily ?? 'Inter, sans-serif';
 
   // Ensure shapeType is valid — fallback to rectangle if unknown
   const resolvedShapeType: ShapeType = getShapeDefinition(shapeType as ShapeType)
@@ -231,7 +212,6 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
 
     const def = getShapeDefinition(resolvedShapeType);
 
-    // Shapes with a custom render (cylinder, cloud, heart, speech-bubble, document-shape, etc.)
     if (def?.render) {
       return def.render({
         width: innerWidth,
@@ -295,7 +275,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
       );
     }
 
-    // Star (polygon points string, not array)
+    // Star
     if (resolvedShapeType === 'star') {
       return (
         <polygon
@@ -307,7 +287,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
       );
     }
 
-    // All other polygon-based shapes via the engine
+    // All other polygon-based shapes
     const pts = getShapePoints(resolvedShapeType, innerWidth, innerHeight);
     if (pts) {
       return (
@@ -378,15 +358,12 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   return (
     <div
       className="workyy-shape-node relative"
-      style={{
-        width: '100%',
-        height: '100%',
-      }}
+      style={{ width: '100%', height: '100%' }}
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={80}
-        minHeight={48}
+        minWidth={isLineShape ? 20 : 80}
+        minHeight={isLineShape ? 20 : 48}
         keepAspectRatio={shiftPressed}
         lineClassName="!border-slate-300"
         handleStyle={{
@@ -397,7 +374,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
           background: '#EEF2FF',
         }}
       />
-      {/* Unified StickyToolbar for all shapes (same as notes) */}
+      {/* StickyToolbar for all non-line shapes */}
       {selected && !isLineShape && (
         <StickyToolbar
           fontSize={fontSize}
@@ -427,7 +404,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
           {shapeGeometry}
         </g>
       </svg>
-      {/* Textarea for text input — same approach as notes */}
+      {/* Textarea for text — all non-line shapes */}
       {!isLineShape && (
         <>
           {isBeingEdited && <EditingIndicator editors={otherEditors} position="top-right" />}
@@ -438,17 +415,19 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
             onFocus={handleEditingFocus}
             onBlur={handleEditingBlur}
             placeholder=""
-            className="absolute inset-0 w-full h-full resize-none bg-transparent text-slate-800 outline-none p-2 cursor-pointer"
+            className="absolute inset-0 w-full h-full resize-none bg-transparent text-slate-800 outline-none nodrag"
             style={{
               boxSizing: 'border-box',
+              padding: `${Math.max(finalStrokeWidth + 4, 8)}px`,
               fontSize: `${fontSize}px`,
               fontFamily,
               fontWeight: isBold ? 'bold' : 'normal',
               fontStyle: isItalic ? 'italic' : 'normal',
-              lineHeight: '1.5',
+              lineHeight: '1.4',
               textAlign: 'center',
-              display: 'flex',
-              alignItems: 'center',
+              wordBreak: 'break-word',
+              overflowWrap: 'break-word',
+              overflow: 'hidden',
               borderRadius: 'inherit',
               pointerEvents: selected ? 'auto' : 'none',
               boxShadow: isBeingEdited

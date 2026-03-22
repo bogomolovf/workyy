@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import type {
   PlotNodePayload,
   ChartType,
   AggregationType,
 } from '../../lib/visualization/chartTypes';
+import { isGLChartType } from '../../lib/visualization/chartTypes';
 import {
   analyzeDataColumns,
   recommendChartTypes,
@@ -19,7 +20,8 @@ import {
 } from '../../lib/visualization/fieldMapper';
 import { autoConfigurePlotConfig } from '../../lib/visualization/autoConfig';
 import type { SqlResult } from '../../state/executionStore';
-import { X, Plus, Trash } from '@phosphor-icons/react';
+import { X, Plus, Trash, CaretDown, CaretRight, MagicWand, SpinnerGap } from '@phosphor-icons/react';
+import { useAiChartGeneration } from '../../hooks/useAiChartGeneration';
 
 type PlotNodeConfigPanelProps = {
   nodeId: string;
@@ -28,108 +30,134 @@ type PlotNodeConfigPanelProps = {
   onChange: (nodeId: string, payload: Partial<PlotNodePayload>) => void;
 };
 
-// Локализация панели настроек графика (русский)
+/* ── i18n ─────────────────────────────────────────────────── */
 const T = {
-  sectionDataSource: 'Источник данных',
-  rowsColumns: (rows: number, cols: number) => `${rows} строк × ${cols} столбцов`,
+  dataSource: 'Источник данных',
+  rowsCols: (r: number, c: number) => `${r} строк × ${c} столбцов`,
   more: (n: number) => `+${n} ещё`,
-  suggestedConfigTitle: 'Применена предложенная конфигурация',
-  suggestedConfigDesc:
-    'Тип графика и сопоставление полей настроены автоматически по вашим данным. Вы можете изменить их ниже.',
+  autoConfigTitle: 'Автонастройка применена',
+  autoConfigDesc: 'Тип графика и поля настроены автоматически. Вы можете изменить их.',
   chartType: 'Тип графика',
-  recommended: 'Рекомендуемые',
-  fieldMapping: 'Сопоставление полей',
+  fields: 'Поля данных',
   xAxis: 'Ось X',
-  selectXAxis: 'Выберите ось X',
   yAxis: 'Ось Y',
-  selectYAxis: 'Выберите ось Y',
-  colorOptional: 'Цвет (необязательно)',
-  none: 'Нет',
-  yFieldsRequired: 'Поля Y (нужно минимум 2)',
-  selectYField: 'Выберите поле Y',
-  addYField: 'Добавить поле Y',
-  facetByOptional: 'Группировка (необязательно)',
-  facetHint: 'Будут созданы малые кратные по значению категории. Не более 12 категорий.',
-  transformations: 'Преобразования',
-  aggregateData: 'Агрегировать данные',
-  aggregationType: 'Тип агрегации',
-  groupBy: 'Группировка',
-  filters: 'Фильтры',
-  addFilter: 'Добавить фильтр',
-  value: 'Значение',
-  addSort: 'Добавить сортировку',
-  sort: 'Сортировка',
-  ascending: 'По возрастанию',
-  descending: 'По убыванию',
-  stylingInteractivity: 'Оформление и интерактивность',
+  zAxis: 'Ось Z',
+  color: 'Цвет / Группировка',
   title: 'Заголовок',
-  chartTitlePlaceholder: 'Название графика',
+  titlePlaceholder: 'Название графика',
+  advanced: 'Расширенные настройки',
+  aggregation: 'Агрегация',
+  aggType: 'Функция',
+  groupBy: 'Группировать по',
+  filters: 'Фильтры',
+  addFilter: 'Добавить',
+  sort: 'Сортировка',
+  addSort: 'Добавить',
+  asc: 'По возрастанию',
+  desc: 'По убыванию',
+  value: 'Значение',
+  style: 'Оформление',
   theme: 'Тема',
   light: 'Светлая',
   dark: 'Тёмная',
-  showLegend: 'Показать легенду',
-  legendPosition: 'Положение легенды',
-  top: 'Сверху',
-  bottom: 'Снизу',
-  left: 'Слева',
-  right: 'Справа',
-  showGrid: 'Показать сетку',
-  enableZoomPan: 'Масштаб и панорама',
-  enableTooltips: 'Всплывающие подсказки',
-  columnType: {
-    numeric: 'числовой',
-    categorical: 'категориальный',
-    temporal: 'временной',
-    unknown: 'неизвестный',
-  },
+  legend: 'Легенда',
+  zoomPan: 'Масштаб и панорама',
+  select: '— Выберите —',
+  none: 'Нет',
+  recommended: 'Рекомендуемые',
+  colType: { numeric: 'числ.', categorical: 'кат.', temporal: 'время', unknown: '?' } as Record<string, string>,
+  // Specialized fields
+  ohlc: 'Поля OHLC',
+  open: 'Открытие',
+  high: 'Максимум',
+  low: 'Минимум',
+  close: 'Закрытие',
+  source: 'Источник',
+  target: 'Цель',
+  weight: 'Вес',
+  valueField: 'Поле значения',
+  min: 'Минимум',
+  max: 'Максимум',
+  shape: 'Форма',
+  yFields: 'Поля Y (мин. 2)',
+  addY: 'Добавить Y',
 } as const;
 
-const CHART_TYPES: Array<{ value: ChartType; label: string; icon?: string; description?: string }> =
-  [
-    { value: 'bar', label: 'Гистограмма', icon: '📊', description: 'Вертикальные столбцы' },
-    {
-      value: 'bar-horizontal',
-      label: 'Горизонтальная гистограмма',
-      icon: '📊',
-      description: 'Горизонтальные столбцы',
-    },
-    { value: 'line', label: 'Линейный', icon: '📈', description: 'Линейный график' },
-    { value: 'area', label: 'Областной', icon: '📈', description: 'График с заливкой' },
-    { value: 'scatter', label: 'Точечный', icon: '⚫', description: 'Точечная диаграмма' },
-    { value: 'pie', label: 'Круговая', icon: '🥧', description: 'Круговая диаграмма' },
-    { value: 'doughnut', label: 'Кольцевая', icon: '🍩', description: 'Кольцевая диаграмма' },
-    {
-      value: 'histogram',
-      label: 'Гистограмма распределения',
-      icon: '📊',
-      description: 'Распределение числовых значений',
-    },
-    { value: 'heatmap', label: 'Тепловая карта', icon: '🔥', description: 'Интенсивность по 2 измерениям' },
-    { value: 'treemap', label: 'Древовидная карта', icon: '🌳', description: 'Иерархия по размеру' },
-    { value: 'boxplot', label: 'Ящик с усами', icon: '📦', description: 'Статистика распределения' },
-    { value: 'radar', label: 'Радар', icon: '🕸️', description: 'Сравнение метрик' },
-    { value: 'sankey', label: 'Санки', icon: '🌊', description: 'Диаграмма потоков' },
-    {
-      value: 'combo-bar-line',
-      label: 'Комбинированный (гистограмма + линия)',
-      icon: '📊',
-      description: 'Гистограмма и линейный график',
-    },
-  ];
+/* ── Chart type catalog ───────────────────────────────────── */
+type ChartMeta = { value: ChartType; label: string; icon: string };
 
-const AGGREGATION_TYPES: Array<{ value: AggregationType; label: string }> = [
+const POPULAR_CHARTS: ChartMeta[] = [
+  { value: 'bar', label: 'Столбчатый', icon: '📊' },
+  { value: 'line', label: 'Линейный', icon: '📈' },
+  { value: 'area', label: 'Областной', icon: '📈' },
+  { value: 'scatter', label: 'Точечный', icon: '⚫' },
+  { value: 'pie', label: 'Круговая', icon: '🥧' },
+  { value: 'histogram', label: 'Гистограмма', icon: '📊' },
+];
+
+const MORE_CHARTS: { label: string; types: ChartMeta[] }[] = [
+  {
+    label: 'Статистика',
+    types: [
+      { value: 'bar-horizontal', label: 'Горизонтальный', icon: '📊' },
+      { value: 'heatmap', label: 'Тепловая карта', icon: '🔥' },
+      { value: 'boxplot', label: 'Ящик с усами', icon: '📦' },
+      { value: 'radar', label: 'Радар', icon: '🕸️' },
+    ],
+  },
+  {
+    label: 'Иерархии и потоки',
+    types: [
+      { value: 'treemap', label: 'Древовидная', icon: '🌳' },
+      { value: 'sunburst', label: 'Солнечная', icon: '☀️' },
+      { value: 'sankey', label: 'Санки', icon: '🌊' },
+      { value: 'funnel', label: 'Воронка', icon: '🔻' },
+    ],
+  },
+  {
+    label: 'Финансовые / Индикаторы',
+    types: [
+      { value: 'candlestick', label: 'Свечной', icon: '🕯️' },
+      { value: 'waterfall', label: 'Каскадная', icon: '📉' },
+      { value: 'gauge', label: 'Индикатор', icon: '🎯' },
+      { value: 'combo-bar-line', label: 'Комбо', icon: '📊' },
+    ],
+  },
+  {
+    label: '3D',
+    types: [
+      { value: 'scatter3d', label: '3D Точечный', icon: '🔮' },
+      { value: 'bar3d', label: '3D Столбцы', icon: '🏗️' },
+      { value: 'surface3d', label: '3D Поверхность', icon: '🏔️' },
+    ],
+  },
+  {
+    label: 'Специальные',
+    types: [
+      { value: 'wordcloud', label: 'Облако слов', icon: '☁️' },
+      { value: 'doughnut', label: 'Кольцевая', icon: '🍩' },
+      { value: 'graph', label: 'Граф связей', icon: '🔗' },
+      { value: 'parallel', label: 'Параллельные', icon: '📐' },
+      { value: 'liquidfill', label: 'Жидкостный', icon: '💧' },
+    ],
+  },
+];
+
+const ALL_CHARTS: ChartMeta[] = [
+  ...POPULAR_CHARTS,
+  ...MORE_CHARTS.flatMap((g) => g.types),
+];
+
+const AGG_TYPES: { value: AggregationType; label: string }[] = [
   { value: 'sum', label: 'Сумма' },
   { value: 'avg', label: 'Среднее' },
-  { value: 'count', label: 'Количество' },
-  { value: 'min', label: 'Минимум' },
-  { value: 'max', label: 'Максимум' },
+  { value: 'count', label: 'Кол-во' },
+  { value: 'min', label: 'Мин' },
+  { value: 'max', label: 'Макс' },
   { value: 'median', label: 'Медиана' },
 ];
 
-const FILTER_OPERATORS: Array<{
-  value: PlotNodePayload['filters'][0]['operator'];
-  label: string;
-}> = [
+const FILTER_OPS = [
   { value: 'eq', label: '=' },
   { value: 'ne', label: '≠' },
   { value: 'gt', label: '>' },
@@ -138,852 +166,650 @@ const FILTER_OPERATORS: Array<{
   { value: 'lte', label: '≤' },
   { value: 'contains', label: 'содержит' },
   { value: 'in', label: 'в списке' },
-];
+] as const;
 
-function getColumnIcon(analysis: ColumnAnalysis): string {
-  switch (analysis.type) {
-    case 'numeric':
-      return '#';
-    case 'categorical':
-      return '🏷';
-    case 'temporal':
-      return '🕒';
+/* ── Helpers ──────────────────────────────────────────────── */
+function colIcon(type: string) {
+  return type === 'numeric' ? '#' : type === 'categorical' ? '🏷' : type === 'temporal' ? '🕒' : '?';
+}
+
+/** Which fields are needed for each chart type */
+function fieldsFor(ct: ChartType): { x?: boolean; y?: boolean; z?: boolean; color?: boolean; ohlc?: boolean; srcTgt?: boolean; weight?: boolean; multiY?: boolean } {
+  switch (ct) {
+    case 'pie': case 'doughnut': case 'gauge': case 'liquidfill': case 'wordcloud':
+      return { y: true, weight: ct === 'wordcloud' };
+    case 'histogram': case 'boxplot':
+      return { y: true };
+    case 'radar': case 'parallel':
+      return {};
+    case 'candlestick':
+      return { x: true, ohlc: true };
+    case 'graph':
+      return { srcTgt: true, weight: true };
+    case 'combo-bar-line':
+      return { x: true, multiY: true };
+    case 'scatter3d': case 'bar3d': case 'surface3d': case 'line3d':
+      return { x: true, y: true, z: true };
+    case 'sankey':
+      return { x: true, y: true };
     default:
-      return '?';
+      return { x: true, y: true, color: true };
   }
 }
 
-function getColumnTypeLabel(type: ColumnAnalysis['type']): string {
-  return T.columnType[type] ?? type;
-}
-
-/** Переводит сообщения валидации с английского на русский */
-function translateValidationMessage(en: string): string {
-  const map: Record<string, string> = {
+function translateValidation(en: string): string {
+  const translations: Record<string, string> = {
     'No data available': 'Нет данных',
     'No columns available in data': 'В данных нет столбцов',
-    'X axis is required for this chart type': 'Для этого типа графика нужна ось X',
-    'Y axis is required for this chart type': 'Для этого типа графика нужна ось Y',
-    'X axis must be numeric for scatter plots': 'Для точечного графика ось X должна быть числовой',
-    'X field is required for heatmap': 'Для тепловой карты нужно поле X',
-    'Combo chart requires at least 2 Y fields': 'Комбинированному графику нужно минимум 2 поля Y',
-    'Histogram requires at least one numeric or temporal field':
-      'Для гистограммы нужно хотя бы одно числовое или временное поле',
-    'Heatmap requires both X and Y fields': 'Тепловой карте нужны поля X и Y',
-    'Treemap requires groupBy fields or X field': 'Древовидной карте нужна группировка или поле X',
-    'Treemap requires a numeric size field (Y)': 'Древовидной карте нужно числовое поле размера (Y)',
-    'Boxplot requires at least one numeric field': 'Ящику с усами нужно хотя бы одно числовое поле',
-    'Sankey requires source (X) and target (Y) fields': 'Диаграмме Санки нужны поля источника (X) и цели (Y)',
-    'Radar chart requires numeric metric columns': 'Радарному графику нужны числовые метрики',
-    'Color field should be categorical for this chart type':
-      'Поле цвета для этого типа графика должно быть категориальным',
+    'X axis is required for this chart type': 'Нужна ось X',
+    'Y axis is required for this chart type': 'Нужна ось Y',
+    'X axis must be numeric for scatter plots': 'Ось X должна быть числовой',
+    'X field is required for heatmap': 'Нужно поле X для тепловой карты',
+    'Combo chart requires at least 2 Y fields': 'Нужно минимум 2 поля Y',
+    'Histogram requires at least one numeric or temporal field': 'Нужно числовое поле',
+    'Heatmap requires both X and Y fields': 'Нужны поля X и Y',
+    'Treemap requires groupBy fields or X field': 'Нужна группировка или поле X',
+    'Treemap requires a numeric size field (Y)': 'Нужно числовое поле Y',
+    'Boxplot requires at least one numeric field': 'Нужно числовое поле',
+    'Sankey requires source (X) and target (Y) fields': 'Нужны поля источника (X) и цели (Y)',
+    'Radar chart requires numeric metric columns': 'Нужны числовые метрики',
+    'Candlestick requires Open, High, Low, Close fields': 'Нужны поля Open, High, Low, Close',
+    'Graph requires Source and Target fields': 'Нужны поля Источник и Цель',
+    'Parallel coordinates requires at least 2 numeric columns': 'Нужно мин. 2 числовых столбца',
+    '3D charts require X, Y, and Z fields': 'Нужны поля X, Y и Z',
+    'Funnel requires label (X) and value (Y) fields': 'Нужны поля метки (X) и значения (Y)',
+    'Sunburst requires groupBy or X field for hierarchy': 'Нужна группировка или поле X',
+    'Sunburst requires a numeric value field (Y)': 'Нужно числовое поле Y',
+    'Tree requires groupBy fields for hierarchy': 'Нужны поля группировки',
   };
-  if (map[en]) return map[en];
-  const notFoundX = /^X field "([^"]+)" not found in data$/;
-  const notFoundY = /^Y field "([^"]+)" not found in data$/;
-  const yMustBeNumeric = /^Y field "([^"]+)" must be numeric for this chart type$/;
-  const yMustBeNumericTemporal = /^Y field "([^"]+)" must be numeric or temporal for histogram$/;
-  const xMustBeNumericTemporal = /^X field "([^"]+)" must be numeric or temporal for histogram$/;
-  const yMustBeNumericTemporal2 = /^Y field "([^"]+)" must be numeric or temporal for histogram$/;
-  const tooManyFacet = /^Too many facet values \((\d+)\)\. Please filter to 12 or fewer\.$/;
-  let m = en.match(notFoundX);
-  if (m) return `Поле X «${m[1]}» не найдено в данных`;
-  m = en.match(notFoundY);
-  if (m) return `Поле Y «${m[1]}» не найдено в данных`;
-  m = en.match(yMustBeNumeric);
-  if (m) return `Поле Y «${m[1]}» должно быть числовым для этого типа графика`;
-  m = en.match(yMustBeNumericTemporal) ?? en.match(yMustBeNumericTemporal2);
-  if (m) return `Поле Y «${m[1]}» должно быть числовым или временным для гистограммы`;
-  m = en.match(xMustBeNumericTemporal);
-  if (m) return `Поле X «${m[1]}» должно быть числовым или временным для гистограммы`;
-  m = en.match(tooManyFacet);
-  if (m) return `Слишком много значений группировки (${m[1]}). Оставьте 12 или меньше.`;
+  if (translations[en]) return translations[en];
+  // Dynamic patterns
+  const patterns: [RegExp, (m: RegExpMatchArray) => string][] = [
+    [/^X field "([^"]+)" not found/, (m) => `Поле X «${m[1]}» не найдено`],
+    [/^Y field "([^"]+)" not found/, (m) => `Поле Y «${m[1]}» не найдено`],
+    [/^Y field "([^"]+)" must be numeric/, (m) => `Поле Y «${m[1]}» должно быть числовым`],
+    [/^Too many facet values \((\d+)\)/, (m) => `Слишком много значений (${m[1]}), макс. 12`],
+  ];
+  for (const [re, fn] of patterns) {
+    const m = en.match(re);
+    if (m) return fn(m);
+  }
   return en;
 }
 
-function ColumnChip({
-  analysis,
-  onClick,
-  selected,
-}: {
-  analysis: ColumnAnalysis;
-  onClick: () => void;
-  selected?: boolean;
-}) {
-  const icon = getColumnIcon(analysis);
+/* ── Collapsible section ──────────────────────────────────── */
+function Section({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-1 rounded-full border px-2 py-1 text-xs transition-colors ${
-        selected
-          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-      }`}
-    >
-      <span>{icon}</span>
-      <span>{analysis.name}</span>
-      {analysis.type !== 'unknown' && (
-        <span className="text-[10px] text-slate-400">({getColumnTypeLabel(analysis.type)})</span>
-      )}
-    </button>
+    <div className="border-t border-slate-100 pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="mb-2 flex w-full items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700"
+      >
+        {open ? <CaretDown size={12} /> : <CaretRight size={12} />}
+        {title}
+      </button>
+      {open && children}
+    </div>
   );
 }
 
-export function PlotNodeConfigPanel({ nodeId, payload, data, onChange }: PlotNodeConfigPanelProps) {
-  const [showFieldMenu, setShowFieldMenu] = useState<string | null>(null);
+/* ── Field dropdown ───────────────────────────────────────── */
+function FieldSelect({
+  label,
+  value,
+  columns,
+  analyses,
+  onChange,
+  optional,
+}: {
+  label: string;
+  value: string | undefined;
+  columns: string[];
+  analyses: ColumnAnalysis[];
+  onChange: (v: string | undefined) => void;
+  optional?: boolean;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-slate-600">{label}</label>
+      <div className="flex items-center gap-1">
+        <select
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value || undefined)}
+          className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+        >
+          <option value="">{optional ? `-- ${T.none} --` : `-- ${T.select} --`}</option>
+          {columns.map((col) => {
+            const a = analyses.find((x) => x.name === col);
+            return (
+              <option key={col} value={col}>
+                {col}{a ? ` (${T.colType[a.type] ?? a.type})` : ''}
+              </option>
+            );
+          })}
+        </select>
+        {value && (
+          <button type="button" onClick={() => onChange(undefined)} className="rounded p-0.5 text-slate-400 hover:text-slate-600">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
-  // Auto-configure when data first arrives and config is empty
+/* ══════════════════════════════════════════════════════════════
+   MAIN COMPONENT
+   ══════════════════════════════════════════════════════════════ */
+export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChange }: PlotNodeConfigPanelProps) {
+  const payload = useMemo(() => ({
+    ...rawPayload,
+    mapping: rawPayload.mapping ?? {},
+    styling: rawPayload.styling ?? {},
+  }), [rawPayload]);
+
+  const [showMoreCharts, setShowMoreCharts] = useState(false);
+
+  // Local ref to prevent auto-config race condition: when user selects a chart type
+  // (e.g. 3D), the Yjs-persisted autoConfigured flag may not have propagated yet,
+  // so async data arrivals could trigger auto-config with stale payload.
+  const userHasConfiguredRef = useRef(payload.autoConfigured === true || !!payload.mapping?.x || !!payload.mapping?.y);
+
+  // Keep ref in sync with payload changes from Yjs
+  useEffect(() => {
+    if (payload.autoConfigured === true || payload.mapping?.x || payload.mapping?.y) {
+      userHasConfiguredRef.current = true;
+    }
+  }, [payload.autoConfigured, payload.mapping?.x, payload.mapping?.y]);
+
+  // Auto-configure on first data
   useEffect(() => {
     if (!data || !data.rows || data.rows.length === 0) return;
+    if (userHasConfiguredRef.current) return;
     if (payload.autoConfigured === true) return;
-    if (payload.mapping?.x || payload.mapping?.y) return; // User has already configured
-
+    if (payload.mapping?.x || payload.mapping?.y) return;
     const autoConfig = autoConfigurePlotConfig(data, payload);
     if (Object.keys(autoConfig).length > 0) {
+      userHasConfiguredRef.current = true;
       onChange(nodeId, autoConfig);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.rows?.length, payload.autoConfigured, payload.mapping?.x, payload.mapping?.y]);
 
-  const columns = useMemo(() => {
-    if (!data || !data.columns) return [];
-    return data.columns;
-  }, [data]);
+  const columns = useMemo(() => data?.columns ?? [], [data]);
+  const analyses = useMemo(() => (data ? analyzeDataColumns(data) : []), [data]);
+  const recommendations = useMemo(() => (data ? recommendChartTypes(data) : []), [data]);
+  const validation = useMemo(() => validatePlotConfig(data, payload), [data, payload]);
+  const fields = useMemo(() => fieldsFor(payload.chartType), [payload.chartType]);
 
-  const columnAnalyses = useMemo(() => {
-    if (!data) return [];
-    return analyzeDataColumns(data);
-  }, [data]);
-
-  const recommendations = useMemo(() => {
-    if (!data) return [];
-    return recommendChartTypes(data);
-  }, [data]);
-
-  const validation = useMemo(() => {
-    return validatePlotConfig(data, payload);
-  }, [data, payload]);
-
-  const handleChartTypeChange = (chartType: ChartType) => {
-    onChange(nodeId, { ...payload, chartType });
+  /* ── Dispatch helpers ───────────────────────────────────── */
+  const setChart = (chartType: ChartType) => {
+    userHasConfiguredRef.current = true;
+    onChange(nodeId, { ...payload, chartType, autoConfigured: true });
   };
+  const setMapping = (field: string, value: string | string[] | undefined) =>
+    onChange(nodeId, { ...payload, mapping: { ...payload.mapping, [field]: value } });
+  const setTitle = (title: string) =>
+    onChange(nodeId, { ...payload, styling: { ...payload.styling, title } });
+  const setStyling = (updates: Partial<PlotNodePayload['styling']>) =>
+    onChange(nodeId, { ...payload, styling: { ...payload.styling, ...updates } });
 
-  const handleMappingChange = (
-    field: 'x' | 'y' | 'color' | 'size' | 'facet',
-    value: string | string[] | undefined,
-  ) => {
-    onChange(nodeId, {
-      ...payload,
-      mapping: {
-        ...payload.mapping,
-        [field]: value || undefined,
-      },
-    });
-  };
+  /* ── AI generation ───────────────────────────────────────── */
+  const [aiPrompt, setAiPrompt] = useState('');
+  const ai = useAiChartGeneration();
 
-  const handleTitleChange = (title: string) => {
-    onChange(nodeId, {
-      ...payload,
-      styling: {
-        ...payload.styling,
-        title,
-      },
-    });
-  };
-
-  const handleAggregationToggle = (enabled: boolean) => {
-    if (enabled) {
-      onChange(nodeId, {
-        ...payload,
-        aggregation: {
-          type: 'sum',
-          groupBy: [],
-        },
-      });
-    } else {
-      const { aggregation, ...rest } = payload;
-      onChange(nodeId, rest);
+  const handleAiGenerate = async () => {
+    if (!data || !aiPrompt.trim()) return;
+    const config = await ai.generate(aiPrompt, data);
+    if (config) {
+      userHasConfiguredRef.current = true;
+      onChange(nodeId, { ...config, autoConfigured: true });
+      setAiPrompt('');
     }
   };
 
-  const handleAggregationTypeChange = (type: AggregationType) => {
-    onChange(nodeId, {
-      ...payload,
-      aggregation: {
-        ...(payload.aggregation || { type: 'sum', groupBy: [] }),
-        type,
-      },
-    });
-  };
-
-  const handleGroupByChange = (field: string, add: boolean) => {
-    const currentGroupBy = payload.aggregation?.groupBy || [];
-    const newGroupBy = add ? [...currentGroupBy, field] : currentGroupBy.filter((f) => f !== field);
-    onChange(nodeId, {
-      ...payload,
-      aggregation: {
-        ...(payload.aggregation || { type: 'sum', groupBy: [] }),
-        groupBy: newGroupBy,
-      },
-    });
-  };
-
-  const handleAddFilter = () => {
-    const newFilters = [
-      ...(payload.filters || []),
-      { field: columns[0] || '', operator: 'eq' as const, value: '' },
-    ];
-    onChange(nodeId, {
-      ...payload,
-      filters: newFilters,
-    });
-  };
-
-  const handleFilterChange = (index: number, updates: Partial<PlotNodePayload['filters'][0]>) => {
-    const newFilters = [...(payload.filters || [])];
-    newFilters[index] = { ...newFilters[index], ...updates };
-    onChange(nodeId, {
-      ...payload,
-      filters: newFilters,
-    });
-  };
-
-  const handleRemoveFilter = (index: number) => {
-    const newFilters = (payload.filters || []).filter((_, i) => i !== index);
-    onChange(nodeId, {
-      ...payload,
-      filters: newFilters.length > 0 ? newFilters : undefined,
-    });
-  };
-
-  const handleAddSort = () => {
-    const newSort = [
-      ...(payload.sort || []),
-      { field: columns[0] || '', direction: 'asc' as const },
-    ];
-    onChange(nodeId, {
-      ...payload,
-      sort: newSort,
-    });
-  };
-
-  const handleSortChange = (index: number, updates: Partial<PlotNodePayload['sort'][0]>) => {
-    const newSort = [...(payload.sort || [])];
-    newSort[index] = { ...newSort[index], ...updates };
-    onChange(nodeId, {
-      ...payload,
-      sort: newSort,
-    });
-  };
-
-  const handleRemoveSort = (index: number) => {
-    const newSort = (payload.sort || []).filter((_, i) => i !== index);
-    onChange(nodeId, {
-      ...payload,
-      sort: newSort.length > 0 ? newSort : undefined,
-    });
-  };
-
-  const handleStylingChange = (updates: Partial<PlotNodePayload['styling']>) => {
-    onChange(nodeId, {
-      ...payload,
-      styling: {
-        ...payload.styling,
-        ...updates,
-      },
-    });
+  /* ── Chart type button ──────────────────────────────────── */
+  const ChartBtn = ({ meta }: { meta: ChartMeta }) => {
+    const isRec = recommendations.includes(meta.value);
+    const isSel = payload.chartType === meta.value;
+    return (
+      <button
+        type="button"
+        onClick={() => setChart(meta.value)}
+        className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors ${
+          isSel
+            ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-medium'
+            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+        }`}
+      >
+        <span className="text-sm">{meta.icon}</span>
+        <span className="truncate">{meta.label}</span>
+        {isRec && !isSel && <span className="text-[10px] text-indigo-500">★</span>}
+      </button>
+    );
   };
 
   return (
-    <div className="space-y-6">
-      {/* Data Source Preview */}
+    <div className="space-y-4">
+      {/* ── Data Source ───────────────────────────────────── */}
       {data && (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {T.sectionDataSource}
-            </h3>
-            <span className="text-xs text-slate-600">
-              {T.rowsColumns(data.rows.length, data.columns.length)}
-            </span>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{T.dataSource}</span>
+            <span className="text-[11px] text-slate-500">{T.rowsCols(data.rows.length, data.columns.length)}</span>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {columnAnalyses.slice(0, 8).map((analysis) => (
-              <ColumnChip key={analysis.name} analysis={analysis} onClick={() => {}} />
+          <div className="flex flex-wrap gap-1">
+            {analyses.slice(0, 10).map((a) => (
+              <span key={a.name} className="inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-600">
+                <span>{colIcon(a.type)}</span>
+                <span className="max-w-[80px] truncate">{a.name}</span>
+              </span>
             ))}
-            {columnAnalyses.length > 8 && (
-              <span className="text-xs text-slate-400">{T.more(columnAnalyses.length - 8)}</span>
-            )}
+            {analyses.length > 10 && <span className="text-[10px] text-slate-400">{T.more(analyses.length - 10)}</span>}
           </div>
         </div>
       )}
 
-      {/* Auto-configuration indicator */}
-      {payload.autoConfigured && (
-        <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
-          <span className="font-medium">✨ {T.suggestedConfigTitle}</span>
-          <p className="mt-1 text-indigo-600">{T.suggestedConfigDesc}</p>
+      {/* ── AI Chart Generation ──────────────────────────── */}
+      {data && data.rows.length > 0 && (
+        <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-2.5">
+          <label className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-500">
+            <MagicWand size={12} weight="bold" />
+            AI-конфигурация
+          </label>
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !ai.loading) handleAiGenerate(); }}
+              placeholder="Например: выручка по месяцам, bar chart"
+              disabled={ai.loading}
+              className="flex-1 rounded-md border border-violet-200 bg-white px-2 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-200 disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={handleAiGenerate}
+              disabled={ai.loading || !aiPrompt.trim()}
+              className="flex items-center gap-1 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-50"
+            >
+              {ai.loading ? <SpinnerGap size={14} className="animate-spin" /> : <MagicWand size={14} />}
+            </button>
+          </div>
+          {ai.error && (
+            <p className="mt-1.5 text-[11px] text-rose-500">{ai.error}</p>
+          )}
         </div>
       )}
 
-      {/* Chart Type & Recommendations */}
-      <div>
-        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-          {T.chartType}
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          {CHART_TYPES.map((type) => {
-            const isRecommended = recommendations.includes(type.value);
-            const isSelected = payload.chartType === type.value;
-            return (
-              <button
-                key={type.value}
-                type="button"
-                onClick={() => handleChartTypeChange(type.value)}
-                className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-                  isSelected
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                }`}
-              >
-                <span>{type.icon}</span>
-                <span className="flex-1 text-left">{type.label}</span>
-                {isRecommended && !isSelected && (
-                  <span className="text-[10px] text-indigo-500">★</span>
-                )}
-              </button>
-            );
-          })}
+      {/* ── Auto-config notice ────────────────────────────── */}
+      {payload.autoConfigured && (
+        <div className="rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[11px] text-indigo-700">
+          <span className="font-medium">{T.autoConfigTitle}</span>
+          <span className="ml-1 text-indigo-500">{T.autoConfigDesc}</span>
         </div>
+      )}
+
+      {/* ── Chart Type ────────────────────────────────────── */}
+      <div>
+        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{T.chartType}</label>
+        <div className="grid grid-cols-3 gap-1">
+          {POPULAR_CHARTS.map((m) => <ChartBtn key={m.value} meta={m} />)}
+        </div>
+        {/* Check if current chart type is in "more" and not in popular — always show it */}
+        {!POPULAR_CHARTS.some((p) => p.value === payload.chartType) && !showMoreCharts && (
+          <div className="mt-1.5 grid grid-cols-3 gap-1">
+            {ALL_CHARTS.filter((m) => m.value === payload.chartType).map((m) => (
+              <ChartBtn key={m.value} meta={m} />
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowMoreCharts(!showMoreCharts)}
+          className="mt-1.5 flex items-center gap-1 text-[11px] text-indigo-500 hover:text-indigo-700"
+        >
+          {showMoreCharts ? <CaretDown size={10} /> : <CaretRight size={10} />}
+          {showMoreCharts ? 'Скрыть' : 'Ещё типы графиков'}
+        </button>
+        {showMoreCharts && (
+          <div className="mt-1.5 space-y-2">
+            {MORE_CHARTS.map((group) => (
+              <div key={group.label}>
+                <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400">{group.label}</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {group.types.map((m) => <ChartBtn key={m.value} meta={m} />)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {recommendations.length > 0 && (
-          <p className="mt-2 text-xs text-slate-500">
-            {T.recommended}:{' '}
-            {recommendations
-              .slice(0, 3)
-              .map((r) => CHART_TYPES.find((t) => t.value === r)?.label || r)
-              .join(', ')}
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            {T.recommended}: {recommendations.slice(0, 3).map((r) => ALL_CHARTS.find((c) => c.value === r)?.label ?? r).join(', ')}
           </p>
         )}
       </div>
 
-      {/* Field Mapping */}
+      {/* ── Field Mapping ─────────────────────────────────── */}
       {columns.length > 0 && (
         <div>
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {T.fieldMapping}
-          </label>
-          <div className="space-y-3">
-            {/* X Axis */}
-            {payload.chartType !== 'pie' && payload.chartType !== 'doughnut' && (
-              <div>
-                <label className="mb-1 block text-xs text-slate-600">{T.xAxis}</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={payload.mapping.x || ''}
-                    onChange={(e) => handleMappingChange('x', e.target.value)}
-                    className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="">-- {T.selectXAxis} --</option>
-                    {columns.map((col) => {
-                      const analysis = columnAnalyses.find((a) => a.name === col);
-                      return (
-                        <option key={col} value={col}>
-                          {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {payload.mapping.x && (
-                    <button
-                      type="button"
-                      onClick={() => handleMappingChange('x', '')}
-                      className="rounded p-1 text-slate-400 hover:text-slate-600"
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{T.fields}</label>
+          <div className="space-y-2">
+            {/* Standard X/Y/Z/Color fields */}
+            {fields.x && (
+              <FieldSelect label={T.xAxis} value={payload.mapping.x} columns={columns} analyses={analyses} onChange={(v) => setMapping('x', v)} />
+            )}
+            {fields.y && !fields.multiY && (
+              <FieldSelect
+                label={T.yAxis}
+                value={Array.isArray(payload.mapping.y) ? payload.mapping.y[0] : payload.mapping.y}
+                columns={columns}
+                analyses={analyses}
+                onChange={(v) => setMapping('y', v)}
+              />
+            )}
+            {fields.z && (
+              <FieldSelect label={T.zAxis} value={payload.mapping.z} columns={columns} analyses={analyses} onChange={(v) => setMapping('z', v)} />
+            )}
+            {fields.color && (
+              <FieldSelect label={T.color} value={payload.mapping.color} columns={columns} analyses={analyses} onChange={(v) => setMapping('color', v)} optional />
             )}
 
-            {/* Y Axis */}
-            {payload.chartType !== 'pie' && payload.chartType !== 'doughnut' && (
+            {/* Multi-Y for combo charts */}
+            {fields.multiY && (
               <div>
-                <label className="mb-1 block text-xs text-slate-600">{T.yAxis}</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={
-                      Array.isArray(payload.mapping.y)
-                        ? payload.mapping.y[0]
-                        : payload.mapping.y || ''
-                    }
-                    onChange={(e) => handleMappingChange('y', e.target.value)}
-                    className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="">-- {T.selectYAxis} --</option>
-                    {columns.map((col) => {
-                      const analysis = columnAnalyses.find((a) => a.name === col);
-                      return (
-                        <option key={col} value={col}>
-                          {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {payload.mapping.y && (
-                    <button
-                      type="button"
-                      onClick={() => handleMappingChange('y', '')}
-                      className="rounded p-1 text-slate-400 hover:text-slate-600"
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Color (for scatter and other charts) */}
-            {(payload.chartType === 'scatter' ||
-              payload.chartType === 'bar' ||
-              payload.chartType === 'line') && (
-              <div>
-                <label className="mb-1 block text-xs text-slate-600">{T.colorOptional}</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={payload.mapping.color || ''}
-                    onChange={(e) => handleMappingChange('color', e.target.value)}
-                    className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="">-- {T.none} --</option>
-                    {columns.map((col) => {
-                      const analysis = columnAnalyses.find((a) => a.name === col);
-                      return (
-                        <option key={col} value={col}>
-                          {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {payload.mapping.color && (
-                    <button
-                      type="button"
-                      onClick={() => handleMappingChange('color', '')}
-                      className="rounded p-1 text-slate-400 hover:text-slate-600"
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Multiple Y fields for combo charts */}
-            {payload.chartType === 'combo-bar-line' && (
-              <div>
-                <label className="mb-1 block text-xs text-slate-600">{T.yFieldsRequired}</label>
-                <div className="space-y-2">
-                  {(Array.isArray(payload.mapping.y)
-                    ? payload.mapping.y
-                    : payload.mapping.y
-                      ? [payload.mapping.y]
-                      : []
-                  ).map((yField, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
+                <label className="mb-1 block text-xs text-slate-600">{T.yFields}</label>
+                <div className="space-y-1.5">
+                  {(Array.isArray(payload.mapping.y) ? payload.mapping.y : payload.mapping.y ? [payload.mapping.y] : []).map((yf, idx) => (
+                    <div key={idx} className="flex items-center gap-1">
                       <select
-                        value={yField}
+                        value={yf}
                         onChange={(e) => {
-                          const currentY = Array.isArray(payload.mapping.y)
-                            ? payload.mapping.y
-                            : payload.mapping.y
-                              ? [payload.mapping.y]
-                              : [];
-                          const newY = [...currentY];
-                          newY[idx] = e.target.value;
-                          handleMappingChange('y', newY);
+                          const cur = Array.isArray(payload.mapping.y) ? [...payload.mapping.y] : payload.mapping.y ? [payload.mapping.y] : [];
+                          cur[idx] = e.target.value;
+                          setMapping('y', cur);
                         }}
-                        className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                        className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none"
                       >
-                        <option value="">-- {T.selectYField} --</option>
-                        {columns.map((col) => {
-                          const analysis = columnAnalyses.find((a) => a.name === col);
-                          return (
-                            <option key={col} value={col}>
-                              {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
-                            </option>
-                          );
-                        })}
+                        <option value="">-- {T.select} --</option>
+                        {columns.map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentY = Array.isArray(payload.mapping.y)
-                            ? payload.mapping.y
-                            : payload.mapping.y
-                              ? [payload.mapping.y]
-                              : [];
-                          const newY = currentY.filter((_, i) => i !== idx);
-                          handleMappingChange('y', newY.length > 0 ? newY : undefined);
-                        }}
-                        className="rounded p-1 text-slate-400 hover:text-slate-600"
-                      >
-                        <X size={16} />
-                      </button>
+                      <button type="button" onClick={() => {
+                        const cur = Array.isArray(payload.mapping.y) ? [...payload.mapping.y] : payload.mapping.y ? [payload.mapping.y] : [];
+                        setMapping('y', cur.filter((_, i) => i !== idx));
+                      }} className="rounded p-0.5 text-slate-400 hover:text-rose-500"><X size={14} /></button>
                     </div>
                   ))}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const currentY = Array.isArray(payload.mapping.y)
-                        ? payload.mapping.y
-                        : payload.mapping.y
-                          ? [payload.mapping.y]
-                          : [];
-                      handleMappingChange('y', [...currentY, '']);
-                    }}
-                    className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                  >
-                    <Plus size={14} />
-                    {T.addYField}
+                  <button type="button" onClick={() => {
+                    const cur = Array.isArray(payload.mapping.y) ? [...payload.mapping.y] : payload.mapping.y ? [payload.mapping.y] : [];
+                    setMapping('y', [...cur, '']);
+                  }} className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700">
+                    <Plus size={12} /> {T.addY}
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Facet (for small multiples) */}
-            {['bar', 'bar-horizontal', 'line', 'area', 'scatter'].includes(payload.chartType) && (
+            {/* OHLC for candlestick */}
+            {fields.ohlc && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{T.ohlc}</p>
+                {(['open', 'high', 'low', 'close'] as const).map((f) => (
+                  <FieldSelect
+                    key={f}
+                    label={f === 'open' ? T.open : f === 'high' ? T.high : f === 'low' ? T.low : T.close}
+                    value={payload.mapping[f]}
+                    columns={columns}
+                    analyses={analyses}
+                    onChange={(v) => setMapping(f, v)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Source/Target for graph */}
+            {fields.srcTgt && (
+              <div className="space-y-1.5">
+                <FieldSelect label={T.source} value={payload.mapping.source} columns={columns} analyses={analyses} onChange={(v) => setMapping('source', v)} />
+                <FieldSelect label={T.target} value={payload.mapping.target} columns={columns} analyses={analyses} onChange={(v) => setMapping('target', v)} />
+              </div>
+            )}
+
+            {/* Weight for wordcloud/graph */}
+            {fields.weight && (
+              <FieldSelect label={T.weight} value={payload.mapping.weight} columns={columns} analyses={analyses} onChange={(v) => setMapping('weight', v)} optional />
+            )}
+
+            {/* Gauge config */}
+            {payload.chartType === 'gauge' && (
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="mb-1 block text-xs text-slate-600">{T.min}</label>
+                  <input type="number" value={payload.gaugeConfig?.min ?? 0}
+                    onChange={(e) => onChange(nodeId, { ...payload, gaugeConfig: { ...payload.gaugeConfig, min: parseFloat(e.target.value) || 0 } })}
+                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none" />
+                </div>
+                <div className="flex-1">
+                  <label className="mb-1 block text-xs text-slate-600">{T.max}</label>
+                  <input type="number" value={payload.gaugeConfig?.max ?? 100}
+                    onChange={(e) => onChange(nodeId, { ...payload, gaugeConfig: { ...payload.gaugeConfig, max: parseFloat(e.target.value) || 100 } })}
+                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none" />
+                </div>
+              </div>
+            )}
+
+            {/* Liquidfill shape */}
+            {payload.chartType === 'liquidfill' && (
               <div>
-                <label className="mb-1 block text-xs text-slate-600">{T.facetByOptional}</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={payload.mapping.facet || ''}
-                    onChange={(e) => handleMappingChange('facet', e.target.value || undefined)}
-                    className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="">-- {T.none} --</option>
-                    {columns.map((col) => {
-                      const analysis = columnAnalyses.find((a) => a.name === col);
-                      return (
-                        <option key={col} value={col}>
-                          {col} {analysis ? `(${getColumnTypeLabel(analysis.type)})` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {payload.mapping.facet && (
-                    <button
-                      type="button"
-                      onClick={() => handleMappingChange('facet', undefined)}
-                      className="rounded p-1 text-slate-400 hover:text-slate-600"
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-                {payload.mapping.facet && (
-                  <p className="mt-1 text-xs text-slate-500">{T.facetHint}</p>
-                )}
+                <label className="mb-1 block text-xs text-slate-600">{T.shape}</label>
+                <select value={payload.liquidfillConfig?.shape || 'circle'}
+                  onChange={(e) => onChange(nodeId, { ...payload, liquidfillConfig: { shape: e.target.value as any } })}
+                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none">
+                  <option value="circle">Круг</option>
+                  <option value="rect">Прямоугольник</option>
+                  <option value="roundRect">Скруглённый</option>
+                  <option value="triangle">Треугольник</option>
+                  <option value="diamond">Ромб</option>
+                </select>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Data Transformations */}
-      {columns.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {T.transformations}
-          </h3>
-
-          {/* Aggregation */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-slate-600">{T.aggregateData}</label>
-              <input
-                type="checkbox"
-                checked={!!payload.aggregation}
-                onChange={(e) => handleAggregationToggle(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-            </div>
-            {payload.aggregation && (
-              <div className="ml-4 space-y-2 rounded-md border border-slate-200 bg-white p-3">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-600">{T.aggregationType}</label>
-                  <select
-                    value={payload.aggregation.type}
-                    onChange={(e) => handleAggregationTypeChange(e.target.value as AggregationType)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    {AGGREGATION_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-600">{T.groupBy}</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {columns.map((col) => {
-                      const isSelected = payload.aggregation?.groupBy?.includes(col);
-                      return (
-                        <button
-                          key={col}
-                          type="button"
-                          onClick={() => handleGroupByChange(col, !isSelected)}
-                          className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
-                            isSelected
-                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                          }`}
-                        >
-                          {col}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Filters */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-slate-600">{T.filters}</label>
-              <button
-                type="button"
-                onClick={handleAddFilter}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
-              >
-                <Plus size={12} />
-                {T.addFilter}
-              </button>
-            </div>
-            {payload.filters && payload.filters.length > 0 && (
-              <div className="space-y-2">
-                {payload.filters.map((filter, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-2 min-w-0"
-                  >
-                    <select
-                      value={filter.field}
-                      onChange={(e) => handleFilterChange(index, { field: e.target.value })}
-                      className="flex-1 min-w-0 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
-                    >
-                      {columns.map((col) => (
-                        <option key={col} value={col}>
-                          {col}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={filter.operator}
-                      onChange={(e) =>
-                        handleFilterChange(index, {
-                          operator: e.target.value as typeof filter.operator,
-                        })
-                      }
-                      className="flex-shrink-0 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
-                    >
-                      {FILTER_OPERATORS.map((op) => (
-                        <option key={op.value} value={op.value}>
-                          {op.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={String(filter.value ?? '')}
-                      onChange={(e) => handleFilterChange(index, { value: e.target.value })}
-                      placeholder={T.value}
-                      className="flex-1 min-w-0 max-w-[120px] rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFilter(index)}
-                      className="flex-shrink-0 rounded p-1 text-slate-400 hover:text-rose-500"
-                    >
-                      <Trash size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Sort */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-slate-600">{T.sort}</label>
-              <button
-                type="button"
-                onClick={handleAddSort}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
-              >
-                <Plus size={12} />
-                {T.addSort}
-              </button>
-            </div>
-            {payload.sort && payload.sort.length > 0 && (
-              <div className="space-y-2">
-                {payload.sort.map((sortRule, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-2"
-                  >
-                    <select
-                      value={sortRule.field}
-                      onChange={(e) => handleSortChange(index, { field: e.target.value })}
-                      className="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
-                    >
-                      {columns.map((col) => (
-                        <option key={col} value={col}>
-                          {col}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={sortRule.direction}
-                      onChange={(e) =>
-                        handleSortChange(index, { direction: e.target.value as 'asc' | 'desc' })
-                      }
-                      className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
-                    >
-                      <option value="asc">{T.ascending}</option>
-                      <option value="desc">{T.descending}</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSort(index)}
-                      className="rounded p-1 text-slate-400 hover:text-rose-500"
-                    >
-                      <Trash size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Styling & Interactivity */}
-      <div className="space-y-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          {T.stylingInteractivity}
-        </h3>
-
-        <div>
-          <label className="mb-1 block text-xs text-slate-600">{T.title}</label>
-          <input
-            type="text"
-            value={payload.styling.title || ''}
-            onChange={(e) => handleTitleChange(e.target.value)}
-            placeholder={T.chartTitlePlaceholder}
-            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">{T.theme}</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => handleStylingChange({ theme: 'light' })}
-                className={`rounded px-3 py-1 text-xs transition-colors ${
-                  payload.styling.theme === 'light' || !payload.styling.theme
-                    ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {T.light}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStylingChange({ theme: 'dark' })}
-                className={`rounded px-3 py-1 text-xs transition-colors ${
-                  payload.styling.theme === 'dark'
-                    ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {T.dark}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">{T.showLegend}</label>
-            <input
-              type="checkbox"
-              checked={payload.styling.showLegend !== false}
-              onChange={(e) => handleStylingChange({ showLegend: e.target.checked })}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </div>
-
-          {payload.styling.showLegend !== false && (
-            <div>
-              <label className="mb-1 block text-xs text-slate-600">{T.legendPosition}</label>
-              <select
-                value={payload.styling.legendPosition || 'top'}
-                onChange={(e) =>
-                  handleStylingChange({
-                    legendPosition: e.target.value as 'top' | 'bottom' | 'left' | 'right',
-                  })
-                }
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none"
-              >
-                <option value="top">{T.top}</option>
-                <option value="bottom">{T.bottom}</option>
-                <option value="left">{T.left}</option>
-                <option value="right">{T.right}</option>
-              </select>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">{T.showGrid}</label>
-            <input
-              type="checkbox"
-              checked={payload.styling.showGrid !== false}
-              onChange={(e) => handleStylingChange({ showGrid: e.target.checked })}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">{T.enableZoomPan}</label>
-            <input
-              type="checkbox"
-              checked={payload.styling.enableZoomPan === true}
-              onChange={(e) => handleStylingChange({ enableZoomPan: e.target.checked })}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-600">{T.enableTooltips}</label>
-            <input
-              type="checkbox"
-              checked={payload.styling.enableTooltips !== false}
-              onChange={(e) => handleStylingChange({ enableTooltips: e.target.checked })}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </div>
-        </div>
+      {/* ── Title ─────────────────────────────────────────── */}
+      <div>
+        <label className="mb-1 block text-xs text-slate-600">{T.title}</label>
+        <input
+          type="text"
+          value={payload.styling.title || ''}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder={T.titlePlaceholder}
+          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+        />
       </div>
 
-      {/* Validation Message */}
+      {/* ── Style (compact) ───────────────────────────────── */}
+      <div className="flex items-center gap-3">
+        <div className="flex gap-1">
+          {(['light', 'dark'] as const).map((t) => (
+            <button key={t} type="button" onClick={() => setStyling({ theme: t })}
+              className={`rounded px-2.5 py-1 text-xs transition-colors ${
+                (payload.styling.theme || 'light') === t
+                  ? 'bg-indigo-100 text-indigo-700 font-medium' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}>
+              {t === 'light' ? T.light : T.dark}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          <input type="checkbox" checked={payload.styling.showLegend !== false}
+            onChange={(e) => setStyling({ showLegend: e.target.checked })}
+            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600" />
+          {T.legend}
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          <input type="checkbox" checked={payload.styling.enableZoomPan === true}
+            onChange={(e) => setStyling({ enableZoomPan: e.target.checked })}
+            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600" />
+          {T.zoomPan}
+        </label>
+      </div>
+
+      {/* ── Advanced (collapsed) ──────────────────────────── */}
+      {columns.length > 0 && (
+        <Section title={T.advanced}>
+          <div className="space-y-3">
+            {/* Aggregation */}
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-600">{T.aggregation}</span>
+                <input type="checkbox" checked={!!payload.aggregation}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      onChange(nodeId, { ...payload, aggregation: { type: 'sum', groupBy: [] } });
+                    } else {
+                      const { aggregation, ...rest } = payload;
+                      onChange(nodeId, rest);
+                    }
+                  }}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600" />
+              </div>
+              {payload.aggregation && (
+                <div className="mt-1.5 ml-2 space-y-1.5 rounded border border-slate-200 bg-white p-2">
+                  <div>
+                    <label className="mb-0.5 block text-[11px] text-slate-500">{T.aggType}</label>
+                    <select value={payload.aggregation.type}
+                      onChange={(e) => onChange(nodeId, { ...payload, aggregation: { ...payload.aggregation!, type: e.target.value as AggregationType } })}
+                      className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs focus:border-indigo-400 focus:outline-none">
+                      {AGG_TYPES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-0.5 block text-[11px] text-slate-500">{T.groupBy}</label>
+                    <div className="flex flex-wrap gap-1">
+                      {columns.map((col) => {
+                        const sel = payload.aggregation?.groupBy?.includes(col);
+                        return (
+                          <button key={col} type="button"
+                            onClick={() => {
+                              const gb = payload.aggregation?.groupBy ?? [];
+                              onChange(nodeId, {
+                                ...payload,
+                                aggregation: { ...payload.aggregation!, groupBy: sel ? gb.filter((f) => f !== col) : [...gb, col] },
+                              });
+                            }}
+                            className={`rounded-full border px-1.5 py-0.5 text-[10px] transition-colors ${
+                              sel ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                            }`}>
+                            {col}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Filters */}
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-600">{T.filters}</span>
+                <button type="button" onClick={() => {
+                  onChange(nodeId, { ...payload, filters: [...(payload.filters || []), { field: columns[0] || '', operator: 'eq' as const, value: '' }] });
+                }} className="flex items-center gap-0.5 text-[11px] text-indigo-500 hover:text-indigo-700">
+                  <Plus size={10} /> {T.addFilter}
+                </button>
+              </div>
+              {payload.filters && payload.filters.length > 0 && (
+                <div className="mt-1.5 space-y-1">
+                  {payload.filters.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1 rounded border border-slate-200 bg-white p-1.5">
+                      <select value={f.field}
+                        onChange={(e) => {
+                          const nf = [...payload.filters!]; nf[i] = { ...nf[i], field: e.target.value };
+                          onChange(nodeId, { ...payload, filters: nf });
+                        }}
+                        className="min-w-0 flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none">
+                        {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <select value={f.operator}
+                        onChange={(e) => {
+                          const nf = [...payload.filters!]; nf[i] = { ...nf[i], operator: e.target.value as typeof f.operator };
+                          onChange(nodeId, { ...payload, filters: nf });
+                        }}
+                        className="flex-shrink-0 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none">
+                        {FILTER_OPS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
+                      </select>
+                      <input type="text" value={String(f.value ?? '')}
+                        onChange={(e) => {
+                          const nf = [...payload.filters!]; nf[i] = { ...nf[i], value: e.target.value };
+                          onChange(nodeId, { ...payload, filters: nf });
+                        }}
+                        placeholder={T.value}
+                        className="min-w-0 max-w-[80px] flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none" />
+                      <button type="button" onClick={() => {
+                        const nf = payload.filters!.filter((_, j) => j !== i);
+                        onChange(nodeId, { ...payload, filters: nf.length > 0 ? nf : undefined });
+                      }} className="text-slate-400 hover:text-rose-500"><Trash size={12} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Sort */}
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-600">{T.sort}</span>
+                <button type="button" onClick={() => {
+                  onChange(nodeId, { ...payload, sort: [...(payload.sort || []), { field: columns[0] || '', direction: 'asc' as const }] });
+                }} className="flex items-center gap-0.5 text-[11px] text-indigo-500 hover:text-indigo-700">
+                  <Plus size={10} /> {T.addSort}
+                </button>
+              </div>
+              {payload.sort && payload.sort.length > 0 && (
+                <div className="mt-1.5 space-y-1">
+                  {payload.sort.map((s, i) => (
+                    <div key={i} className="flex items-center gap-1 rounded border border-slate-200 bg-white p-1.5">
+                      <select value={s.field}
+                        onChange={(e) => {
+                          const ns = [...payload.sort!]; ns[i] = { ...ns[i], field: e.target.value };
+                          onChange(nodeId, { ...payload, sort: ns });
+                        }}
+                        className="min-w-0 flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none">
+                        {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <select value={s.direction}
+                        onChange={(e) => {
+                          const ns = [...payload.sort!]; ns[i] = { ...ns[i], direction: e.target.value as 'asc' | 'desc' };
+                          onChange(nodeId, { ...payload, sort: ns });
+                        }}
+                        className="rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none">
+                        <option value="asc">{T.asc}</option>
+                        <option value="desc">{T.desc}</option>
+                      </select>
+                      <button type="button" onClick={() => {
+                        const ns = payload.sort!.filter((_, j) => j !== i);
+                        onChange(nodeId, { ...payload, sort: ns.length > 0 ? ns : undefined });
+                      }} className="text-slate-400 hover:text-rose-500"><Trash size={12} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {/* ── Validation message ────────────────────────────── */}
       {!validation.valid && validation.message && (
-        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
-          {translateValidationMessage(validation.message)}
+        <div className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs text-rose-600">
+          {translateValidation(validation.message)}
         </div>
       )}
     </div>

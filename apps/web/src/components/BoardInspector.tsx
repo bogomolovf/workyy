@@ -178,36 +178,87 @@ export function BoardInspector(props: InspectorProps) {
   // Call usePlotData unconditionally to maintain stable hook order
   // Pass valid nodeId and edges even for non-plot nodes (result will be ignored)
   const plotNodeId = props.kind === 'plot' ? props.nodeId : '';
+  const plotNodes = props.kind === 'plot' ? props.nodes : [];
+  const plotExecutionEntries = props.kind === 'plot' ? props.executionEntries : {};
   const plotData = usePlotData(plotNodeId, plotEdges);
   const plotSnapshot = usePlotSnapshot(plotNodeId);
 
-  // When Plot is connected to CSV: fetch limited dataset for config panel (not only 100 rows)
-  const upstreamCsvTableName = useMemo(() => {
-    if (props.kind !== 'plot') return undefined;
-    const edge = props.edges.find((e) => e.targetId === props.nodeId);
-    if (!edge) return undefined;
-    const sourceNode = props.nodes.find((n) => n.id === edge.sourceId);
+  // Detect upstream source type and compute data source identifiers
+  const { upstreamCsvTableName, upstreamSqlNodeId, notebookCellEntryId } = useMemo(() => {
+    const empty = { upstreamCsvTableName: undefined, upstreamSqlNodeId: undefined, notebookCellEntryId: undefined };
+    if (!plotNodeId) return empty;
+    const edge = plotEdges.find((e) => e.targetId === plotNodeId);
+    if (!edge) return empty;
+    const sourceNode = plotNodes.find((n) => n.id === edge.sourceId);
     const isCsv = sourceNode?.type === 'csv' || sourceNode?.type === 'csvNode';
-    if (!isCsv) return undefined;
-    return (sourceNode.payload as { tableName?: string })?.tableName;
-  }, [props.kind, props.nodeId, props.edges, props.nodes]);
-  const upstreamSqlNodeId = useMemo(() => {
-    if (props.kind !== 'plot') return undefined;
-    const edge = props.edges.find((e) => e.targetId === props.nodeId);
-    if (!edge) return undefined;
-    const sourceNode = props.nodes.find((n) => n.id === edge.sourceId);
-    return sourceNode?.type === 'sql' ? edge.sourceId : undefined;
-  }, [props.kind, props.nodeId, props.edges, props.nodes]);
+    const csvTable = isCsv ? (sourceNode?.payload as { tableName?: string })?.tableName : undefined;
+    const sqlId = sourceNode?.type === 'sql' ? edge.sourceId : undefined;
+    // Notebook cell entry ID (format: "notebookId__cellId")
+    const isNotebook = sourceNode?.type === 'notebook' || sourceNode?.type === 'notebookNode';
+    let cellEntryId: string | undefined;
+    if (isNotebook) {
+      const srcHandle = (edge as any).sourceHandle as string | undefined;
+      if (srcHandle?.startsWith('cell-out-')) {
+        cellEntryId = `${edge.sourceId}__${srcHandle.slice(9)}`;
+      } else {
+        // Fallback: find any cell with table data in executionEntries
+        const prefix = `${edge.sourceId}__`;
+        for (const key of Object.keys(plotExecutionEntries)) {
+          if (!key.startsWith(prefix)) continue;
+          const entry = plotExecutionEntries[key];
+          if (entry?.output?.kind === 'python' && entry.output.result?.table) {
+            cellEntryId = key;
+            break;
+          }
+        }
+      }
+    }
+    return { upstreamCsvTableName: csvTable, upstreamSqlNodeId: sqlId, notebookCellEntryId: cellEntryId };
+  }, [plotNodeId, plotEdges, plotNodes, plotExecutionEntries]);
+
   const { data: fullCsvData } = useFullCsvDataForPlot(upstreamCsvTableName);
   const { data: fullSqlData } = useFullSqlDataForPlot(upstreamSqlNodeId);
-  // For config panel mirror chart behavior: CSV/SQL → full data or snapshot; иначе → snapshot/preview.
-  // Include plotData (from executionStore with normalized column names) as fallback so that
-  // field mapping is shown even when fullCsvData / fullSqlData are not yet available.
-  const plotDataForConfig = upstreamCsvTableName
-    ? (fullCsvData ?? plotData ?? plotSnapshot)
-    : upstreamSqlNodeId
-      ? (fullSqlData ?? plotData ?? plotSnapshot)
-      : (plotSnapshot ?? plotData);
+
+  // Notebook cell data from executionEntries
+  const notebookCellData = useMemo(() => {
+    if (!notebookCellEntryId) return undefined;
+    const entry = plotExecutionEntries[notebookCellEntryId];
+    if (!entry?.output) return undefined;
+    if (entry.output.kind === 'python' && entry.output.result?.table) return entry.output.result.table;
+    return undefined;
+  }, [notebookCellEntryId, plotExecutionEntries]);
+
+  // Check if any notebook cell has produced table output (for priority cascade)
+  const hasNotebookCellOutput = useMemo(() => {
+    if (!plotNodeId) return false;
+    const edge = plotEdges.find((e) => e.targetId === plotNodeId);
+    if (!edge) return false;
+    const prefix = `${edge.sourceId}__`;
+    return Object.keys(plotExecutionEntries).some((k) => {
+      if (!k.startsWith(prefix)) return false;
+      const entry = plotExecutionEntries[k];
+      return entry?.output?.kind === 'python' && !!entry.output.result?.table;
+    });
+  }, [plotNodeId, plotEdges, plotExecutionEntries]);
+
+  // Persisted data snapshot from Yjs payload (survives page refresh)
+  const payloadSnapshot = useMemo(() => {
+    if (!plotNodeId) return undefined;
+    const node = plotNodes.find((n) => n.id === plotNodeId);
+    const snap = (node?.payload as any)?._dataSnapshot;
+    if (snap && snap.columns && snap.rows) return snap as SqlResult;
+    return undefined;
+  }, [plotNodeId, plotNodes]);
+
+  // Mirror PlotNode's full priority cascade for config panel data
+  const plotDataForConfig = notebookCellEntryId
+    ? (notebookCellData ?? plotSnapshot ?? payloadSnapshot)
+    : ((hasNotebookCellOutput ? plotData : undefined) ??
+      (upstreamCsvTableName ? fullCsvData : undefined) ??
+      (upstreamSqlNodeId ? fullSqlData : undefined) ??
+      plotData ??
+      plotSnapshot ??
+      payloadSnapshot);
 
   // Handle plot node configuration
   if (props.kind === 'plot') {

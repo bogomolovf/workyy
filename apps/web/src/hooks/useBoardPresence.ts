@@ -6,10 +6,13 @@ import type { PresenceUser } from '../components/UserPresenceIndicator';
 /**
  * Hook to observe users present on the board from Yjs cursorsMap.
  * Can be used outside of ReactFlowProvider (unlike useCursorStateSynced).
+ *
+ * Accepts YMapType<unknown> for compatibility with ydoc.getMap() which returns
+ * untyped maps. Values are cast to Cursor at read time.
  */
 export function useBoardPresence(
-  cursorsMap: YMapType<Cursor> | null,
-  currentClientId?: string
+  cursorsMap: YMapType<unknown> | null,
+  currentClientId?: string,
 ): PresenceUser[] {
   const [users, setUsers] = useState<PresenceUser[]>([]);
 
@@ -22,7 +25,8 @@ export function useBoardPresence(
 
       // One entry per user: keep the cursor with latest timestamp (new color when reconnected)
       const latestByUser = new Map<string, { cursor: Cursor; timestamp: number }>();
-      for (const cursor of cursorsMap.values()) {
+      for (const raw of cursorsMap.values()) {
+        const cursor = raw as Cursor;
         if (now - cursor.timestamp > STALE_THRESHOLD) continue;
         const uniqueKey = cursor.userId ?? cursor.userName ?? cursor.id;
         const existing = latestByUser.get(uniqueKey);
@@ -37,7 +41,14 @@ export function useBoardPresence(
         color: cursor.color,
       }));
 
-      setUsers(activeUsers);
+      // Only update state if the user list actually changed (prevents render loops)
+      setUsers((prev) => {
+        if (prev.length !== activeUsers.length) return activeUsers;
+        const changed = activeUsers.some(
+          (u, i) => u.id !== prev[i]?.id || u.name !== prev[i]?.name,
+        );
+        return changed ? activeUsers : prev;
+      });
     };
 
     // Initial update

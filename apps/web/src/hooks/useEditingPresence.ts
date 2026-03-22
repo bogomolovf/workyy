@@ -27,7 +27,7 @@ const EDITING_TIMEOUT = 5000; // Consider user stopped editing after 5s of no up
 export function useEditingPresence(
   editingMap: YMapType<EditingMapValue> | undefined,
   clientId: string | undefined,
-  userInfo?: { userId?: string; userName?: string; color?: string }
+  userInfo?: { userId?: string; userName?: string; color?: string },
 ) {
   const [editingUsers, setEditingUsers] = useState<Map<string, EditingUser[]>>(new Map());
   const updateTimeoutRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -38,7 +38,7 @@ export function useEditingPresence(
       const editors = editingUsers.get(nodeId) || [];
       return editors.filter((e) => e.clientId !== clientId);
     },
-    [editingUsers, clientId]
+    [editingUsers, clientId],
   );
 
   // Mark that current user started editing a node
@@ -66,7 +66,7 @@ export function useEditingPresence(
         updateTimeoutRef.current.delete(nodeId);
       }
     },
-    [editingMap, clientId, userInfo]
+    [editingMap, clientId, userInfo],
   );
 
   // Update editing timestamp (call this on every keystroke/change)
@@ -87,7 +87,7 @@ export function useEditingPresence(
         startEditing(nodeId);
       }
     },
-    [editingMap, clientId, startEditing]
+    [editingMap, clientId, startEditing],
   );
 
   // Mark that current user stopped editing a node
@@ -107,7 +107,7 @@ export function useEditingPresence(
         updateTimeoutRef.current.delete(nodeId);
       }
     },
-    [editingMap, clientId]
+    [editingMap, clientId],
   );
 
   // Stop editing all nodes (call on unmount or disconnect)
@@ -198,20 +198,16 @@ export function useNodeEditingIndicator(
   editingMap: YMapType<EditingMapValue> | undefined,
   clientId: string | undefined,
   nodeId: string,
-  userInfo?: { userId?: string; userName?: string; color?: string }
+  userInfo?: { userId?: string; userName?: string; color?: string },
 ) {
-  const {
-    getEditorsForNode,
-    startEditing,
-    updateEditing,
-    stopEditing,
-  } = useEditingPresence(editingMap, clientId, userInfo);
+  const { getEditorsForNode, startEditing, updateEditing, stopEditing } = useEditingPresence(
+    editingMap,
+    clientId,
+    userInfo,
+  );
 
   // Get other users editing this node
-  const otherEditors = useMemo(
-    () => getEditorsForNode(nodeId),
-    [getEditorsForNode, nodeId]
-  );
+  const otherEditors = useMemo(() => getEditorsForNode(nodeId), [getEditorsForNode, nodeId]);
 
   // Callbacks bound to this node
   const onFocus = useCallback(() => {

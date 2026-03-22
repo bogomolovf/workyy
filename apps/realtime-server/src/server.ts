@@ -1,8 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { createServiceRouter } from './routes';
 import { setupCollaborationWS } from './services/collaborationService';
+import { setupYjsPersistence } from './services/yjsPersistence';
 
 export async function createServer(app: FastifyInstance) {
+  // Configure Yjs persistence BEFORE any WebSocket connections are accepted
+  setupYjsPersistence();
+
   app.register(createServiceRouter, { prefix: '/api' });
 
   app.get('/', async (_request, reply) => {

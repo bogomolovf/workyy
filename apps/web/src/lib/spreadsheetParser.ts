@@ -123,12 +123,10 @@ async function parseCSV(file: File, encoding?: string): Promise<SpreadsheetParse
           }
 
           // Convert rows to SqlResult format
-          const rows: Array<Array<string | number | null>> = results.data.map(
-            (row: unknown) => {
-              const typedRow = row as Record<string, unknown>;
-              return columns.map((col) => normalizeValue(typedRow[col]));
-            },
-          );
+          const rows: Array<Array<string | number | null>> = results.data.map((row: unknown) => {
+            const typedRow = row as Record<string, unknown>;
+            return columns.map((col) => normalizeValue(typedRow[col]));
+          });
 
           const sqlResult: SqlResult = {
             columns,
@@ -146,8 +144,7 @@ async function parseCSV(file: File, encoding?: string): Promise<SpreadsheetParse
         } catch (err) {
           resolve({
             success: false,
-            error:
-              err instanceof Error ? err.message : 'Unknown error parsing CSV',
+            error: err instanceof Error ? err.message : 'Unknown error parsing CSV',
           });
         }
       },
@@ -195,12 +192,9 @@ async function parseExcel(file: File): Promise<SpreadsheetParseResult> {
         const worksheet = workbook.Sheets[firstSheetName];
 
         // Convert to JSON with headers
-        const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-          worksheet,
-          {
-            defval: null, // Default value for empty cells
-          },
-        );
+        const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
+          defval: null, // Default value for empty cells
+        });
 
         if (jsonData.length === 0) {
           resolve({
@@ -222,11 +216,9 @@ async function parseExcel(file: File): Promise<SpreadsheetParseResult> {
         }
 
         // Convert rows to SqlResult format
-        const rows: Array<Array<string | number | null>> = jsonData.map(
-          (row) => {
-            return columns.map((col) => normalizeValue(row[col]));
-          },
-        );
+        const rows: Array<Array<string | number | null>> = jsonData.map((row) => {
+          return columns.map((col) => normalizeValue(row[col]));
+        });
 
         const sqlResult: SqlResult = {
           columns,
@@ -244,8 +236,7 @@ async function parseExcel(file: File): Promise<SpreadsheetParseResult> {
       } catch (err) {
         resolve({
           success: false,
-          error:
-            err instanceof Error ? err.message : 'Unknown error parsing Excel',
+          error: err instanceof Error ? err.message : 'Unknown error parsing Excel',
         });
       }
     };
@@ -264,9 +255,7 @@ async function parseExcel(file: File): Promise<SpreadsheetParseResult> {
 /**
  * Detect file type based on extension
  */
-function getFileType(
-  filename: string,
-): 'csv' | 'excel' | 'unsupported' {
+function getFileType(filename: string): 'csv' | 'excel' | 'unsupported' {
   const ext = filename.toLowerCase().split('.').pop();
 
   switch (ext) {
@@ -292,9 +281,7 @@ const REPLACEMENT_THRESHOLD = 3;
  */
 function countReplacementsInResult(data: SqlResult): number {
   const headerText = data.columns.join('');
-  const firstRowText = (data.rows[0] ?? [])
-    .map((v) => (v != null ? String(v) : ''))
-    .join('');
+  const firstRowText = (data.rows[0] ?? []).map((v) => (v != null ? String(v) : '')).join('');
   return countReplacementChars(headerText) + countReplacementChars(firstRowText);
 }
 

@@ -13,9 +13,11 @@ const RETRY_DELAY_MS = 500;
  * Uses cache to avoid redundant fetches and prevent UI glitches with large data.
  * Returns full table data for building visualizations (no row limit).
  */
-export function useFullCsvDataForPlot(
-  tableName: string | undefined,
-): { data: SqlResult | undefined; loading: boolean; error: string | null } {
+export function useFullCsvDataForPlot(tableName: string | undefined): {
+  data: SqlResult | undefined;
+  loading: boolean;
+  error: string | null;
+} {
   const [data, setData] = useState<SqlResult | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

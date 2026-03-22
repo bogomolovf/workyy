@@ -13,4 +13,3 @@ export function usePlotSnapshot(plotNodeId: string): SqlResult | undefined {
     return entry.output.result.inputData;
   });
 }
-

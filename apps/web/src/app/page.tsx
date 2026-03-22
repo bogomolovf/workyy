@@ -1,6 +1,15 @@
 'use client';
 
-import { CaretRight, DotsThree, List, MagnifyingGlass, SquaresFour, Star, Users, X } from '@phosphor-icons/react';
+import {
+  CaretRight,
+  DotsThree,
+  List,
+  MagnifyingGlass,
+  SquaresFour,
+  Star,
+  Users,
+  X,
+} from '@phosphor-icons/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';

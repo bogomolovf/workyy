@@ -9,20 +9,22 @@ type VoiceData = {
   audioData: string | null; // Base64 encoded audio
   duration: number; // Duration in seconds
   mimeType: string; // 'audio/webm' or 'audio/mp4'
-  recordedBy?: { // Who recorded this message
+  recordedBy?: {
+    // Who recorded this message
     id: string;
     name: string;
   };
   recordedAt?: number; // Timestamp when recorded
-  currentUser?: { // Current user info for new recordings
+  currentUser?: {
+    // Current user info for new recordings
     id: string;
     name: string;
   };
   onChangeAudio?: (
     id: string,
-    data: { 
-      audioData: string; 
-      duration: number; 
+    data: {
+      audioData: string;
+      duration: number;
       mimeType: string;
       recordedBy?: { id: string; name: string };
       recordedAt?: number;
@@ -124,14 +126,14 @@ function PauseIcon({ className }: { className?: string }) {
 }
 
 export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
-  const { 
-    audioData, 
-    duration: savedDuration, 
-    mimeType: savedMimeType, 
+  const {
+    audioData,
+    duration: savedDuration,
+    mimeType: savedMimeType,
     recordedBy,
     recordedAt,
     currentUser,
-    onChangeAudio 
+    onChangeAudio,
   } = data;
 
   // Recording state
@@ -169,7 +171,7 @@ export function VoiceNode({ id, data, selected }: NodeProps<VoiceData>) {
 
     // Initialize WaveSurfer
     let wavesurfer: WaveSurfer | null = null;
-    
+
     try {
       wavesurfer = WaveSurfer.create({
         container: waveformRef.current,

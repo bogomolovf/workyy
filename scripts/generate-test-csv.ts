@@ -96,7 +96,8 @@ function generateCSV(rowCount: number, outputPath: string): void {
 // Main
 const args = process.argv.slice(2);
 const rowCount = parseInt(args[0] || '10000', 10);
-const outputFile = args[1] || `test-${rowCount >= 1000000 ? `${rowCount / 1000000}m` : `${rowCount / 1000}k`}.csv`;
+const outputFile =
+  args[1] || `test-${rowCount >= 1000000 ? `${rowCount / 1000000}m` : `${rowCount / 1000}k`}.csv`;
 const outputPath = path.join(process.cwd(), outputFile);
 
 if (isNaN(rowCount) || rowCount < 1) {

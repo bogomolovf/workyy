@@ -25,7 +25,7 @@
 }
 
 /* Dark theme: softer dots on hero */
-:root[data-theme="dark"] .wy-dotgrid {
+:root[data-theme='dark'] .wy-dotgrid {
   background-image: radial-gradient(
     circle at center,
     rgba(255, 255, 255, 0.08) 1px,
@@ -51,14 +51,22 @@
 }
 
 .wy-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 1rem;
   font-weight: 400;
   line-height: 1.6;
 }
 
 .wy-body-medium {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 1rem;
   font-weight: 450;
   line-height: 1.6;
@@ -81,7 +89,7 @@
     border-color 0.2s ease;
 }
 
-:root[data-theme="dark"] .wy-card {
+:root[data-theme='dark'] .wy-card {
   background: var(--surface);
 }
 

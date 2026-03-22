@@ -4,7 +4,7 @@
  */
 
 :root,
-:root[data-theme="light"] {
+:root[data-theme='light'] {
   --bg: #0b1026;
   --page: #ffffff;
   --surface: rgba(255, 255, 255, 0.1);
@@ -44,7 +44,7 @@
   --ring: 0 0 0 4px rgba(84, 213, 250, 0.25);
 }
 
-:root[data-theme="dark"] {
+:root[data-theme='dark'] {
   --page: #050814;
   --surface: rgba(255, 255, 255, 0.06);
   --surface-solid: rgba(255, 255, 255, 0.08);

@@ -74,7 +74,10 @@
 }
 
 /* Hide cursor on ReactFlow children in non-hand modes, but exclude Controls, MiniMap, and resize handles */
-.rf-cursor-hidden *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(.react-flow__minimap *):not(.react-flow__resize-control):not(.react-flow__resize-control *) {
+.rf-cursor-hidden
+  *:not(.react-flow__controls):not(.react-flow__controls *):not(.react-flow__minimap):not(
+    .react-flow__minimap *
+  ):not(.react-flow__resize-control):not(.react-flow__resize-control *) {
   cursor: none !important;
 }
 
@@ -104,16 +107,18 @@
   outline: none !important;
 }
 
-/* Remove selection box background (marquee selection rectangle) - only border */
+/* Marquee selection rectangle - blue transparent overlay (Miro/Figma style) */
 .react-flow__selection {
-  border: 1px dashed rgba(100, 116, 139, 0.4) !important;
-  background: transparent !important;
+  background: rgba(0, 89, 220, 0.08) !important;
+  border: 1px solid rgba(0, 89, 220, 0.6) !important;
+  border-radius: 2px !important;
 }
 
-/* Also hide the selection box completely if needed */
+/* Multi-selected nodes group rectangle */
 .react-flow__nodesselection-rect {
-  background: transparent !important;
-  border: none !important;
+  background: rgba(0, 89, 220, 0.04) !important;
+  border: 1px solid rgba(0, 89, 220, 0.4) !important;
+  border-radius: 2px !important;
 }
 
 /* Prevent text selection during drag operations on canvas */
@@ -129,8 +134,8 @@
 /* Allow text selection only when editing (focused inputs/textareas/contenteditable) */
 .react-flow__node input:focus,
 .react-flow__node textarea:focus,
-.react-flow__node [contenteditable="true"]:focus,
-.react-flow__node [contenteditable="true"].ProseMirror-focused,
+.react-flow__node [contenteditable='true']:focus,
+.react-flow__node [contenteditable='true'].ProseMirror-focused,
 .react-flow__node .ProseMirror-focused,
 .react-flow__node .ProseMirror-focused * {
   user-select: text !important;
@@ -139,7 +144,200 @@
   -ms-user-select: text !important;
 }
 
+/* ─── Smooth collaborative edge sync ──────────────────────────────── */
+/* MUST match the node transition in canvas.css (80ms linear) so that
+   edges and nodes move in perfect lockstep during remote drags.
+   CSS `d` property transition is supported in Chrome 87+, Firefox 97+,
+   Safari 17.2+. Older browsers gracefully fall back to instant updates. */
+.react-flow__edge-path {
+  transition: d 80ms linear;
+}
+
+/* When a node is being dragged locally, its transform has transition: none
+   (instant movement). Edges must also skip their transition so they don't
+   lag 80ms behind the instantly-moving node. :has() — Chrome 105+, FF 121+. */
+.react-flow:has(.react-flow__node.dragging) .react-flow__edge-path {
+  transition: none !important;
+}
+
 /* Remove selected edge highlight if needed */
 .react-flow__edge.selected .react-flow__edge-path {
   stroke-width: inherit !important;
+}
+
+/* ─── Notebook cell output text wrapping ─────────────────────────── */
+/* ReactFlow nodes use overflow:visible for handles, which prevents
+   pre/code blocks from respecting container width for word-wrap.
+   Force all pre elements inside nodes to break long lines.          */
+.react-flow__node pre {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-width: 100%;
+}
+
+/* Constrain notebook node content width so text wraps properly
+   even though the node root uses overflow:visible for handles.     */
+.notebook-node-content {
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ─── Markdown cell rendered content ─────────────────────────────── */
+/* Explicit styles for rendered markdown inside notebook cells.
+   Tailwind preflight resets all heading/list/blockquote styles,
+   so we restore them here with enough specificity.                  */
+.markdown-rendered h1 {
+  font-size: 1.75em;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0.6em 0 0.4em;
+}
+.markdown-rendered h2 {
+  font-size: 1.4em;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0.5em 0 0.35em;
+}
+.markdown-rendered h3 {
+  font-size: 1.2em;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.45em 0 0.3em;
+}
+.markdown-rendered h4 {
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.4em 0 0.25em;
+}
+.markdown-rendered h5 {
+  font-size: 0.95em;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.35em 0 0.2em;
+}
+.markdown-rendered h6 {
+  font-size: 0.85em;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.3em 0 0.15em;
+  color: #6b7280;
+}
+
+.markdown-rendered p {
+  margin: 0.4em 0;
+}
+
+.markdown-rendered strong {
+  font-weight: 700;
+}
+
+.markdown-rendered em {
+  font-style: italic;
+}
+
+.markdown-rendered del {
+  text-decoration: line-through;
+}
+
+.markdown-rendered a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+.markdown-rendered a:hover {
+  color: #1d4ed8;
+}
+
+.markdown-rendered ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin: 0.4em 0;
+}
+.markdown-rendered ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin: 0.4em 0;
+}
+.markdown-rendered li {
+  margin: 0.15em 0;
+}
+.markdown-rendered li > ul,
+.markdown-rendered li > ol {
+  margin: 0.1em 0;
+}
+
+.markdown-rendered blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 0.75em;
+  margin: 0.5em 0;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.markdown-rendered code {
+  background-color: #f3f4f6;
+  border-radius: 3px;
+  padding: 0.15em 0.35em;
+  font-size: 0.88em;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.markdown-rendered pre {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 0.75em 1em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  font-size: 0.88em;
+}
+.markdown-rendered pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: inherit;
+}
+
+.markdown-rendered hr {
+  border: none;
+  border-top: 1px solid #d1d5db;
+  margin: 0.75em 0;
+}
+
+.markdown-rendered table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+}
+.markdown-rendered th,
+.markdown-rendered td {
+  border: 1px solid #d1d5db;
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+.markdown-rendered th {
+  background-color: #f9fafb;
+  font-weight: 600;
+}
+
+.markdown-rendered img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+/* First/last child margin cleanup */
+.markdown-rendered > :first-child {
+  margin-top: 0;
+}
+.markdown-rendered > :last-child {
+  margin-bottom: 0;
+}
+
+/* Task lists (- [ ] / - [x]) */
+.markdown-rendered input[type='checkbox'] {
+  margin-right: 0.4em;
+  vertical-align: middle;
 }

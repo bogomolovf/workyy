@@ -2,7 +2,15 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { memo, useCallback, useDeferredValue, useMemo, useRef, useState, useTransition } from 'react';
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import type { SqlResult } from '../state/executionStore';
 
 // Constants for virtualization
@@ -22,12 +30,12 @@ const CellValue = memo(function CellValue({ value }: { value: string | number | 
 });
 
 // Optimized header cell with sorting
-const HeaderCell = memo(function HeaderCell({ 
-  column, 
-  sortColumn, 
+const HeaderCell = memo(function HeaderCell({
+  column,
+  sortColumn,
   sortDirection,
-  onSort 
-}: { 
+  onSort,
+}: {
   column: string;
   sortColumn: string | null;
   sortDirection: 'asc' | 'desc' | null;
@@ -68,74 +76,77 @@ function InteractiveResultTableInner({
 }: InteractiveResultTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [isPending, startTransition] = useTransition();
-  
+
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | null>(null);
-  
+
   // Use deferred value for heavy computations - allows UI to remain responsive
   const deferredRows = useDeferredValue(result.rows);
   const deferredColumns = useDeferredValue(result.columns);
-  
+
   // Memoize column count for grid template
   const columnCount = deferredColumns.length;
   const gridTemplateColumns = useMemo(
     () => `repeat(${columnCount}, minmax(${COLUMN_MIN_WIDTH}px, 1fr))`,
-    [columnCount]
+    [columnCount],
   );
-  
+
   // Optimized sorting - only sort when needed, use native sort for speed
   const sortedRowIndices = useMemo(() => {
     const indices = Array.from({ length: deferredRows.length }, (_, i) => i);
-    
+
     if (!sortColumn || !sortDirection) {
       return indices;
     }
-    
+
     const colIndex = deferredColumns.indexOf(sortColumn);
     if (colIndex === -1) return indices;
-    
+
     // Sort indices based on values - avoids creating new row objects
     indices.sort((a, b) => {
       const valA = deferredRows[a][colIndex];
       const valB = deferredRows[b][colIndex];
-      
+
       // Handle nulls
       if (valA === null && valB === null) return 0;
       if (valA === null) return sortDirection === 'asc' ? -1 : 1;
       if (valB === null) return sortDirection === 'asc' ? 1 : -1;
-      
+
       // Compare values
       if (typeof valA === 'number' && typeof valB === 'number') {
         return sortDirection === 'asc' ? valA - valB : valB - valA;
       }
-      
+
       const strA = String(valA);
       const strB = String(valB);
       const cmp = strA.localeCompare(strB);
       return sortDirection === 'asc' ? cmp : -cmp;
     });
-    
+
     return indices;
   }, [deferredRows, deferredColumns, sortColumn, sortDirection]);
-  
+
   // Handle sort click with transition for smooth UI
-  const handleSort = useCallback((column: string) => {
-    startTransition(() => {
-      if (sortColumn === column) {
-        if (sortDirection === 'asc') {
-          setSortDirection('desc');
-        } else if (sortDirection === 'desc') {
-          setSortColumn(null);
-          setSortDirection(null);
+  const handleSort = useCallback(
+    (column: string) => {
+      startTransition(() => {
+        if (sortColumn === column) {
+          if (sortDirection === 'asc') {
+            setSortDirection('desc');
+          } else if (sortDirection === 'desc') {
+            setSortColumn(null);
+            setSortDirection(null);
+          }
+        } else {
+          setSortColumn(column);
+          setSortDirection('asc');
         }
-      } else {
-        setSortColumn(column);
-        setSortDirection('asc');
-      }
-    });
-  }, [sortColumn, sortDirection]);
-  
+      });
+    },
+    [sortColumn, sortDirection],
+  );
+
   // Virtualizer setup
   const rowVirtualizer = useVirtualizer({
     count: sortedRowIndices.length,
@@ -143,26 +154,24 @@ function InteractiveResultTableInner({
     estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN_COUNT,
   });
-  
+
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
-  
+
   // Container height - use maxHeight if provided, otherwise use default based on compact
   const containerHeight = maxHeight ?? (compact ? 224 : 320);
-  
+
   // Format large numbers
   const formatCount = useCallback((count: number) => {
     if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
     if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
     return count.toString();
   }, []);
-  
+
   const rowCount = deferredRows.length;
   const displayTotal = totalCount ?? rowCount;
 
-  const heightStyle = maxHeight
-    ? { maxHeight: `${maxHeight}px` }
-    : undefined;
+  const heightStyle = maxHeight ? { maxHeight: `${maxHeight}px` } : undefined;
 
   return (
     <div className="flex flex-col gap-2">
@@ -180,9 +189,7 @@ function InteractiveResultTableInner({
             ) : (
               <>{formatCount(rowCount)} rows</>
             )}
-            {isPending && (
-              <span className="text-slate-400">(sorting...)</span>
-            )}
+            {isPending && <span className="text-slate-400">(sorting...)</span>}
           </span>
           {isPreview && onLoadAll && (
             <button
@@ -200,14 +207,14 @@ function InteractiveResultTableInner({
       <div
         ref={parentRef}
         className="overflow-auto rounded-lg border border-slate-200 bg-white"
-        style={{ 
+        style={{
           maxHeight: containerHeight,
         }}
       >
         {/* Header - sticky */}
         <div
           className="grid bg-slate-50 sticky top-0 z-10 border-b border-slate-200"
-          style={{ 
+          style={{
             gridTemplateColumns,
             willChange: 'transform', // GPU hint
           }}
@@ -235,10 +242,10 @@ function InteractiveResultTableInner({
             const rowIndex = sortedRowIndices[virtualRow.index];
             const row = deferredRows[rowIndex];
             const isEven = virtualRow.index % 2 === 0;
-            
+
             // Guard against undefined row (can happen with deferred values)
             if (!row) return null;
-            
+
             return (
               <div
                 key={virtualRow.index}
@@ -270,9 +277,7 @@ function InteractiveResultTableInner({
 
         {/* Empty state */}
         {rowCount === 0 && (
-          <div className="px-3 py-6 text-center text-sm text-slate-500">
-            No rows returned.
-          </div>
+          <div className="px-3 py-6 text-center text-sm text-slate-500">No rows returned.</div>
         )}
       </div>
     </div>

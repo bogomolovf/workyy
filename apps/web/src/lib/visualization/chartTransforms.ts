@@ -155,8 +155,7 @@ export function downsampleLTTBIndices(
       const currY = getY(j);
       const area =
         Math.abs(
-          (prevIndex - nextBucketAvgIndex) * (currY - prevY) -
-            (prevIndex - j) * (nextAvgY - prevY),
+          (prevIndex - nextBucketAvgIndex) * (currY - prevY) - (prevIndex - j) * (nextAvgY - prevY),
         ) * 0.5;
       if (area > maxArea) {
         maxArea = area;

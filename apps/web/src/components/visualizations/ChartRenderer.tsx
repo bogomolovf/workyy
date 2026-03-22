@@ -129,6 +129,8 @@ export function ChartRenderer({
       width={width}
       height={height}
       theme={theme || config.styling.theme || 'light'}
+      echartsTheme={config.styling.echartsTheme}
+      chartType={config.chartType}
       refreshToken={refreshToken}
       onError={onError}
       onInstance={onEChartsInstance}

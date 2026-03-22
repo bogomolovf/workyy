@@ -109,6 +109,44 @@ export function useCursorStateSynced(
     hasInitializedRef.current = true;
   }, [clientId, cursorsMap, userInfo]);
 
+  // Presence heartbeat: refresh cursor timestamp periodically so other clients
+  // keep seeing this user in the presence indicator even when the mouse is idle.
+  // IMPORTANT: Only write when the existing entry is about to go stale (within
+  // 1.5s of the STALE_DISPLAY threshold). This avoids flooding the Yjs WebSocket
+  // with unnecessary updates that would delay node-position sync.
+  const colorForSyncRef = useRef(colorForSync);
+  colorForSyncRef.current = colorForSync;
+  const userInfoRef = useRef(userInfo);
+  userInfoRef.current = userInfo;
+
+  useEffect(() => {
+    const writeHeartbeat = () => {
+      const existing = cursorsMap.get(clientId) as Cursor | undefined;
+      const now = Date.now();
+      // Only write if entry doesn't exist yet or is about to go stale (>3.5s old)
+      if (existing && now - existing.timestamp < 3500) return; // still fresh — skip
+      const entry: Cursor = {
+        id: clientId,
+        color: existing?.color ?? colorForSyncRef.current,
+        x: existing?.x ?? 0,
+        y: existing?.y ?? 0,
+        timestamp: now,
+      };
+      if (userInfoRef.current?.userId) entry.userId = userInfoRef.current.userId;
+      if (userInfoRef.current?.userName) entry.userName = userInfoRef.current.userName;
+      cursorsMap.set(clientId, entry);
+    };
+
+    writeHeartbeat();
+    // Check every 2 seconds, but only actually write when entry is about to expire
+    const heartbeatInterval = setInterval(writeHeartbeat, 2000);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      cursorsMap.delete(clientId);
+    };
+  }, [clientId, cursorsMap]); // Only re-run when identity or map changes
+
   // Flush any cursors that have gone stale.
   const flush = useCallback(() => {
     const now = Date.now();
@@ -158,43 +196,13 @@ export function useCursorStateSynced(
     [screenToFlowPosition, cursorsMap, clientId, colorForSync, userInfo],
   );
 
-  // Remove own cursor when pointer leaves the board — prevents cursor stuck at edge
+  // When pointer leaves the canvas (e.g. moves to header/toolbar), keep the
+  // cursor at its last known position — like Figma/Miro. The heartbeat will
+  // keep refreshing the timestamp so the user stays in the presence indicator.
+  // We intentionally do NOT hide or remove the cursor entry.
   const onPointerLeave = useCallback(() => {
-    cursorsMap.delete(clientId);
-  }, [cursorsMap, clientId]);
-
-  // Document-level check: when pointer moves outside board container, remove cursor
-  // More reliable than pointerleave when moving to header, sidebar, another tab, or out of window
-  const boardRef = options?.boardContainerRef;
-  useEffect(() => {
-    if (!boardRef) return;
-    const onPointerMove = (e: PointerEvent) => {
-      const el = boardRef.current;
-      if (!el) return;
-      if (!cursorsMap.has(clientId)) return;
-      const target = e.target as Node | null;
-      if (target && el.contains(target)) return;
-      cursorsMap.delete(clientId);
-    };
-    const onDocumentPointerLeave = () => {
-      cursorsMap.delete(clientId);
-    };
-    document.addEventListener('pointermove', onPointerMove, { passive: true });
-    document.addEventListener('pointerleave', onDocumentPointerLeave);
-    return () => {
-      document.removeEventListener('pointermove', onPointerMove);
-      document.removeEventListener('pointerleave', onDocumentPointerLeave);
-    };
-  }, [boardRef, cursorsMap, clientId]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (cursorsMap.has(clientId)) {
-        cursorsMap.delete(clientId);
-      }
-    };
-  }, [cursorsMap, clientId]);
+    // No-op: cursor stays at last position, heartbeat keeps it alive
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(flush, MAX_IDLE_TIME);

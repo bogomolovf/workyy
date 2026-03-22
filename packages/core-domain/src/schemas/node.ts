@@ -5,50 +5,53 @@ export const PositionSchema = z.object({
   y: z.number(),
 });
 
+/** All node types supported by the board */
 export const NodeTypeSchema = z.enum([
   'sql',
   'python',
   'table',
   'plot',
+  'note',
+  'text',
+  'shape',
+  'image',
+  'video',
+  'document',
+  'draw',
+  'pen',
+  'database',
+  'csv',
+  'voice',
+  'notebook',
+  // Notebook sub-types (internal)
   'pythonCell',
   'markdownCell',
   'sqlCell',
   'notebookFrame',
 ]);
 
-export const NodePayloadSchema = z.union([
-  z.object({
-    sql: z.string(),
-    lastRunId: z.string().uuid().nullable(),
-  }),
-  z.object({
-    python: z.string(),
-    requirements: z.array(z.string()).max(20),
-  }),
-  z.object({
-    tableConfig: z.record(z.unknown()),
-  }),
-  z.object({
-    plotConfig: z.record(z.unknown()),
-  }),
-  z.object({
-    cellSource: z.string(),
-    cellLanguage: z.enum(['python', 'sql', 'markdown']),
-    frameId: z.string().uuid().optional(),
-    cellIndex: z.number().int().nonneg().optional(),
-  }),
-  z.object({
-    frameName: z.string(),
-    cellIds: z.array(z.string().uuid()),
-  }),
-]);
+export const NodePayloadSchema = z
+  .object({
+    sql: z.string().max(100_000).optional(),
+    python: z.string().max(100_000).optional(),
+    label: z.string().optional(),
+    ui: z
+      .object({
+        width: z.number().optional(),
+        height: z.number().optional(),
+      })
+      .partial()
+      .optional(),
+  })
+  .passthrough()
+  .optional();
 
 export const NodeSchema = z.object({
   id: z.string().uuid(),
   boardId: z.string().uuid(),
   type: NodeTypeSchema,
   position: PositionSchema,
-  payload: NodePayloadSchema.optional(),
+  payload: NodePayloadSchema,
 });
 
 export type Position = z.infer<typeof PositionSchema>;

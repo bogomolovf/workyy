@@ -50,6 +50,7 @@ export default [
       'no-unused-vars': 'off',
       'no-undef': 'off', // TypeScript handles this
       'no-empty': 'warn', // Downgrade to warning
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
       'import/order': [
         'warn',
         {

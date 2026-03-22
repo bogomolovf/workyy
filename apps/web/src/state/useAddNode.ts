@@ -180,6 +180,8 @@ export function useAddNode() {
       opacity?: number;
       cornerRadius?: number;
       arrowHead?: boolean;
+      startX?: number;
+      startY?: number;
       endX?: number;
       endY?: number;
     },
@@ -200,6 +202,8 @@ export function useAddNode() {
         opacity: payload?.opacity ?? SHAPE_DEFAULTS.opacity,
         cornerRadius: payload?.cornerRadius ?? SHAPE_DEFAULTS.cornerRadius,
         arrowHead: payload?.arrowHead,
+        startX: payload?.startX,
+        startY: payload?.startY,
         endX: payload?.endX,
         endY: payload?.endY,
         width: nodeWidth,

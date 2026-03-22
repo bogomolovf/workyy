@@ -181,6 +181,8 @@ export interface NormalizedRect {
 }
 
 export interface NormalizedLine extends NormalizedRect {
+  startX: number;
+  startY: number;
   endX: number;
   endY: number;
 }
@@ -233,7 +235,7 @@ export function normalizeDragRect(
 /**
  * Normalise a line/arrow drag gesture.
  * Shift snaps angle to nearest 45 degrees.
- * Returns bounding-box position/size plus relative endX/endY.
+ * Returns bounding-box position/size plus bbox-relative start/end coordinates.
  */
 export function normalizeDragLine(
   start: Point,
@@ -258,13 +260,16 @@ export function normalizeDragLine(
   const w = Math.abs(x2 - start.x);
   const h = Math.abs(y2 - start.y);
 
+  // Coordinates relative to the bounding box origin
   return {
     x: bboxX,
     y: bboxY,
     width: Math.max(w, SHAPE_DEFAULTS.minLineSize),
     height: Math.max(h, SHAPE_DEFAULTS.minLineSize),
-    endX: x2 - start.x,
-    endY: y2 - start.y,
+    startX: start.x - bboxX,
+    startY: start.y - bboxY,
+    endX: x2 - bboxX,
+    endY: y2 - bboxY,
   };
 }
 

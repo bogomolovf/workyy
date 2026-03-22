@@ -25,6 +25,8 @@ type CommentState = {
   error: string | null;
   /** Polling interval handle */
   _pollTimer: ReturnType<typeof setInterval> | null;
+  /** Thread IDs with pending anchor moves — polling must not overwrite their positions */
+  _pendingMoves: Set<string>;
 };
 
 type CommentActions = {
@@ -89,6 +91,7 @@ export const useCommentStore = create<CommentStore>((set, get) => ({
   submitting: false,
   error: null,
   _pollTimer: null,
+  _pendingMoves: new Set(),
 
   // ─── Load all threads for a board ─────────────────────────────────
   loadThreads: async (boardId) => {
@@ -96,7 +99,18 @@ export const useCommentStore = create<CommentStore>((set, get) => ({
     try {
       const threads = await api.fetchThreads(boardId);
       const map: Record<string, ThreadSummary> = {};
-      for (const t of threads) map[t.id] = t;
+      const pending = get()._pendingMoves;
+      for (const t of threads) {
+        // Preserve optimistic anchor position for threads with pending moves
+        if (pending.has(t.id)) {
+          const existing = get().threads[t.id];
+          if (existing) {
+            map[t.id] = { ...t, anchorX: existing.anchorX, anchorY: existing.anchorY };
+            continue;
+          }
+        }
+        map[t.id] = t;
+      }
       set({ threads: map, loading: false });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load comments';
@@ -105,11 +119,23 @@ export const useCommentStore = create<CommentStore>((set, get) => ({
   },
 
   // ─── Polling for background sync ──────────────────────────────────
-  startPolling: (boardId, intervalMs = 15_000) => {
+  startPolling: (boardId, intervalMs = 1_000) => {
     const { _pollTimer } = get();
     if (_pollTimer) clearInterval(_pollTimer);
     const timer = setInterval(() => {
       get().loadThreads(boardId);
+      // Also refresh the active thread so new messages appear in real-time
+      const { activeThreadId } = get();
+      if (activeThreadId) {
+        api.fetchThread(boardId, activeThreadId).then((detail) => {
+          // Only update if this thread is still active
+          if (get().activeThreadId === activeThreadId) {
+            set({ activeThread: detail });
+          }
+        }).catch(() => {
+          // Silently ignore - will retry on next poll
+        });
+      }
     }, intervalMs);
     set({ _pollTimer: timer });
   },
@@ -397,6 +423,8 @@ export const useCommentStore = create<CommentStore>((set, get) => ({
   // ─── Move thread anchor (optimistic) ────────────────────────────
   moveThreadAnchor: async (boardId, threadId, anchorX, anchorY) => {
     const prev = get().threads[threadId];
+    // Mark thread as having a pending move so polling won't overwrite its position
+    get()._pendingMoves.add(threadId);
     // Optimistic: update local position immediately
     set((s) => ({
       threads: s.threads[threadId]
@@ -421,6 +449,10 @@ export const useCommentStore = create<CommentStore>((set, get) => ({
               : s.activeThread,
         }));
       }
+    } finally {
+      // Clear pending flag — by now the server has the new position,
+      // so subsequent polls will return the correct value
+      get()._pendingMoves.delete(threadId);
     }
   },
 

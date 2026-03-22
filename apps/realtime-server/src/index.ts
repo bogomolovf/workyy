@@ -109,8 +109,9 @@ async function bootstrap() {
   });
 
   await fastify.register(rateLimit, {
-    max: 100,
+    max: 5000,
     timeWindow: '1 minute',
+    keyGenerator: (request: FastifyRequest) => request.ip,
   });
 
   await fastify.register(websocket);

@@ -1,4 +1,4 @@
-import { API_URL } from './api';
+import { apiFetch, API_URL } from './apiClient';
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -68,32 +68,6 @@ export type ThreadDetail = {
   messages: CommentMessageData[];
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────
-
-async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    let detail = `Request failed (${res.status})`;
-    try {
-      const problem = await res.json();
-      detail = problem?.detail ?? problem?.title ?? detail;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(detail);
-  }
-  if (res.status === 204) return undefined as unknown as T;
-  return res.json();
-}
-
 // ─── API functions ────────────────────────────────────────────────────
 
 export async function fetchThreads(boardId: string, resolved?: boolean): Promise<ThreadSummary[]> {
@@ -116,7 +90,7 @@ export async function createThread(
 ): Promise<ThreadDetail> {
   return apiFetch<ThreadDetail>(`${API_URL}/api/boards/${boardId}/threads`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 
@@ -127,7 +101,7 @@ export async function resolveThread(
 ): Promise<{ id: string; resolved: boolean }> {
   return apiFetch(`${API_URL}/api/boards/${boardId}/threads/${threadId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ resolved }),
+    body: { resolved },
   });
 }
 
@@ -139,7 +113,7 @@ export async function moveThreadAnchor(
 ): Promise<{ id: string; anchorX: number; anchorY: number }> {
   return apiFetch(`${API_URL}/api/boards/${boardId}/threads/${threadId}/move`, {
     method: 'PATCH',
-    body: JSON.stringify({ anchorX, anchorY }),
+    body: { anchorX, anchorY },
   });
 }
 
@@ -154,7 +128,7 @@ export async function addReply(
 ): Promise<CommentMessageData> {
   return apiFetch(`${API_URL}/api/boards/${boardId}/threads/${threadId}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ body }),
+    body: { body },
   });
 }
 
@@ -166,7 +140,7 @@ export async function editMessage(
 ): Promise<CommentMessageData> {
   return apiFetch(`${API_URL}/api/boards/${boardId}/threads/${threadId}/messages/${messageId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ body }),
+    body: { body },
   });
 }
 
@@ -188,7 +162,7 @@ export async function toggleReaction(
 ): Promise<{ toggled: boolean; reactions: Reaction[] }> {
   return apiFetch(
     `${API_URL}/api/boards/${boardId}/threads/${threadId}/messages/${messageId}/reactions`,
-    { method: 'PUT', body: JSON.stringify({ emoji }) },
+    { method: 'PUT', body: { emoji } },
   );
 }
 
@@ -199,6 +173,6 @@ export async function toggleSubscription(
 ): Promise<{ subscribed: boolean }> {
   return apiFetch(`${API_URL}/api/boards/${boardId}/threads/${threadId}/subscription`, {
     method: 'PUT',
-    body: JSON.stringify({ subscribed }),
+    body: { subscribed },
   });
 }

@@ -9,7 +9,7 @@ import { usePlotData, getUpstreamNodeId } from '../../hooks/usePlotData';
 import { usePlotSnapshot } from '../../hooks/usePlotSnapshot';
 import type { PlotNodePayload } from '../../lib/visualization/chartTypes';
 import { validatePlotConfig } from '../../lib/visualization/dataAnalyzer';
-import { useExecutionStore } from '../../state/executionStore';
+import { useExecutionStore, type SqlResult } from '../../state/executionStore';
 import { DATA_NODE_HANDLE_CLASS } from '../BoardCanvas';
 import { ChartRenderer } from '../visualizations/ChartRenderer';
 
@@ -26,6 +26,8 @@ type PlotNodeData = {
   notebookCellEntryId?: string;
   /** Direct inline data passed from BoardCanvas (e.g. CSV data through notebook) */
   inlineData?: { columns: string[]; rows: Array<Array<string | number | null>> };
+  /** Callback to persist data snapshot to Yjs payload (survives page refresh) */
+  onPayloadChange?: (nodeId: string, patch: Record<string, unknown>) => void;
 };
 
 function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
@@ -99,18 +101,41 @@ function PlotNodeComponent({ data, selected }: NodeProps<PlotNodeData>) {
     });
   });
 
+  // Restore persisted data snapshot from payload (survives page refresh via Yjs)
+  const payloadSnapshot = useMemo(() => {
+    const snap = (data.payload as any)?._dataSnapshot;
+    if (snap && snap.columns && snap.rows) return snap as SqlResult;
+    return undefined;
+  }, [(data.payload as any)?._dataSnapshot]);
+
   // When connected to a specific notebook cell (via cell-out-{cellId} handle),
   // use ONLY that cell's data. This prevents cross-contamination when multiple
   // PlotNodes are connected to different cells of the same notebook.
   // For generic connections (not cell-specific), use the full priority cascade.
   const plotData = data.notebookCellEntryId
-    ? (notebookCellData ?? snapshotData)
+    ? (notebookCellData ?? snapshotData ?? payloadSnapshot)
     : ((hasNotebookCellOutput ? storeData : undefined) ??
       data.inlineData ??
       (data.upstreamCsvTableName ? fullCsvData : undefined) ??
       (data.upstreamSqlNodeId ? fullSqlData : undefined) ??
       storeData ??
-      snapshotData);
+      snapshotData ??
+      payloadSnapshot);
+
+  // Persist data snapshot to Yjs payload when plotData changes (survives page refresh)
+  const lastSnapshotKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!plotData || !plotData.columns || !plotData.rows || !data.onPayloadChange) return;
+    const key = `${plotData.columns.join(',')}|${plotData.rows.length}`;
+    if (lastSnapshotKeyRef.current === key) return;
+    lastSnapshotKeyRef.current = key;
+    const maxRows = 5000;
+    const snapshot = {
+      columns: plotData.columns,
+      rows: plotData.rows.length > maxRows ? plotData.rows.slice(0, maxRows) : plotData.rows,
+    };
+    data.onPayloadChange(data.nodeId, { _dataSnapshot: snapshot });
+  }, [plotData, data.nodeId, data.onPayloadChange]);
 
   const echartsInstanceRef = useRef<any>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);

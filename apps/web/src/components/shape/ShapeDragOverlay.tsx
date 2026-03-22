@@ -141,6 +141,8 @@ export function ShapeDragOverlay({ selectedShape, onAddShapeNode }: ShapeDragOve
           height: norm.height,
           payload: {
             ...getDefaultPayload(selectedShape),
+            startX: norm.startX,
+            startY: norm.startY,
             endX: norm.endX,
             endY: norm.endY,
           },
