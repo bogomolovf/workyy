@@ -353,14 +353,22 @@ function BoardPageContent({ params }: BoardPageProps) {
         const curP = node.payload as Record<string, unknown> | undefined;
         const yjsP = yjsNode.payload as Record<string, unknown> | undefined;
         if ((curP?.chartType ?? 'bar') !== (yjsP?.chartType ?? 'bar')) return true;
-        if (JSON.stringify(curP?.mapping ?? {}) !== JSON.stringify(yjsP?.mapping ?? {})) return true;
-        if (JSON.stringify(curP?.styling ?? {}) !== JSON.stringify(yjsP?.styling ?? {})) return true;
+        if (JSON.stringify(curP?.mapping ?? {}) !== JSON.stringify(yjsP?.mapping ?? {}))
+          return true;
+        if (JSON.stringify(curP?.styling ?? {}) !== JSON.stringify(yjsP?.styling ?? {}))
+          return true;
         if ((curP?.autoConfigured ?? false) !== (yjsP?.autoConfigured ?? false)) return true;
       }
       return false;
     });
 
-    if (idsChanged || positionsChanged || codeChanged || executionChanged || genericPayloadChanged) {
+    if (
+      idsChanged ||
+      positionsChanged ||
+      codeChanged ||
+      executionChanged ||
+      genericPayloadChanged
+    ) {
       // Mark as Yjs update to prevent sync loop
       isYjsUpdateRef.current = true;
       // Update local state from Yjs
@@ -684,7 +692,10 @@ function BoardPageContent({ params }: BoardPageProps) {
       }
       // Notebook/image/video/document nodes store width directly in payload.width
       if (
-        (node.type === 'notebook' || node.type === 'image' || node.type === 'video' || node.type === 'document') &&
+        (node.type === 'notebook' ||
+          node.type === 'image' ||
+          node.type === 'video' ||
+          node.type === 'document') &&
         typeof payload.width === 'number'
       ) {
         setNodeWidth(node.id, payload.width);
@@ -752,13 +763,31 @@ function BoardPageContent({ params }: BoardPageProps) {
         try {
           const { datasets } = await listBoardDatasets(boardId);
           if (datasets.length > 0) {
+            const restoredDatasets: Array<{
+              tableName: string;
+              columns: string[];
+              rows: Array<Array<string | number | null>>;
+            }> = [];
             // Fetch each dataset's rows and restore into DuckDB
             for (const meta of datasets) {
               try {
                 const full = await fetchDatasetFromServer(boardId, meta.tableName);
                 await restoreDatasetIntoDuckDb(meta.tableName, full.columns, full.rows);
+                restoredDatasets.push({
+                  tableName: meta.tableName,
+                  columns: full.columns,
+                  rows: full.rows,
+                });
               } catch {
                 // Individual dataset fetch failure — continue with others
+              }
+            }
+            // Persist to localStorage so next refresh is instant
+            if (restoredDatasets.length > 0) {
+              try {
+                window.localStorage.setItem(key, JSON.stringify(restoredDatasets));
+              } catch {
+                // localStorage quota exceeded — data still in DuckDB for this session
               }
             }
             window.dispatchEvent(
@@ -1016,7 +1045,10 @@ function BoardPageContent({ params }: BoardPageProps) {
             .map((e) => e.sourceId);
           for (const parentId of directParents) {
             const parentNode = nodesState.find((n) => n.id === parentId);
-            if (parentNode && (parentNode.type === 'csv' || (parentNode.type as string) === 'csvNode')) {
+            if (
+              parentNode &&
+              (parentNode.type === 'csv' || (parentNode.type as string) === 'csvNode')
+            ) {
               const tableName = (parentNode.payload as { tableName?: string } | undefined)
                 ?.tableName;
               if (tableName) {
@@ -1287,7 +1319,35 @@ function BoardPageContent({ params }: BoardPageProps) {
         }
 
         if (node.type === 'sqlCell') {
-          const result = await executeSqlWithPreview(code);
+          // Check if there's a database connection node connected to this SQL cell
+          const incomingEdges = edgesState.filter((edge) => edge.targetId === nodeId);
+          let dbNode = null;
+          for (const edge of incomingEdges) {
+            const sourceNode = nodesState.find((n) => n.id === edge.sourceId);
+            if (sourceNode?.type === 'database') {
+              dbNode = sourceNode;
+              break;
+            }
+          }
+
+          let result;
+          if (dbNode) {
+            // Execute via external database connection
+            const payload = dbNode.payload as { connectionId?: string } | undefined;
+            const connectionId = payload?.connectionId;
+
+            if (!connectionId) {
+              setError(nodeId, 'Database connection not configured');
+              return;
+            }
+
+            const { executePostgresSql } = await import('../../../lib/postgresClient');
+            result = await executePostgresSql(connectionId, code);
+          } else {
+            // Execute via DuckDB (default)
+            result = await executeSqlWithPreview(code);
+          }
+
           const output = { kind: 'sql' as const, result, code };
           setSuccess(nodeId, output);
           markDirty();
@@ -1321,7 +1381,10 @@ function BoardPageContent({ params }: BoardPageProps) {
             const upstreamNode = nodesState.find((n) => n.id === edge.sourceId);
 
             // CSV upstream: use full dataset from DuckDB (up to 10k rows) as snapshot input
-            if (upstreamNode && (upstreamNode.type === 'csv' || (upstreamNode.type as string) === 'csvNode')) {
+            if (
+              upstreamNode &&
+              (upstreamNode.type === 'csv' || (upstreamNode.type as string) === 'csvNode')
+            ) {
               const tableName = (upstreamNode.payload as { tableName?: string } | undefined)
                 ?.tableName;
               if (tableName) {
@@ -1582,7 +1645,12 @@ function BoardPageContent({ params }: BoardPageProps) {
   // (e.g. when the last node is deleted and refs are not yet updated)
   const autoSaveBoard = useCallback(
     async (override?: { nodes?: CanvasNode[]; edges?: CanvasEdge[] }) => {
-      if (isAutoSavingRef.current || !dataLoadedRef.current || isLoadingRef.current || !isSyncedRef.current) {
+      if (
+        isAutoSavingRef.current ||
+        !dataLoadedRef.current ||
+        isLoadingRef.current ||
+        !isSyncedRef.current
+      ) {
         return;
       }
 
@@ -1688,8 +1756,30 @@ function BoardPageContent({ params }: BoardPageProps) {
           }
           // Also preserve _dataSnapshot if it exists in the execution store
           // but not yet in payload (onPayloadChange writes to Yjs, not nodesState)
-          if (!payload._dataSnapshot && entry?.output?.kind === 'plot' && entry.output.result?.inputData) {
+          if (
+            !payload._dataSnapshot &&
+            entry?.output?.kind === 'plot' &&
+            entry.output.result?.inputData
+          ) {
             payload._dataSnapshot = entry.output.result.inputData;
+          }
+        } else if (node.type === 'sqlCell' || node.type === 'pythonCell') {
+          const entry = useExecutionStore.getState().entries[node.id];
+          const cellSourceFromPayload = (payload.cellSource as string | undefined) ?? '';
+          payload.cellSource =
+            cellSourceFromPayload.trim() !== '' ? cellSourceFromPayload : (entry?.code ?? '');
+          if (entry?.status === 'success' && entry.output) {
+            payload.execution = {
+              status: entry.status,
+              output: entry.output,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
+          } else if (entry?.status === 'error') {
+            payload.execution = {
+              status: entry.status,
+              error: entry.error,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
           }
         }
         const existingUi = (payload.ui as Record<string, unknown> | undefined) ?? {};
@@ -2057,6 +2147,9 @@ function BoardPageContent({ params }: BoardPageProps) {
               ...(node.payload ?? {}),
               ...(node.type === 'sql' ? { sql: code } : {}),
               ...(node.type === 'python' ? { python: code } : {}),
+              ...(node.type === 'sqlCell' || node.type === 'pythonCell'
+                ? { cellSource: code }
+                : {}),
             },
           };
         });

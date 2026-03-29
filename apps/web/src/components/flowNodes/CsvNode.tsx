@@ -3,7 +3,12 @@
 import { FileArrowDown, Table, SpinnerGap, ArrowDown } from '@phosphor-icons/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
-import { queryTablePaginated, normalizeColumnName } from '../../lib/duckdbClient';
+import { fetchDatasetFromServer } from '../../lib/api';
+import {
+  queryTablePaginated,
+  normalizeColumnName,
+  restoreDatasetIntoDuckDb,
+} from '../../lib/duckdbClient';
 import type { SqlResult } from '../../state/executionStore';
 import { useExecutionStore } from '../../state/executionStore';
 import { DATA_NODE_HANDLE_CLASS } from '../BoardCanvas';
@@ -138,15 +143,81 @@ function CsvNodeComponent({ data, selected }: NodeProps<CsvNodeData>) {
     [tableName, loadedRows.length, columns.length, isLoading, totalRowCount],
   );
 
+  // Extract boardId from the URL path for server-side fallback
+  const boardIdRef = useRef<string | null>(null);
+  if (typeof window !== 'undefined' && !boardIdRef.current) {
+    const match = window.location.pathname.match(/\/board\/([^/]+)/);
+    if (match) boardIdRef.current = match[1];
+  }
+
+  // Try loading data from DuckDB, with server fallback when table is missing.
+  const attemptLoad = useCallback(async () => {
+    if (!tableName || isLoading) return;
+    if (loadedRows.length > 0) return;
+
+    setIsLoading(true);
+    setLoadError(null);
+
+    try {
+      // Try DuckDB first
+      const remaining = totalRowCount ?? 10000;
+      const result = await queryTablePaginated(tableName, 0, remaining);
+      if (result.columns.length > 0 && result.rows.length > 0) {
+        setColumns(result.columns);
+        setLoadedRows(result.rows);
+        return;
+      }
+    } catch {
+      // DuckDB table doesn't exist yet — try server fallback
+    }
+
+    // Server fallback: fetch dataset and restore into DuckDB
+    const boardId = boardIdRef.current;
+    if (boardId) {
+      try {
+        const full = await fetchDatasetFromServer(boardId, tableName);
+        if (full.columns.length > 0 && full.rows.length > 0) {
+          await restoreDatasetIntoDuckDb(tableName, full.columns, full.rows);
+          setColumns(full.columns);
+          setLoadedRows(full.rows);
+        }
+      } catch {
+        // Server also unavailable — will retry on datasetsRestored event
+      }
+    }
+  }, [tableName, loadedRows.length, isLoading, totalRowCount]);
+
+  // Wrap attemptLoad to always reset isLoading
+  const safeAttemptLoad = useCallback(async () => {
+    try {
+      await attemptLoad();
+    } finally {
+      setIsLoading(false);
+    }
+  }, [attemptLoad]);
+
   // Auto-load ALL rows when we have tableName but no rows (e.g. board loaded from server)
-  // For datasets up to 10k rows this is fast and avoids pagination
   useEffect(() => {
     if (!tableName || initialLoadDoneRef.current || loadedRows.length > 0 || isLoading) {
       return;
     }
     initialLoadDoneRef.current = true;
-    loadMoreRows(true); // Load all rows at once
-  }, [tableName, loadedRows.length, isLoading, loadMoreRows]);
+    safeAttemptLoad();
+  }, [tableName, loadedRows.length, isLoading, safeAttemptLoad]);
+
+  // Re-attempt loading when datasets are restored into DuckDB (fixes race condition
+  // where CsvNode mounts before DuckDB tables are restored from localStorage/server).
+  useEffect(() => {
+    if (!tableName || loadedRows.length > 0) return;
+
+    const handler = () => {
+      initialLoadDoneRef.current = false;
+      safeAttemptLoad();
+    };
+
+    window.addEventListener('workyy:datasetsRestored', handler);
+    return () => window.removeEventListener('workyy:datasetsRestored', handler);
+  }, [tableName, loadedRows.length, safeAttemptLoad]);
 
   const stats = useMemo(() => {
     if (!csvData) return null;

@@ -177,9 +177,8 @@ export function DatabaseConnectionModal({
   const modal = (
     <div
       className="fixed inset-0 z-[100000] flex items-center justify-center p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) handleClose();
-      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative z-10 w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-xl">
@@ -190,206 +189,245 @@ export function DatabaseConnectionModal({
           </p>
         </div>
 
-        <div className="px-6 py-4 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
-          {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
-              {error}
+        <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
+          {/* Hidden honeypot fields to absorb browser autofill */}
+          <input
+            type="text"
+            name="fake-username"
+            autoComplete="username"
+            style={{
+              position: 'absolute',
+              opacity: 0,
+              height: 0,
+              width: 0,
+              overflow: 'hidden',
+              pointerEvents: 'none',
+            }}
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+          <input
+            type="password"
+            name="fake-password"
+            autoComplete="current-password"
+            style={{
+              position: 'absolute',
+              opacity: 0,
+              height: 0,
+              width: 0,
+              overflow: 'hidden',
+              pointerEvents: 'none',
+            }}
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+          <div className="px-6 py-4 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+            {error && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
+                {error}
+              </div>
+            )}
+
+            {testResult && (
+              <div
+                className={`rounded-lg border px-3 py-2 text-sm ${
+                  testResult.success
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                    : 'border-rose-200 bg-rose-50 text-rose-600'
+                }`}
+              >
+                {testResult.success
+                  ? '✓ Connection successful'
+                  : `✗ ${testResult.message || 'Connection failed'}`}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Database Type <span className="text-rose-500">*</span>
+              </label>
+              <div className="flex gap-2">
+                {(Object.keys(DATABASE_TYPE_LABELS) as DatabaseType[]).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        dbType: type,
+                        port: DATABASE_DEFAULT_PORTS[type],
+                      }));
+                      setTestResult(null);
+                    }}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      formData.dbType === type
+                        ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {DATABASE_TYPE_LABELS[type]}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
 
-          {testResult && (
-            <div
-              className={`rounded-lg border px-3 py-2 text-sm ${
-                testResult.success
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
-                  : 'border-rose-200 bg-rose-50 text-rose-600'
-              }`}
-            >
-              {testResult.success
-                ? '✓ Connection successful'
-                : `✗ ${testResult.message || 'Connection failed'}`}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Connection Name <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.connectionName}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, connectionName: e.target.value }))
+                }
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder="Production DB"
+              />
             </div>
-          )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Database Type <span className="text-rose-500">*</span>
-            </label>
-            <div className="flex gap-2">
-              {(Object.keys(DATABASE_TYPE_LABELS) as DatabaseType[]).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      dbType: type,
-                      port: DATABASE_DEFAULT_PORTS[type],
-                    }));
-                    setTestResult(null);
-                  }}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                    formData.dbType === type
-                      ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
-                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  {DATABASE_TYPE_LABELS[type]}
-                </button>
-              ))}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Host <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.host}
+                onChange={(e) => setFormData((prev) => ({ ...prev, host: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder="localhost"
+              />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Connection Name <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.connectionName}
-              onChange={(e) => setFormData((prev) => ({ ...prev, connectionName: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder="Production DB"
-            />
-          </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Port <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                value={formData.port}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    port: parseInt(e.target.value) || DATABASE_DEFAULT_PORTS[prev.dbType],
+                  }))
+                }
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder={String(DATABASE_DEFAULT_PORTS[formData.dbType])}
+                min="1"
+                max="65535"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Host <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.host}
-              onChange={(e) => setFormData((prev) => ({ ...prev, host: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder="localhost"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Port <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="number"
-              value={formData.port}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  port: parseInt(e.target.value) || DATABASE_DEFAULT_PORTS[prev.dbType],
-                }))
-              }
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder={String(DATABASE_DEFAULT_PORTS[formData.dbType])}
-              min="1"
-              max="65535"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Database <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.database}
-              onChange={(e) => setFormData((prev) => ({ ...prev, database: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder={
-                formData.dbType === 'oracle'
-                  ? 'FREEPDB1'
-                  : formData.dbType === 'sqlserver'
-                    ? 'master'
-                    : formData.dbType === 'clickhouse'
-                      ? 'default'
-                      : 'mydb'
-              }
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Username <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.username}
-              onChange={(e) => setFormData((prev) => ({ ...prev, username: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder={
-                formData.dbType === 'mysql'
-                  ? 'root'
-                  : formData.dbType === 'oracle'
-                    ? 'system'
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Database <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.database}
+                onChange={(e) => setFormData((prev) => ({ ...prev, database: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder={
+                  formData.dbType === 'oracle'
+                    ? 'FREEPDB1'
                     : formData.dbType === 'sqlserver'
-                      ? 'sa'
+                      ? 'master'
                       : formData.dbType === 'clickhouse'
                         ? 'default'
-                        : 'postgres'
+                        : 'mydb'
+                }
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Username <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => setFormData((prev) => ({ ...prev, username: e.target.value }))}
+                autoComplete="off"
+                name="db-username"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder={
+                  formData.dbType === 'mysql'
+                    ? 'root'
+                    : formData.dbType === 'oracle'
+                      ? 'system'
+                      : formData.dbType === 'sqlserver'
+                        ? 'sa'
+                        : formData.dbType === 'clickhouse'
+                          ? 'default'
+                          : 'postgres'
+                }
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Password {!formData.connectionId && <span className="text-rose-500">*</span>}
+              </label>
+              <input
+                type="password"
+                value={formData.password || ''}
+                onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
+                autoComplete="new-password"
+                name="db-password"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder={formData.connectionId ? 'Leave empty to keep existing' : ''}
+              />
+              {formData.connectionId && (
+                <p className="mt-1 text-xs text-slate-500">Leave empty to keep existing password</p>
+              )}
+            </div>
+
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="ssl"
+                checked={formData.ssl}
+                onChange={(e) => setFormData((prev) => ({ ...prev, ssl: e.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+              />
+              <label htmlFor="ssl" className="ml-2 text-sm text-slate-700">
+                Enable SSL
+              </label>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={isTesting || isSaving}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleTest}
+              disabled={
+                isTesting || isSaving || !formData.host || !formData.database || !formData.username
               }
-            />
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isTesting ? 'Testing...' : 'Test Connection'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={
+                isTesting || isSaving || !formData.host || !formData.database || !formData.username
+              }
+              className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Password {!formData.connectionId && <span className="text-rose-500">*</span>}
-            </label>
-            <input
-              type="password"
-              value={formData.password || ''}
-              onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              placeholder={formData.connectionId ? 'Leave empty to keep existing' : ''}
-            />
-            {formData.connectionId && (
-              <p className="mt-1 text-xs text-slate-500">Leave empty to keep existing password</p>
-            )}
-          </div>
-
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="ssl"
-              checked={formData.ssl}
-              onChange={(e) => setFormData((prev) => ({ ...prev, ssl: e.target.checked }))}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
-            />
-            <label htmlFor="ssl" className="ml-2 text-sm text-slate-700">
-              Enable SSL
-            </label>
-          </div>
-        </div>
-
-        <div className="border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={isTesting || isSaving}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleTest}
-            disabled={
-              isTesting || isSaving || !formData.host || !formData.database || !formData.username
-            }
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isTesting ? 'Testing...' : 'Test Connection'}
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={
-              isTesting || isSaving || !formData.host || !formData.database || !formData.username
-            }
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSaving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
+        </form>
       </div>
     </div>
   );

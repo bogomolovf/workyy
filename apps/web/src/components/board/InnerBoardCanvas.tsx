@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -27,6 +27,7 @@ import { registerDatasetFromCsvNode } from '../../lib/duckdbClient';
 import { createEmptyCell } from '../../lib/notebookParser';
 import type { ParsedNotebook } from '../../lib/notebookParser';
 import { parseSpreadsheetFile } from '../../lib/spreadsheetParser';
+import { globalVoiceAudioCache } from '../../lib/voiceAudioCache';
 import { canvasNodeToReactFlowNode } from '../../lib/yjs/adapters';
 import { useBoardCanvasApiStore } from '../../state/boardCanvasApiStore';
 import {
@@ -76,10 +77,16 @@ import { TextNode } from '../TextNode';
 import type { BoardCanvasProps, NodeData } from './boardCanvas.types';
 import { ConnectionArrowsOverlay } from './ConnectionArrowsOverlay';
 import { DataNodeHandles, DATA_NODE_HANDLE_CLASS } from './DataNodeHandles';
-import { globalVoiceAudioCache } from '../../lib/voiceAudioCache';
-import { statusColors, getNodeColor, createEdgeId, StatusBadge, ErrorMessage, StdoutBlock } from './nodeUtils';
-import { SqlNodeComponent } from './SqlNodeComponent';
+import {
+  statusColors,
+  getNodeColor,
+  createEdgeId,
+  StatusBadge,
+  ErrorMessage,
+  StdoutBlock,
+} from './nodeUtils';
 import { PythonNodeComponent } from './PythonNodeComponent';
+import { SqlNodeComponent } from './SqlNodeComponent';
 
 // Define nodeTypes outside component to prevent React Flow warning
 // This is the recommended pattern from React Flow documentation
@@ -200,7 +207,9 @@ export function InnerBoardCanvas({
   const localNodesRef = useRef(localNodes);
   // Ref for the `nodes` prop so that callbacks (e.g. onPayloadChange) always read the latest value
   const nodesPropRef = useRef(nodes);
-  useEffect(() => { nodesPropRef.current = nodes; }, [nodes]);
+  useEffect(() => {
+    nodesPropRef.current = nodes;
+  }, [nodes]);
   /** Ids we just deleted locally; avoid restoring them when nodes prop is still stale (Yjs observer not yet applied). */
   const recentlyDeletedIdsRef = useRef<Set<string>>(new Set());
   const [localEdges, setLocalEdges] = useState(edges);
@@ -231,8 +240,10 @@ export function InnerBoardCanvas({
   // Voice audio data is stored in globalVoiceAudioCache (module-level)
   // to persist across component remounts
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Merge incoming nodes with local state, using ref for voice audio data
+    // useLayoutEffect ensures position updates apply before paint, preventing
+    // visual desync between nodes and edges during remote collaborative drags.
     const merged = nodes.map((incomingNode) => {
       // For voice nodes, check if we have cached audioData in ref
       if (incomingNode.type === 'voice') {
@@ -826,7 +837,6 @@ export function InnerBoardCanvas({
     setTool,
   ]);
 
-
   // Unwrap CSV payload: after Yjs roundtrip it may be nested as { payload: { tableName, ... } }
   const getCsvPayload = (raw: any): any => {
     if (!raw) return raw;
@@ -900,7 +910,9 @@ export function InnerBoardCanvas({
           // fall back to payload.width so resize persists across page refresh.
           const storedWidth =
             nodeSizes[node.id]?.width ??
-            (typeof (node.payload as any)?.width === 'number' ? (node.payload as any).width : null) ??
+            (typeof (node.payload as any)?.width === 'number'
+              ? (node.payload as any).width
+              : null) ??
             getDefaultNodeWidth();
           const isCodeCollapsed = codeCollapsedMap[node.id] ?? false;
 
@@ -1506,7 +1518,16 @@ export function InnerBoardCanvas({
                                           }
                                         : n,
                                     );
-                                    emitNodesChange(next);
+
+                                    const updatedNode = next.find((n) => n.id === nodeId);
+                                    if (updatedNode && yjsOnNodesChange) {
+                                      const reactFlowNode = canvasNodeToReactFlowNode(updatedNode);
+                                      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+                                    }
+
+                                    queueMicrotask(() => {
+                                      emitNodesChange(next);
+                                    });
                                     return next;
                                   });
                                 },
@@ -1542,8 +1563,10 @@ export function InnerBoardCanvas({
                                   const isSqlSource = upstreamNode?.type === 'sql';
                                   const isNotebookSource = upstreamNode?.type === 'notebook';
                                   const upstreamPayload = isCsvSource
-                                    ? getCsvPayload(upstreamNode?.payload) as { tableName?: string } | undefined
-                                    : upstreamNode?.payload as { tableName?: string } | undefined;
+                                    ? (getCsvPayload(upstreamNode?.payload) as
+                                        | { tableName?: string }
+                                        | undefined)
+                                    : (upstreamNode?.payload as { tableName?: string } | undefined);
                                   const upstreamCsvTableName =
                                     isCsvSource && upstreamPayload?.tableName
                                       ? upstreamPayload.tableName
@@ -1596,7 +1619,9 @@ export function InnerBoardCanvas({
                                           nbSrcNode?.type === 'csv' ||
                                           (nbSrcNode?.type as string) === 'csvNode'
                                         ) {
-                                          const nbSrcPayload = getCsvPayload(nbSrcNode.payload ?? {});
+                                          const nbSrcPayload = getCsvPayload(
+                                            nbSrcNode.payload ?? {},
+                                          );
                                           if (nbSrcPayload.tableName) {
                                             notebookUpstreamCsvTableName = nbSrcPayload.tableName;
                                           }
@@ -1608,8 +1633,12 @@ export function InnerBoardCanvas({
                                             inlineData = nbSrcPayload.data;
                                           } else {
                                             // Fallback: read from executionStore (CsvNode syncs loaded data there)
-                                            const csvEntry = useExecutionStore.getState().entries[nbSrcId];
-                                            if (csvEntry?.output?.kind === 'sql' && csvEntry.output.result) {
+                                            const csvEntry =
+                                              useExecutionStore.getState().entries[nbSrcId];
+                                            if (
+                                              csvEntry?.output?.kind === 'sql' &&
+                                              csvEntry.output.result
+                                            ) {
                                               inlineData = csvEntry.output.result;
                                             }
                                           }
@@ -1628,13 +1657,18 @@ export function InnerBoardCanvas({
                                     upstreamSqlNodeId,
                                     notebookCellEntryId,
                                     inlineData,
-                                    onPayloadChange: (nid: string, patch: Record<string, unknown>) => {
+                                    onPayloadChange: (
+                                      nid: string,
+                                      patch: Record<string, unknown>,
+                                    ) => {
                                       // For plot nodes, snapshot saves (_dataSnapshot) go through Yjs
                                       // via a two-step read-then-write to avoid overwriting chart config
                                       // (chartType, mapping, styling) with stale localNodes data.
                                       // Use nodesPropRef to always read the LATEST nodes prop,
                                       // not a stale closure capture from when mapNodes was created.
-                                      const freshNode = nodesPropRef.current.find((n) => n.id === nid);
+                                      const freshNode = nodesPropRef.current.find(
+                                        (n) => n.id === nid,
+                                      );
                                       if (freshNode) {
                                         const merged = { ...freshNode.payload, ...patch };
                                         const canvasNode = { ...freshNode, payload: merged };
@@ -1692,18 +1726,25 @@ export function InnerBoardCanvas({
                                           (n) => n.id === sourceId,
                                         );
                                         if (sourceNode?.type === 'csv') {
-                                          const srcPayload = getCsvPayload(sourceNode.payload ?? {});
+                                          const srcPayload = getCsvPayload(
+                                            sourceNode.payload ?? {},
+                                          );
                                           // First try payload.data (available on initial upload before Yjs strips it)
                                           if (srcPayload.data?.columns && srcPayload.data?.rows) {
                                             csvUpstreamData = srcPayload.data;
                                           } else {
                                             // Fallback: read from executionStore (CsvNode syncs loaded DuckDB data there)
-                                            const csvEntry = useExecutionStore.getState().entries[sourceId];
-                                            if (csvEntry?.output?.kind === 'sql' && csvEntry.output.result) {
+                                            const csvEntry =
+                                              useExecutionStore.getState().entries[sourceId];
+                                            if (
+                                              csvEntry?.output?.kind === 'sql' &&
+                                              csvEntry.output.result
+                                            ) {
                                               csvUpstreamData = csvEntry.output.result;
                                             }
                                           }
-                                          csvUpstreamFilename = srcPayload.filename || srcPayload.tableName;
+                                          csvUpstreamFilename =
+                                            srcPayload.filename || srcPayload.tableName;
                                         }
                                       }
                                       // Per-cell upstream: edges targeting "cell-{cellId}" handles
@@ -1724,7 +1765,9 @@ export function InnerBoardCanvas({
                                           if (srcId) {
                                             const srcNode = localNodes.find((n) => n.id === srcId);
                                             if (srcNode?.type === 'csv') {
-                                              const srcPayload = getCsvPayload(srcNode.payload ?? {});
+                                              const srcPayload = getCsvPayload(
+                                                srcNode.payload ?? {},
+                                              );
                                               if (
                                                 srcPayload.data?.columns &&
                                                 srcPayload.data?.rows
@@ -1736,11 +1779,16 @@ export function InnerBoardCanvas({
                                                 };
                                               } else {
                                                 // Fallback: read from executionStore
-                                                const csvEntry = useExecutionStore.getState().entries[srcId];
-                                                if (csvEntry?.output?.kind === 'sql' && csvEntry.output.result) {
+                                                const csvEntry =
+                                                  useExecutionStore.getState().entries[srcId];
+                                                if (
+                                                  csvEntry?.output?.kind === 'sql' &&
+                                                  csvEntry.output.result
+                                                ) {
                                                   cellDataMap[cellId] = {
                                                     ...csvEntry.output.result,
-                                                    filename: srcPayload.filename || srcPayload.tableName,
+                                                    filename:
+                                                      srcPayload.filename || srcPayload.tableName,
                                                     tableName: srcPayload.tableName,
                                                   };
                                                 }
@@ -1781,20 +1829,30 @@ export function InnerBoardCanvas({
                                           : undefined;
                                         const idx = chain ? chain.cellIds.indexOf(node.id) : -1;
                                         const total = chain ? chain.cellIds.length : 0;
-                                        const pos: 'only' | 'first' | 'last' | 'middle' | 'standalone' =
+                                        const pos:
+                                          | 'only'
+                                          | 'first'
+                                          | 'last'
+                                          | 'middle'
+                                          | 'standalone' =
                                           cid && idx >= 0
-                                            ? (total <= 1
-                                                ? 'only'
-                                                : idx === 0
-                                                  ? 'first'
-                                                  : idx === total - 1
-                                                    ? 'last'
-                                                    : 'middle')
+                                            ? total <= 1
+                                              ? 'only'
+                                              : idx === 0
+                                                ? 'first'
+                                                : idx === total - 1
+                                                  ? 'last'
+                                                  : 'middle'
                                             : 'standalone';
                                         return {
                                           nodeId: node.id,
-                                          onCodeChange: (code: string) =>
-                                            onCodeChange(node.id, code),
+                                          onCodeChange: (code: string) => {
+                                            syncNodePayloadChange(node.id, (prev) => ({
+                                              ...prev,
+                                              cellSource: code,
+                                            }));
+                                            onCodeChange(node.id, code);
+                                          },
                                           onRun: () => onRunNode(node.id),
                                           onDelete: () => {
                                             const deleteHeight =
@@ -1849,15 +1907,20 @@ export function InnerBoardCanvas({
                                             : undefined;
                                           const idx = chain ? chain.cellIds.indexOf(node.id) : -1;
                                           const total = chain ? chain.cellIds.length : 0;
-                                          const pos: 'only' | 'first' | 'last' | 'middle' | 'standalone' =
+                                          const pos:
+                                            | 'only'
+                                            | 'first'
+                                            | 'last'
+                                            | 'middle'
+                                            | 'standalone' =
                                             cid && idx >= 0
-                                              ? (total <= 1
-                                                  ? 'only'
-                                                  : idx === 0
-                                                    ? 'first'
-                                                    : idx === total - 1
-                                                      ? 'last'
-                                                      : 'middle')
+                                              ? total <= 1
+                                                ? 'only'
+                                                : idx === 0
+                                                  ? 'first'
+                                                  : idx === total - 1
+                                                    ? 'last'
+                                                    : 'middle'
                                               : 'standalone';
                                           return {
                                             nodeId: node.id,
@@ -1924,20 +1987,30 @@ export function InnerBoardCanvas({
                                               : undefined;
                                             const idx = chain ? chain.cellIds.indexOf(node.id) : -1;
                                             const total = chain ? chain.cellIds.length : 0;
-                                            const pos: 'only' | 'first' | 'last' | 'middle' | 'standalone' =
+                                            const pos:
+                                              | 'only'
+                                              | 'first'
+                                              | 'last'
+                                              | 'middle'
+                                              | 'standalone' =
                                               cid && idx >= 0
-                                                ? (total <= 1
-                                                    ? 'only'
-                                                    : idx === 0
-                                                      ? 'first'
-                                                      : idx === total - 1
-                                                        ? 'last'
-                                                        : 'middle')
+                                                ? total <= 1
+                                                  ? 'only'
+                                                  : idx === 0
+                                                    ? 'first'
+                                                    : idx === total - 1
+                                                      ? 'last'
+                                                      : 'middle'
                                                 : 'standalone';
                                             return {
                                               nodeId: node.id,
-                                              onCodeChange: (code: string) =>
-                                                onCodeChange(node.id, code),
+                                              onCodeChange: (code: string) => {
+                                                syncNodePayloadChange(node.id, (prev) => ({
+                                                  ...prev,
+                                                  cellSource: code,
+                                                }));
+                                                onCodeChange(node.id, code);
+                                              },
                                               onRun: () => onRunNode(node.id),
                                               onRunFull: () => onRunNodeFull?.(node.id),
                                               onDelete: () => {
@@ -2141,7 +2214,10 @@ export function InnerBoardCanvas({
     localEdges, // mapNodes uses localEdges for edge-based data resolution (e.g. PlotNode upstream CSV)
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // useLayoutEffect: commit mapped nodes to flowNodes before paint so that
+    // ReactFlow renders nodes and edges with consistent positions in the same
+    // frame. Prevents edge "detachment" artifacts during remote collaborative drags.
     const mapped = mappedNodes;
 
     setFlowNodes((prev) => {
@@ -2320,9 +2396,22 @@ export function InnerBoardCanvas({
                   const pp = (previous?.payload ?? {}) as Record<string, unknown>;
                   // Only persist data fields, NOT callbacks or UI-only flags
                   const dataKeys = [
-                    'shapeType', 'fill', 'stroke', 'strokeWidth', 'opacity',
-                    'cornerRadius', 'arrowHead', 'startX', 'startY', 'endX', 'endY',
-                    'text', 'fontSize', 'fontFamily', 'isBold', 'isItalic',
+                    'shapeType',
+                    'fill',
+                    'stroke',
+                    'strokeWidth',
+                    'opacity',
+                    'cornerRadius',
+                    'arrowHead',
+                    'startX',
+                    'startY',
+                    'endX',
+                    'endY',
+                    'text',
+                    'fontSize',
+                    'fontFamily',
+                    'isBold',
+                    'isItalic',
                     'shapeColor',
                   ];
                   const merged: Record<string, unknown> = { ...pp };
@@ -3486,7 +3575,16 @@ export function InnerBoardCanvas({
       });
       onSelectNode?.(nodeId);
     },
-    [rf, onNodesChange, sanitizeExternalNodes, yjsOnNodesChange, onSelectNode, registerNode, board.id, onCsvDatasetAdded],
+    [
+      rf,
+      onNodesChange,
+      sanitizeExternalNodes,
+      yjsOnNodesChange,
+      onSelectNode,
+      registerNode,
+      board.id,
+      onCsvDatasetAdded,
+    ],
   );
 
   const handleAddVoiceNode = useCallback(() => {
@@ -3513,7 +3611,15 @@ export function InnerBoardCanvas({
     });
     onSelectNode?.(template.id);
     setTool('select');
-  }, [addNodeHelpers, rf, yjsOnNodesChange, onNodesChange, onSelectNode, sanitizeExternalNodes, setTool]);
+  }, [
+    addNodeHelpers,
+    rf,
+    yjsOnNodesChange,
+    onNodesChange,
+    onSelectNode,
+    sanitizeExternalNodes,
+    setTool,
+  ]);
 
   const CELL_STACK_GAP = 0;
   const DEFAULT_CELL_HEIGHT = 180;
@@ -3884,7 +3990,8 @@ export function InnerBoardCanvas({
     const selectedEdgeIds = new Set(
       (rf.getEdges?.() ?? []).filter((e: any) => e?.selected).map((e: any) => e.id),
     );
-    if (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0 && selectedCommentIds.size === 0) return;
+    if (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0 && selectedCommentIds.size === 0)
+      return;
 
     // CRITICAL FIX: Sync deletion through Yjs first to ensure real-time collaboration
     // This ensures deleted elements are removed from Yjs map and don't reappear
@@ -3942,7 +4049,16 @@ export function InnerBoardCanvas({
     });
 
     onSelectNode?.(null);
-  }, [rf, emitNodesChange, emitEdgesChange, onSelectNode, yjsOnNodesChange, yjsOnEdgesChange, board.id, selectedCommentIds]);
+  }, [
+    rf,
+    emitNodesChange,
+    emitEdgesChange,
+    onSelectNode,
+    yjsOnNodesChange,
+    yjsOnEdgesChange,
+    board.id,
+    selectedCommentIds,
+  ]);
 
   // Keyboard bindings for Delete / Backspace
   useEffect(() => {
@@ -4405,7 +4521,9 @@ export function InnerBoardCanvas({
 
                 // Создаем новый voice-ноду в режиме voice
                 if (isVoiceMode) {
-                  const voiceNode = addNodeHelpers.createVoiceNode(p) as BoardCanvasProps['nodes'][number];
+                  const voiceNode = addNodeHelpers.createVoiceNode(
+                    p,
+                  ) as BoardCanvasProps['nodes'][number];
 
                   // Sync through Yjs for real-time collaboration
                   const reactFlowNode = canvasNodeToReactFlowNode(voiceNode);
@@ -4664,7 +4782,13 @@ export function InnerBoardCanvas({
           </div>
         </div>
         {/* Comment overlay: positioned relative to board-canvas-root, outside overflow-hidden */}
-        <CommentLayer boardId={board.id} selectedCommentIds={selectedCommentIds} commentDragMap={commentDragMap} cursorsMap={cursorsMap} clientId={clientId} />
+        <CommentLayer
+          boardId={board.id}
+          selectedCommentIds={selectedCommentIds}
+          commentDragMap={commentDragMap}
+          cursorsMap={cursorsMap}
+          clientId={clientId}
+        />
         {/* Collaborative cursors overlay — rendered after comments so cursors appear above them */}
         <CollaborativeCursors cursors={cursors} ownClientId={clientId} />
         <BoardCommandBar

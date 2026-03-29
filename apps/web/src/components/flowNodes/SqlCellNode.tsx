@@ -67,7 +67,7 @@ function SqlCellNodeInner({ data, selected }: NodeProps<SqlCellNodeData>) {
       cellPosition={data.cellPosition ?? 'standalone'}
       onRun={data.onRun}
       onDelete={data.onDelete}
-      onAddCellBelow={data.onAddCellBelow}
+      onAddCellBelow={undefined}
       isRunning={status === 'running'}
       chainName={data.chainName}
       chainCellCount={data.chainCellCount}

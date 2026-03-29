@@ -150,18 +150,26 @@ html, body {
   -ms-user-select: text !important;
 }
 
-/* ─── Smooth collaborative edge sync ──────────────────────────────── */
-/* MUST match the node transition in canvas.css (80ms linear) so that
-   edges and nodes move in perfect lockstep during remote drags.
-   CSS `d` property transition is supported in Chrome 87+, Firefox 97+,
-   Safari 17.2+. Older browsers gracefully fall back to instant updates. */
+/* ─── Smooth collaborative node + edge sync ───────────────────────── */
+/* Both node transforms AND edge paths must share the same transition
+   so they move in perfect lockstep during remote collaborative drags.
+   Without a matching node transition, edges animate while nodes jump
+   instantly, causing edges to visually "detach" during remote movement. */
+.react-flow__node {
+  transition: transform 80ms linear;
+}
+
 .react-flow__edge-path {
   transition: d 80ms linear;
 }
 
-/* When a node is being dragged locally, its transform has transition: none
-   (instant movement). Edges must also skip their transition so they don't
-   lag 80ms behind the instantly-moving node. :has() — Chrome 105+, FF 121+. */
+/* During local drag, disable ALL transitions for instant feedback.
+   ReactFlow adds .dragging to the dragged node; :has() propagates
+   the override to edges. Chrome 105+, FF 121+, Safari 15.4+. */
+.react-flow__node.dragging {
+  transition: none !important;
+}
+
 .react-flow:has(.react-flow__node.dragging) .react-flow__edge-path {
   transition: none !important;
 }
