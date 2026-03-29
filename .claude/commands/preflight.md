@@ -7,6 +7,7 @@
 ### 1. TypeScript (параллельно)
 
 Запусти одновременно:
+
 ```bash
 cd apps/web && npx tsc --noEmit
 cd apps/realtime-server && npx tsc --noEmit

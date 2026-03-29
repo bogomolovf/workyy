@@ -10,7 +10,8 @@
 
 /* Prevent browser back/forward navigation on horizontal swipe gestures
    so that two-finger panning works in all directions on the board */
-html, body {
+html,
+body {
   overscroll-behavior: none;
 }
 

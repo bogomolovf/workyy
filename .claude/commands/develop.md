@@ -5,12 +5,14 @@
 **Workyy** — браузерная платформа аналитики на бесконечном холсте с SQL/Python узлами и реалтайм коллаборацией.
 
 **Стек:**
+
 - `apps/web` — Next.js 14+ (App Router), React, ReactFlow, Zustand, ECharts
 - `apps/realtime-server` — Fastify, y-websocket, Prisma, PostgreSQL
 - `packages/core-domain` — Доменные схемы (типы узлов: sql, python, table, plot)
 - `packages/dag-executor` — Исполнитель DAG
 
 **Ключевые механизмы:**
+
 - Код узлов хранится через `setCode()`, НЕ в `node.payload`
 - Результаты выполнения — в `executionStore` (Zustand)
 - Реалтайм синхронизация — Yjs (автоматическая, не дублировать)
@@ -21,6 +23,7 @@
 ### Шаг 1: Зафиксировать требования
 
 Извлеки из описания фичи:
+
 - **Цель** — что получит пользователь
 - **Требования** — конкретные пункты (пронумеруй)
 - **Область** — frontend / backend / оба / package
@@ -31,6 +34,7 @@
 ### Шаг 2: Проверить результаты /research (если есть)
 
 Если в чате выше есть результаты команды `/research`:
+
 - Используй рекомендованные библиотеки и подходы
 - Следуй предложенным паттернам
 - Учитывай описанные потенциальные проблемы
@@ -58,6 +62,7 @@
 ### Шаг 4: Спланировать реализацию
 
 Создай план через tasks:
+
 - Разбей на атомарные шаги (каждый — конкретный результат)
 - Укажи порядок (что от чего зависит)
 - Отмечай задачи по мере выполнения
@@ -69,21 +74,27 @@
 Пиши код, следуя паттернам проекта:
 
 #### Backend (API endpoints):
+
 ```typescript
 // apps/realtime-server/src/routes/
 export async function featureRoutes(fastify: FastifyInstance) {
-  fastify.post('/endpoint', {
-    schema: { body: zodSchema },
-    preHandler: [fastify.authenticate],
-  }, async (request, reply) => {
-    // 1. Авторизация через ensureBoardAccess/ensureWorkspaceAccess
-    // 2. Бизнес-логика
-    // 3. Ответ
-  });
+  fastify.post(
+    '/endpoint',
+    {
+      schema: { body: zodSchema },
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      // 1. Авторизация через ensureBoardAccess/ensureWorkspaceAccess
+      // 2. Бизнес-логика
+      // 3. Ответ
+    },
+  );
 }
 ```
 
 #### Frontend (компоненты):
+
 ```typescript
 // apps/web/src/components/
 'use client';
@@ -93,6 +104,7 @@ export async function featureRoutes(fastify: FastifyInstance) {
 ```
 
 #### Работа с узлами:
+
 ```typescript
 // Код → setCode(nodeId, code)
 // Статус → setStatus(nodeId, 'running')
@@ -102,6 +114,7 @@ export async function featureRoutes(fastify: FastifyInstance) {
 ```
 
 **Правила при кодировании:**
+
 - Следуй существующим паттернам, не изобретай новые
 - Используй типы из `@workyy/core-domain`
 - Валидация через Zod на границах (API, user input)
@@ -135,11 +148,13 @@ export async function featureRoutes(fastify: FastifyInstance) {
 ## Примеры использования
 
 ### Простая фича:
+
 ```
 /develop Кнопка экспорта результатов SQL-узла в CSV
 ```
 
 ### Фича с предварительным ресерчем:
+
 ```
 /research Виртуализация больших таблиц в браузере
 [получаешь саммари]
@@ -148,6 +163,7 @@ export async function featureRoutes(fastify: FastifyInstance) {
 ```
 
 ### Сложная фича с подробным описанием:
+
 ```
 /develop Система комментариев на канве
 

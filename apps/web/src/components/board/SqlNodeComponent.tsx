@@ -3,10 +3,7 @@ import { NodeProps, NodeResizer } from 'reactflow';
 
 import type { ExecutionStoreState, NodeStatus } from '../../state/executionStore';
 import { useExecutionStore } from '../../state/executionStore';
-import {
-  MIN_NODE_WIDTH,
-  MAX_NODE_WIDTH,
-} from '../../state/canvasLayoutStore';
+import { MIN_NODE_WIDTH, MAX_NODE_WIDTH } from '../../state/canvasLayoutStore';
 import { InteractiveResultTable } from '../InteractiveResultTable';
 import type { NodeData } from './boardCanvas.types';
 import { DataNodeHandles } from './DataNodeHandles';

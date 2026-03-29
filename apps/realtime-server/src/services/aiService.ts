@@ -22,11 +22,26 @@ export type AiChartResponse = {
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 
 const CHART_TYPES = [
-  'bar', 'bar-horizontal', 'line', 'area', 'scatter',
-  'pie', 'doughnut', 'histogram', 'heatmap', 'treemap',
-  'boxplot', 'sankey', 'radar', 'combo-bar-line',
-  'funnel', 'gauge', 'sunburst', 'candlestick',
-  'waterfall', 'wordcloud',
+  'bar',
+  'bar-horizontal',
+  'line',
+  'area',
+  'scatter',
+  'pie',
+  'doughnut',
+  'histogram',
+  'heatmap',
+  'treemap',
+  'boxplot',
+  'sankey',
+  'radar',
+  'combo-bar-line',
+  'funnel',
+  'gauge',
+  'sunburst',
+  'candlestick',
+  'waterfall',
+  'wordcloud',
 ] as const;
 
 const SYSTEM_PROMPT = `You are a data visualization assistant. Given a dataset schema and a user request, produce a PlotConfig JSON object.

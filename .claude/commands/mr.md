@@ -5,11 +5,13 @@
 ### 1. Анализ изменений
 
 **Параллельно** выполни:
+
 - `git diff main...HEAD` — все изменения с момента ответвления
 - `git log --oneline main..HEAD` — история коммитов
 - `git status` — есть ли незакоммиченные изменения
 
 **Определи:**
+
 - Тип изменений: feature / fix / refactor / chore
 - Scope: какие пакеты/приложения затронуты
 - Breaking changes: есть ли несовместимые изменения API/схемы
@@ -35,6 +37,7 @@ git merge-base --is-ancestor origin/main HEAD
 ```
 
 Если main ушёл вперёд — **сообщи пользователю** что нужен rebase:
+
 ```bash
 git rebase origin/main
 ```
@@ -45,15 +48,18 @@ git rebase origin/main
 
 ```markdown
 ## Что сделано
+
 - [краткий список изменений по bullet points — фокус на "что" и "зачем"]
 
 ## Тип изменений
+
 - [ ] Feature
 - [ ] Bugfix
 - [ ] Refactor
 - [ ] Chore
 
 ## Затронутые области
+
 - [ ] Canvas (BoardCanvas, ноды, эджи)
 - [ ] Realtime server (API, WebSocket, Prisma)
 - [ ] State management (Zustand stores)
@@ -63,12 +69,15 @@ git rebase origin/main
 - [ ] UI/UX (стили, layout, анимации)
 
 ## Как тестировать
+
 1. [шаги для ручной проверки — конкретные действия в браузере]
 
 ## Breaking changes
+
 [Нет / описание несовместимых изменений]
 
 ## Скриншоты
+
 [если UI изменения — опиши что приложить]
 ```
 
@@ -79,6 +88,7 @@ gh pr create --base main --title "тип: краткое описание" --bod
 ```
 
 **Формат title:**
+
 - `feat: описание` — новая функциональность
 - `fix: описание` — исправление бага
 - `refactor: описание` — рефакторинг без изменения поведения

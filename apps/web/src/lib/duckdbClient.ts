@@ -607,18 +607,16 @@ export async function restoreDatasetsFromBoardArray(
     for (const dataset of datasets) {
       const rows: Array<Array<string | number | null>> = Array.isArray(dataset.rows)
         ? dataset.rows
-        : (typeof (dataset.rows as any)?.toArray === 'function'
-            ? (dataset.rows as any).toArray()
-            : Array.from(dataset.rows as any));
+        : typeof (dataset.rows as any)?.toArray === 'function'
+          ? (dataset.rows as any).toArray()
+          : Array.from(dataset.rows as any);
       const columns: string[] = Array.isArray(dataset.columns)
         ? dataset.columns
-        : (typeof (dataset.columns as any)?.toArray === 'function'
-            ? (dataset.columns as any).toArray()
-            : Array.from(dataset.columns as any));
+        : typeof (dataset.columns as any)?.toArray === 'function'
+          ? (dataset.columns as any).toArray()
+          : Array.from(dataset.columns as any);
 
-      const columnsDef = columns
-        .map((column) => `${quotedIdentifier(column)} TEXT`)
-        .join(', ');
+      const columnsDef = columns.map((column) => `${quotedIdentifier(column)} TEXT`).join(', ');
       await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(dataset.tableName)};`);
       await connection.query(
         `CREATE TABLE ${quotedIdentifier(dataset.tableName)} (${columnsDef});`,
@@ -661,13 +659,9 @@ export async function restoreDatasetIntoDuckDb(
   rows: Array<Array<string | number | null>>,
 ): Promise<void> {
   const { connection } = await getDuckDbContext();
-  const columnsDef = columns
-    .map((column) => `${quotedIdentifier(column)} TEXT`)
-    .join(', ');
+  const columnsDef = columns.map((column) => `${quotedIdentifier(column)} TEXT`).join(', ');
   await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(tableName)};`);
-  await connection.query(
-    `CREATE TABLE ${quotedIdentifier(tableName)} (${columnsDef});`,
-  );
+  await connection.query(`CREATE TABLE ${quotedIdentifier(tableName)} (${columnsDef});`);
   const BATCH_SIZE = 500;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
@@ -684,9 +678,7 @@ export async function restoreDatasetIntoDuckDb(
         return `(${values})`;
       })
       .join(', ');
-    await connection.query(
-      `INSERT INTO ${quotedIdentifier(tableName)} VALUES ${rowsSql};`,
-    );
+    await connection.query(`INSERT INTO ${quotedIdentifier(tableName)} VALUES ${rowsSql};`);
   }
 }
 

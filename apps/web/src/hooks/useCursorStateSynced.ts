@@ -36,11 +36,14 @@ export function useCursorStateSynced(
   Cursor[],
   (event: React.PointerEvent<HTMLDivElement>) => void,
   (event: React.PointerEvent<HTMLDivElement>) => void,
+  () => void, // onViewportChange — call when viewport pans/zooms to keep cursor in sync
 ] {
   const [cursors, setCursors] = useState<Cursor[]>([]);
   const { screenToFlowPosition } = useReactFlow();
   const lastUpdateTimeRef = useRef<number>(0);
   const previousClientIdRef = useRef<string | null>(null);
+  // Track last known screen position so we can recompute flow coords on viewport change
+  const lastScreenPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Use user-selected cursor color from settings store
   // When 'default', use neutral color for sync (other users see cursor) — own overlay is hidden
@@ -175,6 +178,9 @@ export function useCursorStateSynced(
 
       lastUpdateTimeRef.current = now;
 
+      // Remember screen position for viewport-change updates
+      lastScreenPosRef.current = { x: event.clientX, y: event.clientY };
+
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
@@ -203,6 +209,35 @@ export function useCursorStateSynced(
   const onPointerLeave = useCallback(() => {
     // No-op: cursor stays at last position, heartbeat keeps it alive
   }, []);
+
+  // Re-broadcast cursor position when the viewport changes (e.g. two-finger pan/pinch).
+  // During panning, onPointerMove does NOT fire because the pointer stays still on screen,
+  // so the flow-coordinates go stale. Other users see a sudden jump when the panning user
+  // finally moves their mouse. This callback fixes that by converting the last known screen
+  // position to updated flow coordinates on every viewport change.
+  const onViewportChange = useCallback(() => {
+    const screenPos = lastScreenPosRef.current;
+    if (!screenPos) return;
+
+    const now = Date.now();
+    if (now - lastUpdateTimeRef.current < CURSOR_THROTTLE_MS) return;
+    lastUpdateTimeRef.current = now;
+
+    const position = screenToFlowPosition(screenPos);
+
+    const cursorData: Cursor = {
+      id: clientId,
+      color: colorForSync,
+      x: position.x,
+      y: position.y,
+      timestamp: now,
+    };
+
+    if (userInfo?.userId) cursorData.userId = userInfo.userId;
+    if (userInfo?.userName) cursorData.userName = userInfo.userName;
+
+    cursorsMap.set(clientId, cursorData);
+  }, [screenToFlowPosition, cursorsMap, clientId, colorForSync, userInfo]);
 
   useEffect(() => {
     const timer = window.setInterval(flush, MAX_IDLE_TIME);
@@ -248,5 +283,5 @@ export function useCursorStateSynced(
     [cursorsDedupedByUser, cursorsWithoutSelf, options?.showOwnCursor],
   );
 
-  return [cursorsToShow, onMouseMove, onPointerLeave];
+  return [cursorsToShow, onMouseMove, onPointerLeave, onViewportChange];
 }

@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { prisma } from '../lib/prisma';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { setPersistence } = require('y-websocket/bin/utils');
 
 /**
@@ -26,6 +26,7 @@ export function setupYjsPersistence(): void {
           const state = new Uint8Array(board.yjsState);
           Y.applyUpdate(ydoc, state);
         } else {
+          // No stored state — document starts empty
         }
       } catch (error) {
         console.error(`[YjsPersistence] Failed to load state for board ${docName}:`, error);
@@ -60,12 +61,10 @@ export function setupYjsPersistence(): void {
           where: { id: docName },
           data: { yjsState: Buffer.from(state) },
         });
-
       } catch (error) {
         console.error(`[YjsPersistence] Failed to save state for board ${docName}:`, error);
         // Don't throw — log and continue, data is still in memory for connected clients
       }
     },
   });
-
 }

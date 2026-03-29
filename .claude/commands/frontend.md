@@ -53,6 +53,7 @@ apps/web/src/
 ## Правила
 
 ### API-вызовы
+
 ```typescript
 // ПРАВИЛЬНО — через общий клиент
 import { apiFetch, API_URL } from '../lib/apiClient';
@@ -66,12 +67,14 @@ const res = await fetch(url, { ... });
 ```
 
 ### Новые компоненты
+
 - Компоненты борда → `components/board/`
 - Новые типы нод → `components/flowNodes/`
 - UI-утилиты → `components/common/` (создай если нет)
 - Типы, общие с бэкендом → **НЕ дублируй**, скажи пользователю запустить `/shared`
 
 ### Zustand-сторы
+
 ```typescript
 // Следуй паттерну проекта
 import { create } from 'zustand';
@@ -84,6 +87,7 @@ const value = useMyStore((s) => s.specificValue);
 ```
 
 ### Работа с нодами
+
 ```typescript
 // Код ноды
 executionStore.setCode(nodeId, code);
@@ -99,6 +103,7 @@ executionStore.setError(nodeId, errorMessage);
 ```
 
 ### Yjs — НЕ дублируй синхронизацию
+
 - Yjs автоматически синхронизирует `ydoc` между клиентами
 - Не добавляй свои WebSocket/polling для данных, которые уже в Yjs
 - Изменения нод/рёбер → через `useNodesStateSynced` / `useEdgesStateSynced`

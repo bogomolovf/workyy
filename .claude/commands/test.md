@@ -5,6 +5,7 @@
 **Workyy** — монорепо с Vitest для тестов. Тесты co-located: `*.test.ts` рядом с исходным файлом.
 
 **Стек тестирования:**
+
 - **Runner:** Vitest
 - **Assertions:** Vitest built-in (expect, describe, it)
 - **React:** @testing-library/react (если нужно тестировать компоненты)
@@ -15,6 +16,7 @@
 ### 1. Определить что тестировать
 
 Извлеки из запроса:
+
 - **Файл/модуль** — что тестируем
 - **Тип тестов** — unit / integration / e2e
 - **Фокус** — конкретные функции или весь модуль
@@ -58,12 +60,14 @@ describe('ModuleName', () => {
 ```
 
 **Что тестировать (приоритет):**
+
 1. **Бизнес-логика** — трансформации данных, валидация, вычисления
 2. **Edge cases** — null, undefined, пустые массивы, большие данные
 3. **Error paths** — некорректный input, сетевые ошибки, таймауты
 4. **Integration points** — API вызовы, store updates
 
 **Что НЕ тестировать:**
+
 - Внутреннюю реализацию (тестируй поведение, не детали)
 - Простые getters/setters
 - Стили и layout
@@ -72,6 +76,7 @@ describe('ModuleName', () => {
 ### 4. Мокирование
 
 **Zustand stores:**
+
 ```typescript
 vi.mock('../../state/executionStore', () => ({
   useExecutionStore: {
@@ -85,6 +90,7 @@ vi.mock('../../state/executionStore', () => ({
 ```
 
 **API (apiFetch):**
+
 ```typescript
 vi.mock('../../lib/apiClient', () => ({
   apiFetch: vi.fn(),
@@ -93,6 +99,7 @@ vi.mock('../../lib/apiClient', () => ({
 ```
 
 **Prisma (backend):**
+
 ```typescript
 const mockPrisma = {
   board: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },

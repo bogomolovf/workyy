@@ -185,7 +185,11 @@ export function BoardInspector(props: InspectorProps) {
 
   // Detect upstream source type and compute data source identifiers
   const { upstreamCsvTableName, upstreamSqlNodeId, notebookCellEntryId } = useMemo(() => {
-    const empty = { upstreamCsvTableName: undefined, upstreamSqlNodeId: undefined, notebookCellEntryId: undefined };
+    const empty = {
+      upstreamCsvTableName: undefined,
+      upstreamSqlNodeId: undefined,
+      notebookCellEntryId: undefined,
+    };
     if (!plotNodeId) return empty;
     const edge = plotEdges.find((e) => e.targetId === plotNodeId);
     if (!edge) return empty;
@@ -213,7 +217,11 @@ export function BoardInspector(props: InspectorProps) {
         }
       }
     }
-    return { upstreamCsvTableName: csvTable, upstreamSqlNodeId: sqlId, notebookCellEntryId: cellEntryId };
+    return {
+      upstreamCsvTableName: csvTable,
+      upstreamSqlNodeId: sqlId,
+      notebookCellEntryId: cellEntryId,
+    };
   }, [plotNodeId, plotEdges, plotNodes, plotExecutionEntries]);
 
   const { data: fullCsvData } = useFullCsvDataForPlot(upstreamCsvTableName);
@@ -224,7 +232,8 @@ export function BoardInspector(props: InspectorProps) {
     if (!notebookCellEntryId) return undefined;
     const entry = plotExecutionEntries[notebookCellEntryId];
     if (!entry?.output) return undefined;
-    if (entry.output.kind === 'python' && entry.output.result?.table) return entry.output.result.table;
+    if (entry.output.kind === 'python' && entry.output.result?.table)
+      return entry.output.result.table;
     return undefined;
   }, [notebookCellEntryId, plotExecutionEntries]);
 

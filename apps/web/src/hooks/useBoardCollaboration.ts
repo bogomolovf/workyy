@@ -151,8 +151,7 @@ export function useBoardCollaboration(
       ydoc.transact(() => {
         for (const [id, yjsValue] of nodesMap.entries()) {
           const yjsNode = yjsValue as any;
-          const nodeType =
-            yjsNode?.type ?? yjsNode?.data?._canvasNode?.type;
+          const nodeType = yjsNode?.type ?? yjsNode?.data?._canvasNode?.type;
           if (nodeType !== 'csv' && nodeType !== 'csvNode') continue;
           const apiNode = apiNodeMap.get(id);
           if (!apiNode?.payload) continue;

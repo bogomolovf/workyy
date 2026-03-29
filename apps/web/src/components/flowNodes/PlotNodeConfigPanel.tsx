@@ -20,7 +20,15 @@ import {
 } from '../../lib/visualization/fieldMapper';
 import { autoConfigurePlotConfig } from '../../lib/visualization/autoConfig';
 import type { SqlResult } from '../../state/executionStore';
-import { X, Plus, Trash, CaretDown, CaretRight, MagicWand, SpinnerGap } from '@phosphor-icons/react';
+import {
+  X,
+  Plus,
+  Trash,
+  CaretDown,
+  CaretRight,
+  MagicWand,
+  SpinnerGap,
+} from '@phosphor-icons/react';
 import { useAiChartGeneration } from '../../hooks/useAiChartGeneration';
 
 type PlotNodeConfigPanelProps = {
@@ -65,7 +73,10 @@ const T = {
   select: '— Выберите —',
   none: 'Нет',
   recommended: 'Рекомендуемые',
-  colType: { numeric: 'числ.', categorical: 'кат.', temporal: 'время', unknown: '?' } as Record<string, string>,
+  colType: { numeric: 'числ.', categorical: 'кат.', temporal: 'время', unknown: '?' } as Record<
+    string,
+    string
+  >,
   // Specialized fields
   ohlc: 'Поля OHLC',
   open: 'Открытие',
@@ -143,10 +154,7 @@ const MORE_CHARTS: { label: string; types: ChartMeta[] }[] = [
   },
 ];
 
-const ALL_CHARTS: ChartMeta[] = [
-  ...POPULAR_CHARTS,
-  ...MORE_CHARTS.flatMap((g) => g.types),
-];
+const ALL_CHARTS: ChartMeta[] = [...POPULAR_CHARTS, ...MORE_CHARTS.flatMap((g) => g.types)];
 
 const AGG_TYPES: { value: AggregationType; label: string }[] = [
   { value: 'sum', label: 'Сумма' },
@@ -170,17 +178,38 @@ const FILTER_OPS = [
 
 /* ── Helpers ──────────────────────────────────────────────── */
 function colIcon(type: string) {
-  return type === 'numeric' ? '#' : type === 'categorical' ? '🏷' : type === 'temporal' ? '🕒' : '?';
+  return type === 'numeric'
+    ? '#'
+    : type === 'categorical'
+      ? '🏷'
+      : type === 'temporal'
+        ? '🕒'
+        : '?';
 }
 
 /** Which fields are needed for each chart type */
-function fieldsFor(ct: ChartType): { x?: boolean; y?: boolean; z?: boolean; color?: boolean; ohlc?: boolean; srcTgt?: boolean; weight?: boolean; multiY?: boolean } {
+function fieldsFor(ct: ChartType): {
+  x?: boolean;
+  y?: boolean;
+  z?: boolean;
+  color?: boolean;
+  ohlc?: boolean;
+  srcTgt?: boolean;
+  weight?: boolean;
+  multiY?: boolean;
+} {
   switch (ct) {
-    case 'pie': case 'doughnut': case 'gauge': case 'liquidfill': case 'wordcloud':
+    case 'pie':
+    case 'doughnut':
+    case 'gauge':
+    case 'liquidfill':
+    case 'wordcloud':
       return { y: true, weight: ct === 'wordcloud' };
-    case 'histogram': case 'boxplot':
+    case 'histogram':
+    case 'boxplot':
       return { y: true };
-    case 'radar': case 'parallel':
+    case 'radar':
+    case 'parallel':
       return {};
     case 'candlestick':
       return { x: true, ohlc: true };
@@ -188,7 +217,10 @@ function fieldsFor(ct: ChartType): { x?: boolean; y?: boolean; z?: boolean; colo
       return { srcTgt: true, weight: true };
     case 'combo-bar-line':
       return { x: true, multiY: true };
-    case 'scatter3d': case 'bar3d': case 'surface3d': case 'line3d':
+    case 'scatter3d':
+    case 'bar3d':
+    case 'surface3d':
+    case 'line3d':
       return { x: true, y: true, z: true };
     case 'sankey':
       return { x: true, y: true };
@@ -238,7 +270,15 @@ function translateValidation(en: string): string {
 }
 
 /* ── Collapsible section ──────────────────────────────────── */
-function Section({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+function Section({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="border-t border-slate-100 pt-3">
@@ -285,13 +325,18 @@ function FieldSelect({
             const a = analyses.find((x) => x.name === col);
             return (
               <option key={col} value={col}>
-                {col}{a ? ` (${T.colType[a.type] ?? a.type})` : ''}
+                {col}
+                {a ? ` (${T.colType[a.type] ?? a.type})` : ''}
               </option>
             );
           })}
         </select>
         {value && (
-          <button type="button" onClick={() => onChange(undefined)} className="rounded p-0.5 text-slate-400 hover:text-slate-600">
+          <button
+            type="button"
+            onClick={() => onChange(undefined)}
+            className="rounded p-0.5 text-slate-400 hover:text-slate-600"
+          >
             <X size={14} />
           </button>
         )}
@@ -303,19 +348,29 @@ function FieldSelect({
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
    ══════════════════════════════════════════════════════════════ */
-export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChange }: PlotNodeConfigPanelProps) {
-  const payload = useMemo(() => ({
-    ...rawPayload,
-    mapping: rawPayload.mapping ?? {},
-    styling: rawPayload.styling ?? {},
-  }), [rawPayload]);
+export function PlotNodeConfigPanel({
+  nodeId,
+  payload: rawPayload,
+  data,
+  onChange,
+}: PlotNodeConfigPanelProps) {
+  const payload = useMemo(
+    () => ({
+      ...rawPayload,
+      mapping: rawPayload.mapping ?? {},
+      styling: rawPayload.styling ?? {},
+    }),
+    [rawPayload],
+  );
 
   const [showMoreCharts, setShowMoreCharts] = useState(false);
 
   // Local ref to prevent auto-config race condition: when user selects a chart type
   // (e.g. 3D), the Yjs-persisted autoConfigured flag may not have propagated yet,
   // so async data arrivals could trigger auto-config with stale payload.
-  const userHasConfiguredRef = useRef(payload.autoConfigured === true || !!payload.mapping?.x || !!payload.mapping?.y);
+  const userHasConfiguredRef = useRef(
+    payload.autoConfigured === true || !!payload.mapping?.x || !!payload.mapping?.y,
+  );
 
   // Keep ref in sync with payload changes from Yjs
   useEffect(() => {
@@ -397,17 +452,26 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
       {data && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{T.dataSource}</span>
-            <span className="text-[11px] text-slate-500">{T.rowsCols(data.rows.length, data.columns.length)}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              {T.dataSource}
+            </span>
+            <span className="text-[11px] text-slate-500">
+              {T.rowsCols(data.rows.length, data.columns.length)}
+            </span>
           </div>
           <div className="flex flex-wrap gap-1">
             {analyses.slice(0, 10).map((a) => (
-              <span key={a.name} className="inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-600">
+              <span
+                key={a.name}
+                className="inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-600"
+              >
                 <span>{colIcon(a.type)}</span>
                 <span className="max-w-[80px] truncate">{a.name}</span>
               </span>
             ))}
-            {analyses.length > 10 && <span className="text-[10px] text-slate-400">{T.more(analyses.length - 10)}</span>}
+            {analyses.length > 10 && (
+              <span className="text-[10px] text-slate-400">{T.more(analyses.length - 10)}</span>
+            )}
           </div>
         </div>
       )}
@@ -424,7 +488,9 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
               type="text"
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !ai.loading) handleAiGenerate(); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !ai.loading) handleAiGenerate();
+              }}
               placeholder="Например: выручка по месяцам, bar chart"
               disabled={ai.loading}
               className="flex-1 rounded-md border border-violet-200 bg-white px-2 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-200 disabled:opacity-50"
@@ -435,12 +501,14 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
               disabled={ai.loading || !aiPrompt.trim()}
               className="flex items-center gap-1 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-50"
             >
-              {ai.loading ? <SpinnerGap size={14} className="animate-spin" /> : <MagicWand size={14} />}
+              {ai.loading ? (
+                <SpinnerGap size={14} className="animate-spin" />
+              ) : (
+                <MagicWand size={14} />
+              )}
             </button>
           </div>
-          {ai.error && (
-            <p className="mt-1.5 text-[11px] text-rose-500">{ai.error}</p>
-          )}
+          {ai.error && <p className="mt-1.5 text-[11px] text-rose-500">{ai.error}</p>}
         </div>
       )}
 
@@ -454,9 +522,13 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
 
       {/* ── Chart Type ────────────────────────────────────── */}
       <div>
-        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{T.chartType}</label>
+        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          {T.chartType}
+        </label>
         <div className="grid grid-cols-3 gap-1">
-          {POPULAR_CHARTS.map((m) => <ChartBtn key={m.value} meta={m} />)}
+          {POPULAR_CHARTS.map((m) => (
+            <ChartBtn key={m.value} meta={m} />
+          ))}
         </div>
         {/* Check if current chart type is in "more" and not in popular — always show it */}
         {!POPULAR_CHARTS.some((p) => p.value === payload.chartType) && !showMoreCharts && (
@@ -478,9 +550,13 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
           <div className="mt-1.5 space-y-2">
             {MORE_CHARTS.map((group) => (
               <div key={group.label}>
-                <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400">{group.label}</p>
+                <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  {group.label}
+                </p>
                 <div className="grid grid-cols-3 gap-1">
-                  {group.types.map((m) => <ChartBtn key={m.value} meta={m} />)}
+                  {group.types.map((m) => (
+                    <ChartBtn key={m.value} meta={m} />
+                  ))}
                 </div>
               </div>
             ))}
@@ -488,7 +564,11 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
         )}
         {recommendations.length > 0 && (
           <p className="mt-1.5 text-[11px] text-slate-400">
-            {T.recommended}: {recommendations.slice(0, 3).map((r) => ALL_CHARTS.find((c) => c.value === r)?.label ?? r).join(', ')}
+            {T.recommended}:{' '}
+            {recommendations
+              .slice(0, 3)
+              .map((r) => ALL_CHARTS.find((c) => c.value === r)?.label ?? r)
+              .join(', ')}
           </p>
         )}
       </div>
@@ -496,11 +576,19 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
       {/* ── Field Mapping ─────────────────────────────────── */}
       {columns.length > 0 && (
         <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{T.fields}</label>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            {T.fields}
+          </label>
           <div className="space-y-2">
             {/* Standard X/Y/Z/Color fields */}
             {fields.x && (
-              <FieldSelect label={T.xAxis} value={payload.mapping.x} columns={columns} analyses={analyses} onChange={(v) => setMapping('x', v)} />
+              <FieldSelect
+                label={T.xAxis}
+                value={payload.mapping.x}
+                columns={columns}
+                analyses={analyses}
+                onChange={(v) => setMapping('x', v)}
+              />
             )}
             {fields.y && !fields.multiY && (
               <FieldSelect
@@ -512,10 +600,23 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
               />
             )}
             {fields.z && (
-              <FieldSelect label={T.zAxis} value={payload.mapping.z} columns={columns} analyses={analyses} onChange={(v) => setMapping('z', v)} />
+              <FieldSelect
+                label={T.zAxis}
+                value={payload.mapping.z}
+                columns={columns}
+                analyses={analyses}
+                onChange={(v) => setMapping('z', v)}
+              />
             )}
             {fields.color && (
-              <FieldSelect label={T.color} value={payload.mapping.color} columns={columns} analyses={analyses} onChange={(v) => setMapping('color', v)} optional />
+              <FieldSelect
+                label={T.color}
+                value={payload.mapping.color}
+                columns={columns}
+                analyses={analyses}
+                onChange={(v) => setMapping('color', v)}
+                optional
+              />
             )}
 
             {/* Multi-Y for combo charts */}
@@ -523,30 +624,64 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
               <div>
                 <label className="mb-1 block text-xs text-slate-600">{T.yFields}</label>
                 <div className="space-y-1.5">
-                  {(Array.isArray(payload.mapping.y) ? payload.mapping.y : payload.mapping.y ? [payload.mapping.y] : []).map((yf, idx) => (
+                  {(Array.isArray(payload.mapping.y)
+                    ? payload.mapping.y
+                    : payload.mapping.y
+                      ? [payload.mapping.y]
+                      : []
+                  ).map((yf, idx) => (
                     <div key={idx} className="flex items-center gap-1">
                       <select
                         value={yf}
                         onChange={(e) => {
-                          const cur = Array.isArray(payload.mapping.y) ? [...payload.mapping.y] : payload.mapping.y ? [payload.mapping.y] : [];
+                          const cur = Array.isArray(payload.mapping.y)
+                            ? [...payload.mapping.y]
+                            : payload.mapping.y
+                              ? [payload.mapping.y]
+                              : [];
                           cur[idx] = e.target.value;
                           setMapping('y', cur);
                         }}
                         className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none"
                       >
                         <option value="">-- {T.select} --</option>
-                        {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                        {columns.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
                       </select>
-                      <button type="button" onClick={() => {
-                        const cur = Array.isArray(payload.mapping.y) ? [...payload.mapping.y] : payload.mapping.y ? [payload.mapping.y] : [];
-                        setMapping('y', cur.filter((_, i) => i !== idx));
-                      }} className="rounded p-0.5 text-slate-400 hover:text-rose-500"><X size={14} /></button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cur = Array.isArray(payload.mapping.y)
+                            ? [...payload.mapping.y]
+                            : payload.mapping.y
+                              ? [payload.mapping.y]
+                              : [];
+                          setMapping(
+                            'y',
+                            cur.filter((_, i) => i !== idx),
+                          );
+                        }}
+                        className="rounded p-0.5 text-slate-400 hover:text-rose-500"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
                   ))}
-                  <button type="button" onClick={() => {
-                    const cur = Array.isArray(payload.mapping.y) ? [...payload.mapping.y] : payload.mapping.y ? [payload.mapping.y] : [];
-                    setMapping('y', [...cur, '']);
-                  }} className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cur = Array.isArray(payload.mapping.y)
+                        ? [...payload.mapping.y]
+                        : payload.mapping.y
+                          ? [payload.mapping.y]
+                          : [];
+                      setMapping('y', [...cur, '']);
+                    }}
+                    className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700"
+                  >
                     <Plus size={12} /> {T.addY}
                   </button>
                 </div>
@@ -556,11 +691,15 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
             {/* OHLC for candlestick */}
             {fields.ohlc && (
               <div className="space-y-1.5">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{T.ohlc}</p>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  {T.ohlc}
+                </p>
                 {(['open', 'high', 'low', 'close'] as const).map((f) => (
                   <FieldSelect
                     key={f}
-                    label={f === 'open' ? T.open : f === 'high' ? T.high : f === 'low' ? T.low : T.close}
+                    label={
+                      f === 'open' ? T.open : f === 'high' ? T.high : f === 'low' ? T.low : T.close
+                    }
                     value={payload.mapping[f]}
                     columns={columns}
                     analyses={analyses}
@@ -573,14 +712,33 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
             {/* Source/Target for graph */}
             {fields.srcTgt && (
               <div className="space-y-1.5">
-                <FieldSelect label={T.source} value={payload.mapping.source} columns={columns} analyses={analyses} onChange={(v) => setMapping('source', v)} />
-                <FieldSelect label={T.target} value={payload.mapping.target} columns={columns} analyses={analyses} onChange={(v) => setMapping('target', v)} />
+                <FieldSelect
+                  label={T.source}
+                  value={payload.mapping.source}
+                  columns={columns}
+                  analyses={analyses}
+                  onChange={(v) => setMapping('source', v)}
+                />
+                <FieldSelect
+                  label={T.target}
+                  value={payload.mapping.target}
+                  columns={columns}
+                  analyses={analyses}
+                  onChange={(v) => setMapping('target', v)}
+                />
               </div>
             )}
 
             {/* Weight for wordcloud/graph */}
             {fields.weight && (
-              <FieldSelect label={T.weight} value={payload.mapping.weight} columns={columns} analyses={analyses} onChange={(v) => setMapping('weight', v)} optional />
+              <FieldSelect
+                label={T.weight}
+                value={payload.mapping.weight}
+                columns={columns}
+                analyses={analyses}
+                onChange={(v) => setMapping('weight', v)}
+                optional
+              />
             )}
 
             {/* Gauge config */}
@@ -588,15 +746,37 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
               <div className="flex gap-2">
                 <div className="flex-1">
                   <label className="mb-1 block text-xs text-slate-600">{T.min}</label>
-                  <input type="number" value={payload.gaugeConfig?.min ?? 0}
-                    onChange={(e) => onChange(nodeId, { ...payload, gaugeConfig: { ...payload.gaugeConfig, min: parseFloat(e.target.value) || 0 } })}
-                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none" />
+                  <input
+                    type="number"
+                    value={payload.gaugeConfig?.min ?? 0}
+                    onChange={(e) =>
+                      onChange(nodeId, {
+                        ...payload,
+                        gaugeConfig: {
+                          ...payload.gaugeConfig,
+                          min: parseFloat(e.target.value) || 0,
+                        },
+                      })
+                    }
+                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+                  />
                 </div>
                 <div className="flex-1">
                   <label className="mb-1 block text-xs text-slate-600">{T.max}</label>
-                  <input type="number" value={payload.gaugeConfig?.max ?? 100}
-                    onChange={(e) => onChange(nodeId, { ...payload, gaugeConfig: { ...payload.gaugeConfig, max: parseFloat(e.target.value) || 100 } })}
-                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none" />
+                  <input
+                    type="number"
+                    value={payload.gaugeConfig?.max ?? 100}
+                    onChange={(e) =>
+                      onChange(nodeId, {
+                        ...payload,
+                        gaugeConfig: {
+                          ...payload.gaugeConfig,
+                          max: parseFloat(e.target.value) || 100,
+                        },
+                      })
+                    }
+                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+                  />
                 </div>
               </div>
             )}
@@ -605,9 +785,16 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
             {payload.chartType === 'liquidfill' && (
               <div>
                 <label className="mb-1 block text-xs text-slate-600">{T.shape}</label>
-                <select value={payload.liquidfillConfig?.shape || 'circle'}
-                  onChange={(e) => onChange(nodeId, { ...payload, liquidfillConfig: { shape: e.target.value as any } })}
-                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none">
+                <select
+                  value={payload.liquidfillConfig?.shape || 'circle'}
+                  onChange={(e) =>
+                    onChange(nodeId, {
+                      ...payload,
+                      liquidfillConfig: { shape: e.target.value as any },
+                    })
+                  }
+                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+                >
                   <option value="circle">Круг</option>
                   <option value="rect">Прямоугольник</option>
                   <option value="roundRect">Скруглённый</option>
@@ -636,25 +823,36 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
       <div className="flex items-center gap-3">
         <div className="flex gap-1">
           {(['light', 'dark'] as const).map((t) => (
-            <button key={t} type="button" onClick={() => setStyling({ theme: t })}
+            <button
+              key={t}
+              type="button"
+              onClick={() => setStyling({ theme: t })}
               className={`rounded px-2.5 py-1 text-xs transition-colors ${
                 (payload.styling.theme || 'light') === t
-                  ? 'bg-indigo-100 text-indigo-700 font-medium' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-              }`}>
+                  ? 'bg-indigo-100 text-indigo-700 font-medium'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}
+            >
               {t === 'light' ? T.light : T.dark}
             </button>
           ))}
         </div>
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          <input type="checkbox" checked={payload.styling.showLegend !== false}
+          <input
+            type="checkbox"
+            checked={payload.styling.showLegend !== false}
             onChange={(e) => setStyling({ showLegend: e.target.checked })}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600" />
+            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+          />
           {T.legend}
         </label>
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          <input type="checkbox" checked={payload.styling.enableZoomPan === true}
+          <input
+            type="checkbox"
+            checked={payload.styling.enableZoomPan === true}
             onChange={(e) => setStyling({ enableZoomPan: e.target.checked })}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600" />
+            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+          />
           {T.zoomPan}
         </label>
       </div>
@@ -667,7 +865,9 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-600">{T.aggregation}</span>
-                <input type="checkbox" checked={!!payload.aggregation}
+                <input
+                  type="checkbox"
+                  checked={!!payload.aggregation}
                   onChange={(e) => {
                     if (e.target.checked) {
                       onChange(nodeId, { ...payload, aggregation: { type: 'sum', groupBy: [] } });
@@ -676,16 +876,31 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
                       onChange(nodeId, rest);
                     }
                   }}
-                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600" />
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                />
               </div>
               {payload.aggregation && (
                 <div className="mt-1.5 ml-2 space-y-1.5 rounded border border-slate-200 bg-white p-2">
                   <div>
                     <label className="mb-0.5 block text-[11px] text-slate-500">{T.aggType}</label>
-                    <select value={payload.aggregation.type}
-                      onChange={(e) => onChange(nodeId, { ...payload, aggregation: { ...payload.aggregation!, type: e.target.value as AggregationType } })}
-                      className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs focus:border-indigo-400 focus:outline-none">
-                      {AGG_TYPES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                    <select
+                      value={payload.aggregation.type}
+                      onChange={(e) =>
+                        onChange(nodeId, {
+                          ...payload,
+                          aggregation: {
+                            ...payload.aggregation!,
+                            type: e.target.value as AggregationType,
+                          },
+                        })
+                      }
+                      className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs focus:border-indigo-400 focus:outline-none"
+                    >
+                      {AGG_TYPES.map((a) => (
+                        <option key={a.value} value={a.value}>
+                          {a.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -694,17 +909,25 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
                       {columns.map((col) => {
                         const sel = payload.aggregation?.groupBy?.includes(col);
                         return (
-                          <button key={col} type="button"
+                          <button
+                            key={col}
+                            type="button"
                             onClick={() => {
                               const gb = payload.aggregation?.groupBy ?? [];
                               onChange(nodeId, {
                                 ...payload,
-                                aggregation: { ...payload.aggregation!, groupBy: sel ? gb.filter((f) => f !== col) : [...gb, col] },
+                                aggregation: {
+                                  ...payload.aggregation!,
+                                  groupBy: sel ? gb.filter((f) => f !== col) : [...gb, col],
+                                },
                               });
                             }}
                             className={`rounded-full border px-1.5 py-0.5 text-[10px] transition-colors ${
-                              sel ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'
-                            }`}>
+                              sel
+                                ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                                : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                            }`}
+                          >
                             {col}
                           </button>
                         );
@@ -719,43 +942,80 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-600">{T.filters}</span>
-                <button type="button" onClick={() => {
-                  onChange(nodeId, { ...payload, filters: [...(payload.filters || []), { field: columns[0] || '', operator: 'eq' as const, value: '' }] });
-                }} className="flex items-center gap-0.5 text-[11px] text-indigo-500 hover:text-indigo-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(nodeId, {
+                      ...payload,
+                      filters: [
+                        ...(payload.filters || []),
+                        { field: columns[0] || '', operator: 'eq' as const, value: '' },
+                      ],
+                    });
+                  }}
+                  className="flex items-center gap-0.5 text-[11px] text-indigo-500 hover:text-indigo-700"
+                >
                   <Plus size={10} /> {T.addFilter}
                 </button>
               </div>
               {payload.filters && payload.filters.length > 0 && (
                 <div className="mt-1.5 space-y-1">
                   {payload.filters.map((f, i) => (
-                    <div key={i} className="flex items-center gap-1 rounded border border-slate-200 bg-white p-1.5">
-                      <select value={f.field}
+                    <div
+                      key={i}
+                      className="flex items-center gap-1 rounded border border-slate-200 bg-white p-1.5"
+                    >
+                      <select
+                        value={f.field}
                         onChange={(e) => {
-                          const nf = [...payload.filters!]; nf[i] = { ...nf[i], field: e.target.value };
+                          const nf = [...payload.filters!];
+                          nf[i] = { ...nf[i], field: e.target.value };
                           onChange(nodeId, { ...payload, filters: nf });
                         }}
-                        className="min-w-0 flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none">
-                        {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                        className="min-w-0 flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none"
+                      >
+                        {columns.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
                       </select>
-                      <select value={f.operator}
+                      <select
+                        value={f.operator}
                         onChange={(e) => {
-                          const nf = [...payload.filters!]; nf[i] = { ...nf[i], operator: e.target.value as typeof f.operator };
+                          const nf = [...payload.filters!];
+                          nf[i] = { ...nf[i], operator: e.target.value as typeof f.operator };
                           onChange(nodeId, { ...payload, filters: nf });
                         }}
-                        className="flex-shrink-0 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none">
-                        {FILTER_OPS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
+                        className="flex-shrink-0 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none"
+                      >
+                        {FILTER_OPS.map((op) => (
+                          <option key={op.value} value={op.value}>
+                            {op.label}
+                          </option>
+                        ))}
                       </select>
-                      <input type="text" value={String(f.value ?? '')}
+                      <input
+                        type="text"
+                        value={String(f.value ?? '')}
                         onChange={(e) => {
-                          const nf = [...payload.filters!]; nf[i] = { ...nf[i], value: e.target.value };
+                          const nf = [...payload.filters!];
+                          nf[i] = { ...nf[i], value: e.target.value };
                           onChange(nodeId, { ...payload, filters: nf });
                         }}
                         placeholder={T.value}
-                        className="min-w-0 max-w-[80px] flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none" />
-                      <button type="button" onClick={() => {
-                        const nf = payload.filters!.filter((_, j) => j !== i);
-                        onChange(nodeId, { ...payload, filters: nf.length > 0 ? nf : undefined });
-                      }} className="text-slate-400 hover:text-rose-500"><Trash size={12} /></button>
+                        className="min-w-0 max-w-[80px] flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nf = payload.filters!.filter((_, j) => j !== i);
+                          onChange(nodeId, { ...payload, filters: nf.length > 0 ? nf : undefined });
+                        }}
+                        className="text-slate-400 hover:text-rose-500"
+                      >
+                        <Trash size={12} />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -766,37 +1026,66 @@ export function PlotNodeConfigPanel({ nodeId, payload: rawPayload, data, onChang
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-600">{T.sort}</span>
-                <button type="button" onClick={() => {
-                  onChange(nodeId, { ...payload, sort: [...(payload.sort || []), { field: columns[0] || '', direction: 'asc' as const }] });
-                }} className="flex items-center gap-0.5 text-[11px] text-indigo-500 hover:text-indigo-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(nodeId, {
+                      ...payload,
+                      sort: [
+                        ...(payload.sort || []),
+                        { field: columns[0] || '', direction: 'asc' as const },
+                      ],
+                    });
+                  }}
+                  className="flex items-center gap-0.5 text-[11px] text-indigo-500 hover:text-indigo-700"
+                >
                   <Plus size={10} /> {T.addSort}
                 </button>
               </div>
               {payload.sort && payload.sort.length > 0 && (
                 <div className="mt-1.5 space-y-1">
                   {payload.sort.map((s, i) => (
-                    <div key={i} className="flex items-center gap-1 rounded border border-slate-200 bg-white p-1.5">
-                      <select value={s.field}
+                    <div
+                      key={i}
+                      className="flex items-center gap-1 rounded border border-slate-200 bg-white p-1.5"
+                    >
+                      <select
+                        value={s.field}
                         onChange={(e) => {
-                          const ns = [...payload.sort!]; ns[i] = { ...ns[i], field: e.target.value };
+                          const ns = [...payload.sort!];
+                          ns[i] = { ...ns[i], field: e.target.value };
                           onChange(nodeId, { ...payload, sort: ns });
                         }}
-                        className="min-w-0 flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none">
-                        {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                        className="min-w-0 flex-1 rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none"
+                      >
+                        {columns.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
                       </select>
-                      <select value={s.direction}
+                      <select
+                        value={s.direction}
                         onChange={(e) => {
-                          const ns = [...payload.sort!]; ns[i] = { ...ns[i], direction: e.target.value as 'asc' | 'desc' };
+                          const ns = [...payload.sort!];
+                          ns[i] = { ...ns[i], direction: e.target.value as 'asc' | 'desc' };
                           onChange(nodeId, { ...payload, sort: ns });
                         }}
-                        className="rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none">
+                        className="rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none"
+                      >
                         <option value="asc">{T.asc}</option>
                         <option value="desc">{T.desc}</option>
                       </select>
-                      <button type="button" onClick={() => {
-                        const ns = payload.sort!.filter((_, j) => j !== i);
-                        onChange(nodeId, { ...payload, sort: ns.length > 0 ? ns : undefined });
-                      }} className="text-slate-400 hover:text-rose-500"><Trash size={12} /></button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const ns = payload.sort!.filter((_, j) => j !== i);
+                          onChange(nodeId, { ...payload, sort: ns.length > 0 ? ns : undefined });
+                        }}
+                        className="text-slate-400 hover:text-rose-500"
+                      >
+                        <Trash size={12} />
+                      </button>
                     </div>
                   ))}
                 </div>

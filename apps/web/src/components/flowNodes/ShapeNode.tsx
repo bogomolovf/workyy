@@ -356,10 +356,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeData>) {
   const activeColor = shapeColor ?? finalFill;
 
   return (
-    <div
-      className="workyy-shape-node relative"
-      style={{ width: '100%', height: '100%' }}
-    >
+    <div className="workyy-shape-node relative" style={{ width: '100%', height: '100%' }}>
       <NodeResizer
         isVisible={selected}
         minWidth={isLineShape ? 20 : 80}

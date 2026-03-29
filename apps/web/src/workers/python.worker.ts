@@ -406,7 +406,6 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
           console.error('[WORKER ERROR] Serialization failed:', resolvedResultPayload.error);
         }
         // #endregion
-
       } catch (error) {
         console.warn('Failed to interpret python result payload', error);
       }
@@ -418,7 +417,6 @@ json.dumps(_serialize_candidate(_candidate, _has_explicit))
         Array.isArray(resolvedResultPayload.table.rows)
       ) {
         tablePayload = resolvedResultPayload.table as WorkerTablePayload;
-
       }
 
       if (tablePayload) {

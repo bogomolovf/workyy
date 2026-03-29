@@ -127,14 +127,17 @@ export const useCommentStore = create<CommentStore>((set, get) => ({
       // Also refresh the active thread so new messages appear in real-time
       const { activeThreadId } = get();
       if (activeThreadId) {
-        api.fetchThread(boardId, activeThreadId).then((detail) => {
-          // Only update if this thread is still active
-          if (get().activeThreadId === activeThreadId) {
-            set({ activeThread: detail });
-          }
-        }).catch(() => {
-          // Silently ignore - will retry on next poll
-        });
+        api
+          .fetchThread(boardId, activeThreadId)
+          .then((detail) => {
+            // Only update if this thread is still active
+            if (get().activeThreadId === activeThreadId) {
+              set({ activeThread: detail });
+            }
+          })
+          .catch(() => {
+            // Silently ignore - will retry on next poll
+          });
       }
     }, intervalMs);
     set({ _pollTimer: timer });

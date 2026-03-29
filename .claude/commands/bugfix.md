@@ -11,6 +11,7 @@
 ### 1. Понять проблему
 
 Извлеки из описания бага:
+
 - **Симптомы** — что видит пользователь (ошибка, неверное поведение, пустой экран)
 - **Область** — frontend / backend / realtime / shared types
 - **Шаги воспроизведения** — если описаны
@@ -30,6 +31,7 @@
 ### 3. Сформулировать гипотезы
 
 Создай 2-3 гипотезы, ранжированные по вероятности. Для каждой:
+
 - Что именно может быть причиной
 - Какой файл и примерно какая строка
 - Как проверить
@@ -45,6 +47,7 @@ console.log('[DIAG:area] description:', variable);
 Формат `[DIAG:area]` чтобы легко найти и убрать потом.
 
 **Где ставить логи:**
+
 - На входе/выходе подозрительной функции
 - Перед и после трансформации данных
 - В условных ветках (чтобы понять какая выполняется)
@@ -67,16 +70,16 @@ console.log('[DIAG:area] description:', variable);
 
 ## Частые причины багов в этом проекте
 
-| Симптом | Вероятная причина | Где искать |
-|---------|-------------------|------------|
-| `Cannot find module './106.js'` | Stale .next кэш | `rm -rf apps/web/.next` |
-| Edges не соединяются | handleId на верхнем уровне вместо metadata | `useEdgesStateSynced`, `adapters.ts` |
-| PlotNode пустой | Fallback chain не доходит до данных | `usePlotSnapshot`, `useFullCsvDataForPlot`, `useFullSqlDataForPlot` |
-| DuckDB `duplicate table` | Таблица регистрируется повторно | `duckdbClient.ts`, SQL-нода execution |
-| Бесконечный ре-рендер | Zustand selector возвращает новый объект | Проверь selector — должен возвращать примитив или stable ref |
-| Yjs не синхронизируется | Provider не подключён или awareness lost | `useBoardCollaboration`, `collaborationService.ts` |
-| API 403/404 | Неверный route или отсутствует authenticate | `routes/`, проверь preHandler |
-| Node execution зависает | Race condition в async коде | `python.worker.ts`, `executionStore` |
+| Симптом                         | Вероятная причина                           | Где искать                                                          |
+| ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| `Cannot find module './106.js'` | Stale .next кэш                             | `rm -rf apps/web/.next`                                             |
+| Edges не соединяются            | handleId на верхнем уровне вместо metadata  | `useEdgesStateSynced`, `adapters.ts`                                |
+| PlotNode пустой                 | Fallback chain не доходит до данных         | `usePlotSnapshot`, `useFullCsvDataForPlot`, `useFullSqlDataForPlot` |
+| DuckDB `duplicate table`        | Таблица регистрируется повторно             | `duckdbClient.ts`, SQL-нода execution                               |
+| Бесконечный ре-рендер           | Zustand selector возвращает новый объект    | Проверь selector — должен возвращать примитив или stable ref        |
+| Yjs не синхронизируется         | Provider не подключён или awareness lost    | `useBoardCollaboration`, `collaborationService.ts`                  |
+| API 403/404                     | Неверный route или отсутствует authenticate | `routes/`, проверь preHandler                                       |
+| Node execution зависает         | Race condition в async коде                 | `python.worker.ts`, `executionStore`                                |
 
 ## Примеры использования
 

@@ -173,13 +173,13 @@ export function InnerBoardCanvas({
   // Always hide own cursor overlay — user sees standard system cursor,
   // other users see colored cursor with label via Yjs sync
   const showOwnCursor = false;
-  const [cursors, onMouseMove, onPointerLeave] =
+  const [cursors, onMouseMove, onPointerLeave, onCursorViewportChange] =
     cursorsMap && clientId
       ? useCursorStateSynced(cursorsMap, clientId, userInfo, {
           showOwnCursor,
           boardContainerRef: canvasRootRef,
         })
-      : ([[], () => {}, () => {}] as const);
+      : ([[], () => {}, () => {}, () => {}] as const);
 
   // Editing presence is provided via EditingPresenceProvider context
   // Individual nodes use useNodeEditing hook to access editing state
@@ -4370,6 +4370,7 @@ export function InnerBoardCanvas({
               proOptions={{ hideAttribution: true }}
               className="h-full bg-white"
               style={{ width: '100%', height: '100%' }}
+              onMove={onCursorViewportChange}
               onInit={(instance) => setFlowInstance(instance)}
               selectNodesOnDrag={false}
               onNodesChange={handleNodesChange}

@@ -90,6 +90,8 @@ function CollaborativeCursors({
         }}
       />
 
+      {/* Outer wrapper follows the viewport transform (no transition — instant, no wobble).
+           Inner cursor positions use flow coordinates (with transition — smooth remote movement). */}
       <div
         style={{
           position: 'absolute',
@@ -100,26 +102,26 @@ function CollaborativeCursors({
           overflow: 'visible',
           pointerEvents: 'none',
           zIndex: 60, // Above comment anchors (z-index: 51) and comment cards (z-index: 52)
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+          transformOrigin: '0 0',
+          willChange: 'transform',
         }}
       >
         {cursors.map(({ id, color, x, y, userName }) => {
-          const screenX = x * viewport.zoom + viewport.x;
-          const screenY = y * viewport.zoom + viewport.y;
-          const translate = `translate(${screenX}px, ${screenY}px)`;
-
           return (
             <svg
               key={id}
               className="collaborative-cursor-group"
               style={{
                 position: 'absolute',
-                transform: translate,
+                transform: `translate(${x}px, ${y}px)`,
                 pointerEvents: 'none',
                 overflow: 'visible',
                 willChange: 'transform',
               }}
             >
-              <g style={{ transform: `scale(1)`, transformOrigin: '0 0' }}>
+              {/* Counter-scale to keep cursor visually the same size regardless of zoom */}
+              <g style={{ transform: `scale(${1 / viewport.zoom})`, transformOrigin: '0 0' }}>
                 {/* Cursor icon - user color fill with bold black outline */}
                 <g
                   className="collaborative-cursor-icon"

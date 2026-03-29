@@ -244,7 +244,6 @@ export const BoardCommandBar = memo(function BoardCommandBar({
   const card = (
     <div className={`pointer-events-none ${positioningClass}`} data-board-command-bar="true">
       <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-1.5 py-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
-
         {/* ── Group 1: Canvas Tools (Select, Note, Pen, Text, Shape) ── */}
         <div className="flex items-center gap-0.5">
           {canvasToolIds.map((tool) => {
@@ -496,7 +495,10 @@ export const BoardCommandBar = memo(function BoardCommandBar({
             <Divider />
             <div className="flex items-center gap-1">
               {NodeTypeIcon && (
-                <span className={`${btnBase}`} title={selectedNodeType === 'sql' ? t.sqlCell : t.pythonCell}>
+                <span
+                  className={`${btnBase}`}
+                  title={selectedNodeType === 'sql' ? t.sqlCell : t.pythonCell}
+                >
                   <NodeTypeIcon size={15} weight="regular" />
                 </span>
               )}

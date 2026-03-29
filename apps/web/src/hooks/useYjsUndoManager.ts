@@ -47,13 +47,10 @@ export function useYjsUndoManager(
     // - We don't add ydoc.clientID as it's used for WebSocket sync origins
     const trackedSet = new Set<any>([clientId]);
 
-    const manager = new UndoManager(
-      [nodesMap, edgesMap] as any,
-      {
-        trackedOrigins: trackedSet,
-        captureTimeout: 300,
-      },
-    );
+    const manager = new UndoManager([nodesMap, edgesMap] as any, {
+      trackedOrigins: trackedSet,
+      captureTimeout: 300,
+    });
 
     undoManagerRef.current = manager;
     initKeyRef.current = currentKey;

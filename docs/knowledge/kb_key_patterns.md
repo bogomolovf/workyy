@@ -45,6 +45,7 @@ export const useMyStore = create<MyStore>((set) => ({
 ## Yjs Sync Hook Pattern
 
 Hooks in `hooks/use*StateSynced.ts` follow this pattern:
+
 1. Get Y.Map from shared Y.Doc (`useBoardCollaboration` provides ydoc)
 2. Subscribe to Y.Map `observe` events
 3. Convert Yjs data → React state on change
@@ -55,14 +56,18 @@ Hooks in `hooks/use*StateSynced.ts` follow this pattern:
 
 ```typescript
 export async function myRoutes(fastify: FastifyInstance) {
-  fastify.get('/my-endpoint', {
-    schema: { querystring: mySchema },
-    preHandler: [fastify.authenticate],
-  }, async (request, reply) => {
-    const validated = mySchema.parse(request.query);
-    // ... logic
-    return reply.send(result);
-  });
+  fastify.get(
+    '/my-endpoint',
+    {
+      schema: { querystring: mySchema },
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const validated = mySchema.parse(request.query);
+      // ... logic
+      return reply.send(result);
+    },
+  );
 }
 ```
 

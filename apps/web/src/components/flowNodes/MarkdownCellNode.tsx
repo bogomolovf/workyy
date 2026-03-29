@@ -285,7 +285,9 @@ function MarkdownCellNodeInner({ data, selected }: NodeProps<MarkdownCellNodeDat
                 {source ? (
                   <ReactMarkdown>{source}</ReactMarkdown>
                 ) : (
-                  <span className="text-gray-400 italic">(empty markdown cell — click to edit)</span>
+                  <span className="text-gray-400 italic">
+                    (empty markdown cell — click to edit)
+                  </span>
                 )}
               </div>
             )}

@@ -7,9 +7,11 @@ type: reference
 # Workyy Architecture
 
 ## Overview
+
 Workyy — browser-based analytics platform on infinite canvas. Users build DAG pipelines from SQL/Python nodes, visualize data, collaborate in real-time. Think Miro + Jupyter.
 
 ## Monorepo Structure
+
 ```
 apps/
   web/              — Next.js 14 frontend (:3000)
@@ -25,6 +27,7 @@ packages/
 ## Tech Stack
 
 ### Frontend
+
 - React 18.3 + Next.js 14 (App Router)
 - ReactFlow 11.10 — node-edge graph editor
 - Zustand 5 — state management (19 stores)
@@ -38,6 +41,7 @@ packages/
 - Radix UI — dropdown menus (board menu)
 
 ### Backend
+
 - Fastify 4.27 + plugins (cors, cookie, jwt, multipart, websocket, rate-limit)
 - Prisma 5.17 + PostgreSQL 16
 - Zod 3.23 — request validation
@@ -46,6 +50,7 @@ packages/
 - DB drivers: pg, mysql2, oracledb, mssql, @clickhouse/client
 
 ### Infrastructure
+
 - Docker Compose: postgres (5433), redis (6379), otel-collector (4317)
 - Turborepo — build orchestration
 - pnpm 8.15 workspaces
@@ -55,6 +60,7 @@ packages/
 ## Key Data Flows
 
 ### Yjs Collaboration (real-time sync)
+
 1. Client connects to `/collab/{boardId}` WebSocket
 2. Fastify validates JWT + board access
 3. Yjs provider syncs Y.Doc between all clients
@@ -62,6 +68,7 @@ packages/
 5. Hooks convert Yjs state → React state (useNodesStateSynced, useEdgesStateSynced)
 
 ### Execution Pipeline
+
 1. User runs node → frontend calls backend `POST /runs`
 2. RunService creates Run (status: queued), resolves DAG dependencies
 3. Frontend executes in-browser via DuckDB (SQL) or Pyodide (Python) Worker
@@ -69,26 +76,32 @@ packages/
 5. Downstream nodes (PlotNode) read from upstream results
 
 ### Comments System
+
 - CommentThread anchored to board (x,y) or node
 - Messages with reactions (emoji), soft delete, subscriptions
 - API: list, create, resolve, react, subscribe
 - Frontend: CommentLayer → CommentAnchor → CommentThreadCard
 
 ### Presentation Broadcast
+
 - Single presenter lock per presentation node
 - Viewers see live slide sync via Yjs `presentationBroadcastsMap`
 - Private mode: local navigation independent of broadcast
 
 ## Database (Prisma Schema)
+
 17 models: User, Workspace, UserWorkspaceRole, Board, Node, Edge, Run, RunRequest, Snapshot, CommentThread, CommentMessage, MessageReaction, ThreadSubscription, Secret, DatabaseConnection, RetentionPolicy, AuditEvent, BoardDrawing, File
 
 ### NodeType enum (24 types)
+
 sql, python, table, plot, note, text, shape, image, video, document, draw, pen, database, csv, voice, notebook, pythonCell, markdownCell, sqlCell, notebookFrame
 
 ### Run status: queued → running → succeeded | failed
+
 ### Run trigger: manual, upstream, schedule
 
 ## API
+
 - OpenAPI spec: `docs/api/openapi.yaml`
 - Base: `/api/*` (Fastify), `/collab` (WebSocket)
 - Auth: JWT Bearer token via cookie

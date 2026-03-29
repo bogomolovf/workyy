@@ -86,6 +86,7 @@ export async function featureRoutes(fastify: FastifyInstance) {
 ## Правила
 
 ### Валидация
+
 ```typescript
 // ПРАВИЛЬНО — Zod на входе, типизированный результат
 const body = createBoardSchema.parse(request.body);
@@ -97,9 +98,10 @@ import { NodeTypeSchema, PositionSchema } from '@workyy/core-domain';
 ```
 
 ### Авторизация
+
 ```typescript
 // Всегда через preHandler
-preHandler: [fastify.authenticate]
+preHandler: [fastify.authenticate];
 
 // Доступ к ресурсам — через helper
 await ensureBoardAccess(fastify, request.user.id, boardId);
@@ -107,6 +109,7 @@ await ensureWorkspaceAccess(fastify, request.user.id, workspaceId);
 ```
 
 ### Ответы об ошибках
+
 ```typescript
 // Стандартный формат
 return reply.status(400).send({ detail: 'Human-readable message' });
@@ -115,6 +118,7 @@ return reply.status(404).send({ detail: 'Board not found' });
 ```
 
 ### Prisma
+
 ```typescript
 // Новая модель → обнови schema.prisma + создай миграцию
 // npx prisma migrate dev --name add_feature_table
@@ -127,6 +131,7 @@ const board = await fastify.prisma.board.findUnique({
 ```
 
 ### Регистрация роутов
+
 ```typescript
 // В routes/index.ts добавь:
 import { featureRoutes } from './feature';

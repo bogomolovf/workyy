@@ -19,7 +19,17 @@ type Props = {
 
 const DRAG_THRESHOLD = 4;
 
-function CommentAnchorInner({ thread, screenX, screenY, isActive, isSelected, zoom, onClick, onMove, onDrag }: Props) {
+function CommentAnchorInner({
+  thread,
+  screenX,
+  screenY,
+  isActive,
+  isSelected,
+  zoom,
+  onClick,
+  onMove,
+  onDrag,
+}: Props) {
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   // Flag: drag ended, waiting for store to update thread.anchorX/Y before clearing offset
   const pendingClearRef = useRef(false);

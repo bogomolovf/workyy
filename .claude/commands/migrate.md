@@ -11,6 +11,7 @@
 ### 1. Понять изменение
 
 Извлеки из запроса:
+
 - **Что меняется** — новая модель, новое поле, изменение связи, индекс
 - **Зачем** — какая фича/фикс требует это изменение
 - **Breaking change** — ломает ли существующие данные
@@ -53,6 +54,7 @@ model Board {
 ```
 
 **Правила:**
+
 - `@id @default(uuid())` для primary keys
 - `@relation(onDelete: Cascade)` для зависимых сущностей
 - `@@index` для полей, по которым часто фильтруют/сортируют
@@ -72,6 +74,7 @@ cd apps/realtime-server && npx prisma migrate dev --name описание_изм
 ```
 
 **Naming convention для миграций:** `snake_case`, описательное имя:
+
 - `add_template_model`
 - `add_last_accessed_at_to_board`
 - `add_visibility_field`
@@ -80,6 +83,7 @@ cd apps/realtime-server && npx prisma migrate dev --name описание_изм
 ### 6. Проверить сгенерированный SQL
 
 Прочитай файл миграции и убедись что:
+
 - SQL корректный
 - Нет DROP без необходимости
 - DEFAULT значения разумные
@@ -88,6 +92,7 @@ cd apps/realtime-server && npx prisma migrate dev --name описание_изм
 ### 7. Обновить зависимый код
 
 После миграции может потребоваться:
+
 - Обновить Zod-валидаторы в `validators/`
 - Добавить типы в `@workyy/core-domain` (если shared) — скажи пользователю запустить `/shared`
 - Обновить API роуты — скажи пользователю запустить `/backend`

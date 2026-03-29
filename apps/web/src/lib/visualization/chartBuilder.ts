@@ -689,7 +689,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         ...baseOption,
         xAxis: {
           type: 'category',
-          data: colorIndex >= 0 && yIndices.length === 1 ? Array.from(new Set(xAxisData)) : xAxisData,
+          data:
+            colorIndex >= 0 && yIndices.length === 1 ? Array.from(new Set(xAxisData)) : xAxisData,
           axisLabel: { rotate: xAxisData.length > 10 ? 45 : 0 },
         },
         yAxis: {
@@ -753,7 +754,9 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           const xToVal = new Map<string, number>();
           for (const row of g.rows) xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIndices[0]]));
           return {
-            name: g.name, type: 'line', smooth: false,
+            name: g.name,
+            type: 'line',
+            smooth: false,
             data: allX.map((x) => xToVal.get(x) ?? null),
             connectNulls: true,
             ...(useLargeMode && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
@@ -770,7 +773,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           // Build x→y maps and re-order
           seriesData = yIndices.map((yIdx, seriesIdx) => {
             const xToVal = new Map<string, number>();
-            for (const row of dataForChart.rows) xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIdx]));
+            for (const row of dataForChart.rows)
+              xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIdx]));
             return {
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
               type: 'line',
@@ -826,7 +830,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           const xToVal = new Map<string, number>();
           for (const row of g.rows) xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIndices[0]]));
           return {
-            name: g.name, type: 'line', areaStyle: {}, smooth: false,
+            name: g.name,
+            type: 'line',
+            areaStyle: {},
+            smooth: false,
             data: allX.map((x) => xToVal.get(x) ?? null),
             connectNulls: true,
             ...(useLargeModeArea && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
@@ -841,12 +848,15 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           finalXAxisDataArea = sorted;
           seriesData = yIndices.map((yIdx, seriesIdx) => {
             const xToVal = new Map<string, number>();
-            for (const row of dataForChart.rows) xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIdx]));
+            for (const row of dataForChart.rows)
+              xToVal.set(String(row[xIndex] ?? ''), toNum0(row[yIdx]));
             return {
               name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-              type: 'line', areaStyle: {},
+              type: 'line',
+              areaStyle: {},
               data: sorted.map((x) => xToVal.get(x) ?? null),
-              smooth: false, connectNulls: true,
+              smooth: false,
+              connectNulls: true,
               ...(useLargeModeArea && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
             };
           });
@@ -856,7 +866,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
             yIndices.length > 0
               ? yIndices.map((yIdx, seriesIdx) => ({
                   name: Array.isArray(yField) ? yField[seriesIdx] : yField,
-                  type: 'line', areaStyle: {},
+                  type: 'line',
+                  areaStyle: {},
                   data: dataForChart.rows.map((row) => toNum0(row[yIdx])),
                   smooth: false,
                   ...(useLargeModeArea && { sampling: 'lttb', large: true, largeThreshold: 2000 }),
@@ -1128,11 +1139,7 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       for (const [key, vals] of cellMap.entries()) {
         const [xVal, yVal] = key.split('|');
         const sum = vals.reduce((a, b) => a + b, 0);
-        heatmapData.push([
-          xArr.indexOf(xVal),
-          yArr.indexOf(yVal),
-          sum,
-        ]);
+        heatmapData.push([xArr.indexOf(xVal), yArr.indexOf(yVal), sum]);
       }
 
       return {
@@ -1663,7 +1670,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
     case 'gauge': {
       const gaugeConfig = config.gaugeConfig || {};
-      const valueFieldName = gaugeConfig.valueField || (Array.isArray(yField) ? yField[0] : yField) || dataForChart.columns[0];
+      const valueFieldName =
+        gaugeConfig.valueField ||
+        (Array.isArray(yField) ? yField[0] : yField) ||
+        dataForChart.columns[0];
       const valIdx = dataForChart.columns.indexOf(valueFieldName);
 
       let gaugeValue = 0;
@@ -1718,7 +1728,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
       // Build hierarchical data (same logic as treemap but nested for multi-level)
       const sizeIdx = dataForChart.columns.indexOf(sizeField);
-      const nodeMap = new Map<string, { name: string; value: number; children: Map<string, any> }>();
+      const nodeMap = new Map<
+        string,
+        { name: string; value: number; children: Map<string, any> }
+      >();
 
       for (const row of dataForChart.rows) {
         const val = row[sizeIdx];
@@ -1867,9 +1880,15 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         const tgt = String(row[tgtIdx] ?? '');
         nodeSet.add(src);
         nodeSet.add(tgt);
-        const link: { source: string; target: string; value?: number } = { source: src, target: tgt };
+        const link: { source: string; target: string; value?: number } = {
+          source: src,
+          target: tgt,
+        };
         if (wIdx >= 0) {
-          link.value = typeof row[wIdx] === 'number' ? row[wIdx] as number : parseFloat(String(row[wIdx] ?? 1)) || 1;
+          link.value =
+            typeof row[wIdx] === 'number'
+              ? (row[wIdx] as number)
+              : parseFloat(String(row[wIdx] ?? 1)) || 1;
         }
         links.push(link);
       }
@@ -1930,11 +1949,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const dims = numericCols.slice(0, 10); // Limit to 10 axes
       const parallelAxis = dims.map((col, idx) => {
         const colIdx = dataForChart.columns.indexOf(col.name);
-        const values = dataForChart.rows
-          .map((row) => {
-            const v = row[colIdx];
-            return typeof v === 'number' ? v : parseFloat(String(v ?? 0)) || 0;
-          });
+        const values = dataForChart.rows.map((row) => {
+          const v = row[colIdx];
+          return typeof v === 'number' ? v : parseFloat(String(v ?? 0)) || 0;
+        });
         return {
           dim: idx,
           name: col.name,
@@ -1989,7 +2007,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       // Build tree from first groupBy field
       const sizeIdx = sizeField ? dataForChart.columns.indexOf(sizeField) : -1;
       const topIdx = dataForChart.columns.indexOf(groupByFields[0]);
-      const childIdx = groupByFields.length > 1 ? dataForChart.columns.indexOf(groupByFields[1]) : -1;
+      const childIdx =
+        groupByFields.length > 1 ? dataForChart.columns.indexOf(groupByFields[1]) : -1;
 
       const treeMap = new Map<string, Map<string, number>>();
       for (const row of dataForChart.rows) {
@@ -1998,7 +2017,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
         if (childIdx >= 0) {
           const childKey = String(row[childIdx] ?? '');
-          const val = sizeIdx >= 0 ? (typeof row[sizeIdx] === 'number' ? row[sizeIdx] as number : parseFloat(String(row[sizeIdx] ?? 1)) || 1) : 1;
+          const val =
+            sizeIdx >= 0
+              ? typeof row[sizeIdx] === 'number'
+                ? (row[sizeIdx] as number)
+                : parseFloat(String(row[sizeIdx] ?? 1)) || 1
+              : 1;
           const childMap = treeMap.get(topKey)!;
           childMap.set(childKey, (childMap.get(childKey) || 0) + val);
         }
@@ -2008,9 +2032,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         name: config.styling.title || 'Root',
         children: Array.from(treeMap.entries()).map(([key, children]) => ({
           name: key,
-          children: children.size > 0
-            ? Array.from(children.entries()).map(([name, value]) => ({ name, value }))
-            : undefined,
+          children:
+            children.size > 0
+              ? Array.from(children.entries()).map(([name, value]) => ({ name, value }))
+              : undefined,
         })),
       };
 
@@ -2042,12 +2067,17 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       // ThemeRiver: X = date/time, Y = value, color = category
       const dateField2 = xField || dataForChart.columns[0];
       const valueField2 = Array.isArray(yField) ? yField[0] : yField;
-      const categoryField = colorField || dataForChart.columns.find((c) => c !== dateField2 && c !== valueField2);
+      const categoryField =
+        colorField || dataForChart.columns.find((c) => c !== dateField2 && c !== valueField2);
 
       if (!dateField2 || !valueField2) {
         return {
           ...baseOption,
-          title: { text: 'ThemeRiver requires X (time) and Y (value)', left: 'center', top: 'middle' },
+          title: {
+            text: 'ThemeRiver requires X (time) and Y (value)',
+            left: 'center',
+            top: 'middle',
+          },
         };
       }
 
@@ -2058,7 +2088,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       const riverData: [string, number, string][] = [];
       for (const row of dataForChart.rows) {
         const date = String(row[dateIdx2] ?? '');
-        const val = typeof row[valIdx2] === 'number' ? row[valIdx2] as number : parseFloat(String(row[valIdx2] ?? 0)) || 0;
+        const val =
+          typeof row[valIdx2] === 'number'
+            ? (row[valIdx2] as number)
+            : parseFloat(String(row[valIdx2] ?? 0)) || 0;
         const cat = catIdx2 >= 0 ? String(row[catIdx2] ?? '') : valueField2;
         riverData.push([date, val, cat]);
       }
@@ -2168,7 +2201,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       if (!xField || !yFieldStr3d || !zField) {
         return {
           ...baseOption,
-          title: { text: '3D charts require X, Y, Z fields', left: 'center', top: 'middle', textStyle: { color: '#94a3b8' } },
+          title: {
+            text: '3D charts require X, Y, Z fields',
+            left: 'center',
+            top: 'middle',
+            textStyle: { color: '#94a3b8' },
+          },
         };
       }
 
@@ -2176,13 +2214,20 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
       if (xIndex < 0 || yIndices.length === 0 || zIdx < 0) {
         return {
           ...baseOption,
-          title: { text: '3D fields not found in data', left: 'center', top: 'middle', textStyle: { color: '#94a3b8' } },
+          title: {
+            text: '3D fields not found in data',
+            left: 'center',
+            top: 'middle',
+            textStyle: { color: '#94a3b8' },
+          },
         };
       }
 
       // Common data extraction with proper numeric coercion
       const pts3d = dataForChart.rows.map((row) => [
-        toNum0(row[xIndex]), toNum0(row[yIndices[0]]), toNum0(row[zIdx]),
+        toNum0(row[xIndex]),
+        toNum0(row[yIndices[0]]),
+        toNum0(row[zIdx]),
       ]);
 
       if (config.chartType === 'scatter3d') {
@@ -2192,17 +2237,23 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           xAxis3D: { type: 'value', name: xField },
           yAxis3D: { type: 'value', name: yFieldStr3d },
           zAxis3D: { type: 'value', name: zField },
-          series: [{
-            type: 'scatter3D', data: pts3d, symbolSize: 5,
-            itemStyle: { opacity: 0.8 },
-            emphasis: { itemStyle: { color: '#f59e0b' } },
-          }],
+          series: [
+            {
+              type: 'scatter3D',
+              data: pts3d,
+              symbolSize: 5,
+              itemStyle: { opacity: 0.8 },
+              emphasis: { itemStyle: { color: '#f59e0b' } },
+            },
+          ],
         };
       }
 
       if (config.chartType === 'bar3d') {
         const xCats = Array.from(new Set(dataForChart.rows.map((r) => String(r[xIndex] ?? ''))));
-        const yCats = Array.from(new Set(dataForChart.rows.map((r) => String(r[yIndices[0]] ?? ''))));
+        const yCats = Array.from(
+          new Set(dataForChart.rows.map((r) => String(r[yIndices[0]] ?? ''))),
+        );
         const bar3dData = dataForChart.rows.map((row) => [
           xCats.indexOf(String(row[xIndex] ?? '')),
           yCats.indexOf(String(row[yIndices[0]] ?? '')),
@@ -2211,22 +2262,38 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
         const zMax = Math.max(...bar3dData.map((d) => d[2] as number), 1);
         return {
           ...baseOption,
-          grid3D: { boxWidth: 100, boxDepth: 80, viewControl: { distance: 200, autoRotate: false } },
+          grid3D: {
+            boxWidth: 100,
+            boxDepth: 80,
+            viewControl: { distance: 200, autoRotate: false },
+          },
           xAxis3D: { type: 'category', data: xCats, name: xField },
           yAxis3D: { type: 'category', data: yCats, name: yFieldStr3d },
           zAxis3D: { type: 'value', name: zField },
-          visualMap: { max: zMax, inRange: { color: ['#313695', '#4575b4', '#74add1', '#fee090', '#f46d43', '#d73027', '#a50026'] } },
-          series: [{
-            type: 'bar3D', data: bar3dData, shading: 'lambert',
-            label: { show: false }, emphasis: { label: { show: true, fontSize: 12 } },
-          }],
+          visualMap: {
+            max: zMax,
+            inRange: {
+              color: ['#313695', '#4575b4', '#74add1', '#fee090', '#f46d43', '#d73027', '#a50026'],
+            },
+          },
+          series: [
+            {
+              type: 'bar3D',
+              data: bar3dData,
+              shading: 'lambert',
+              label: { show: false },
+              emphasis: { label: { show: true, fontSize: 12 } },
+            },
+          ],
         };
       }
 
       if (config.chartType === 'surface3d') {
         // Surface needs sorted grid data for proper rendering
         // Sort by X then Y to create a proper grid
-        const sortedPts = [...pts3d].sort((a, b) => (a[0] as number) - (b[0] as number) || (a[1] as number) - (b[1] as number));
+        const sortedPts = [...pts3d].sort(
+          (a, b) => (a[0] as number) - (b[0] as number) || (a[1] as number) - (b[1] as number),
+        );
         const zNums = sortedPts.map((d) => d[2] as number);
         const zMin = zNums.length > 0 ? Math.min(...zNums) : 0;
         const zMax = zNums.length > 0 ? Math.max(...zNums) : 1;
@@ -2237,8 +2304,23 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
           yAxis3D: { type: 'value', name: yFieldStr3d },
           zAxis3D: { type: 'value', name: zField },
           visualMap: {
-            show: true, dimension: 2, min: zMin, max: zMax,
-            inRange: { color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026'] },
+            show: true,
+            dimension: 2,
+            min: zMin,
+            max: zMax,
+            inRange: {
+              color: [
+                '#313695',
+                '#4575b4',
+                '#74add1',
+                '#abd9e9',
+                '#fee090',
+                '#fdae61',
+                '#f46d43',
+                '#d73027',
+                '#a50026',
+              ],
+            },
           },
           series: [{ type: 'surface', wireframe: { show: true }, data: sortedPts }],
         };
@@ -2260,7 +2342,10 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
     case 'wordcloud': {
       // WordCloud: X = text/word, weight = size
       const textField = xField || dataForChart.columns[0];
-      const weightFieldName = config.mapping.weight || (Array.isArray(yField) ? yField[0] : yField) || dataForChart.columns.find((c) => c !== textField);
+      const weightFieldName =
+        config.mapping.weight ||
+        (Array.isArray(yField) ? yField[0] : yField) ||
+        dataForChart.columns.find((c) => c !== textField);
 
       const textIdx = dataForChart.columns.indexOf(textField);
       const weightIdx = weightFieldName ? dataForChart.columns.indexOf(weightFieldName) : -1;
@@ -2274,9 +2359,12 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
       const wordData = dataForChart.rows.map((row) => ({
         name: String(row[textIdx] ?? ''),
-        value: weightIdx >= 0
-          ? (typeof row[weightIdx] === 'number' ? row[weightIdx] as number : parseFloat(String(row[weightIdx] ?? 1)) || 1)
-          : 1,
+        value:
+          weightIdx >= 0
+            ? typeof row[weightIdx] === 'number'
+              ? (row[weightIdx] as number)
+              : parseFloat(String(row[weightIdx] ?? 1)) || 1
+            : 1,
       }));
 
       // Sort by value desc for visual priority
@@ -2310,7 +2398,8 @@ export function buildEChartsConfig(data: SqlResult, config: PlotConfig): ECharts
 
     case 'liquidfill': {
       // LiquidFill: single value as percentage
-      const valueFieldName = (Array.isArray(yField) ? yField[0] : yField) || dataForChart.columns[0];
+      const valueFieldName =
+        (Array.isArray(yField) ? yField[0] : yField) || dataForChart.columns[0];
       const valIdx = dataForChart.columns.indexOf(valueFieldName);
 
       let fillValue = 0;

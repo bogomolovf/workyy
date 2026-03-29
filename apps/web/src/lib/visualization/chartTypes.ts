@@ -45,9 +45,9 @@ export const EXTENSION_CHART_TYPES: ChartType[] = ['wordcloud', 'liquidfill'];
 /** Chart types with internal roam/drag that capture pointer events (GL + interactive 2D) */
 export const INTERACTIVE_CHART_TYPES: ChartType[] = [
   ...GL_CHART_TYPES,
-  'graph',   // force layout with roam
-  'tree',    // expandAndCollapse with roam-like behavior
-  'sankey',  // draggable nodes
+  'graph', // force layout with roam
+  'tree', // expandAndCollapse with roam-like behavior
+  'sankey', // draggable nodes
 ];
 
 /** Check if a chart type has internal pointer-event-capturing interaction */

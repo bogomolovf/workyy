@@ -197,18 +197,37 @@ export function validateFieldMapping(
   const mapping = config.mapping ?? {};
 
   // X axis is required for most chart types
-  const noXRequired = ['pie', 'doughnut', 'treemap', 'histogram', 'gauge', 'liquidfill', 'wordcloud', 'graph', 'radar', 'parallel'];
+  const noXRequired = [
+    'pie',
+    'doughnut',
+    'treemap',
+    'histogram',
+    'gauge',
+    'liquidfill',
+    'wordcloud',
+    'graph',
+    'radar',
+    'parallel',
+  ];
   if (!noXRequired.includes(config.chartType) && !mapping.x) {
     return { valid: false, message: 'X axis is required for this chart type' };
   }
 
   // Y axis is required for most chart types
-  const noYRequired = ['pie', 'doughnut', 'treemap', 'histogram', 'gauge', 'liquidfill', 'wordcloud', 'graph', 'radar', 'parallel', 'candlestick'];
-  if (
-    !noYRequired.includes(config.chartType) &&
-    !mapping.y &&
-    !Array.isArray(mapping.y)
-  ) {
+  const noYRequired = [
+    'pie',
+    'doughnut',
+    'treemap',
+    'histogram',
+    'gauge',
+    'liquidfill',
+    'wordcloud',
+    'graph',
+    'radar',
+    'parallel',
+    'candlestick',
+  ];
+  if (!noYRequired.includes(config.chartType) && !mapping.y && !Array.isArray(mapping.y)) {
     return { valid: false, message: 'Y axis is required for this chart type' };
   }
 
@@ -337,8 +356,7 @@ export function validateFieldMapping(
   // Treemap validation
   if (config.chartType === 'treemap') {
     const hasGroupBy = config.aggregation?.groupBy && config.aggregation.groupBy.length > 0;
-    const hasYField =
-      mapping.y && (Array.isArray(mapping.y) ? mapping.y.length > 0 : true);
+    const hasYField = mapping.y && (Array.isArray(mapping.y) ? mapping.y.length > 0 : true);
     if (!hasGroupBy && !mapping.x) {
       return { valid: false, message: 'Treemap requires groupBy fields or X field' };
     }

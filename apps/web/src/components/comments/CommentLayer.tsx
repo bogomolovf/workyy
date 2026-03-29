@@ -35,7 +35,13 @@ function flowToScreen(
   };
 }
 
-function CommentLayerInner({ boardId, selectedCommentIds, commentDragMap, cursorsMap, clientId: localClientId }: Props) {
+function CommentLayerInner({
+  boardId,
+  selectedCommentIds,
+  commentDragMap,
+  cursorsMap,
+  clientId: localClientId,
+}: Props) {
   const viewport = useViewport();
   const user = useAuthStore((s) => s.user);
   const {
@@ -63,9 +69,7 @@ function CommentLayerInner({ boardId, selectedCommentIds, commentDragMap, cursor
   // `activeDrags` — entries currently in the Yjs map (actively being dragged).
   // `settledDrags` — last known position after drag ended (Yjs entry deleted)
   //   kept until thread.anchorX/Y catches up from the server to avoid flicker.
-  const [activeDrags, setActiveDrags] = useState<
-    Map<string, { x: number; y: number }>
-  >(new Map());
+  const [activeDrags, setActiveDrags] = useState<Map<string, { x: number; y: number }>>(new Map());
   const settledDragsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const [settledDragsTick, setSettledDragsTick] = useState(0);
 
@@ -252,7 +256,8 @@ function CommentLayerInner({ boardId, selectedCommentIds, commentDragMap, cursor
         threads[activeThreadId] &&
         (() => {
           const t = threads[activeThreadId];
-          const dragPos = activeDrags.get(activeThreadId) ?? settledDragsRef.current.get(activeThreadId);
+          const dragPos =
+            activeDrags.get(activeThreadId) ?? settledDragsRef.current.get(activeThreadId);
           const anchorX = dragPos ? dragPos.x : t.anchorX;
           const anchorY = dragPos ? dragPos.y : t.anchorY;
           const pos = flowToScreen(anchorX, anchorY, viewport);

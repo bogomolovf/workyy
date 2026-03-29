@@ -1,6 +1,7 @@
 # Workyy
 
 ## Build & Test
+
 - `pnpm install` — install all deps
 - `pnpm build` — build all (Turborepo orchestrates order)
 - `pnpm test` — run all tests (Vitest)
@@ -10,6 +11,7 @@
 - `pnpm --filter realtime-server prisma:studio` — DB GUI
 
 ## Conventions
+
 - TypeScript strict mode everywhere
 - Zod for runtime validation (backend validators/)
 - Zustand for client state (state/ directory, domain-grouped)
@@ -20,6 +22,7 @@
 - No console.log in production code (use logger utility)
 
 ## Architecture
+
 - Monorepo: pnpm workspaces + Turborepo
 - Frontend: Next.js 14, React 18, ReactFlow, Zustand, TanStack Query
 - Backend: Fastify, Prisma, PostgreSQL, Zod
@@ -27,12 +30,15 @@
 - WASM: DuckDB (SQL), Pyodide (Python) via wasm-bridge package
 
 ## Branch Strategy
+
 - `main` — stable branch
 - `feature/*` — feature branches
 - PR-based workflow, merge into main
 
 ## Knowledge Base
+
 Detailed project knowledge for AI-assisted development lives in `docs/knowledge/`:
+
 - `kb_architecture.md` — full architecture, data flows, Yjs collaboration, execution pipeline, DB models
 - `kb_frontend_map.md` — all frontend components, hooks, stores, libs, routes
 - `kb_backend_map.md` — all backend routes, services, validators, Prisma schema

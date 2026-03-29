@@ -229,19 +229,12 @@ export async function fetchDatasetFromServer(
 }
 
 /** List all datasets on a board (metadata only, no rows) */
-export async function listBoardDatasets(
-  boardId: string,
-): Promise<{ datasets: DatasetMeta[] }> {
-  return apiFetch<{ datasets: DatasetMeta[] }>(
-    `${API_URL}/api/boards/${boardId}/datasets`,
-  );
+export async function listBoardDatasets(boardId: string): Promise<{ datasets: DatasetMeta[] }> {
+  return apiFetch<{ datasets: DatasetMeta[] }>(`${API_URL}/api/boards/${boardId}/datasets`);
 }
 
 /** Delete a dataset from server */
-export async function deleteDatasetFromServer(
-  boardId: string,
-  tableName: string,
-): Promise<void> {
+export async function deleteDatasetFromServer(boardId: string, tableName: string): Promise<void> {
   return apiFetch<void>(
     `${API_URL}/api/boards/${boardId}/datasets/${encodeURIComponent(tableName)}`,
     { method: 'DELETE' },

@@ -37,9 +37,7 @@ export const ThreadSummarySchema = z.object({
   resolvedAt: z.string().nullable(),
   createdById: UuidSchema,
   createdBy: UserRefSchema,
-  resolvedBy: z
-    .object({ id: UuidSchema, name: z.string().nullable() })
-    .nullable(),
+  resolvedBy: z.object({ id: UuidSchema, name: z.string().nullable() }).nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   messageCount: z.number().int(),
@@ -65,9 +63,7 @@ export const ThreadDetailSchema = z.object({
   resolvedAt: z.string().nullable(),
   createdById: UuidSchema,
   createdBy: UserRefSchema,
-  resolvedBy: z
-    .object({ id: UuidSchema, name: z.string().nullable() })
-    .nullable(),
+  resolvedBy: z.object({ id: UuidSchema, name: z.string().nullable() }).nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   subscribed: z.boolean(),

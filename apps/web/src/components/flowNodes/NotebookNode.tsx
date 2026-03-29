@@ -43,7 +43,12 @@ function cellResultToOutputs(result: CellExecutionResult): NotebookCellOutput[] 
     outputs.push({ outputType: 'stream', text: result.stdout });
   }
   if (result.error) {
-    outputs.push({ outputType: 'error', ename: 'ExecutionError', evalue: result.error, traceback: [result.error] });
+    outputs.push({
+      outputType: 'error',
+      ename: 'ExecutionError',
+      evalue: result.error,
+      traceback: [result.error],
+    });
   }
   if (result.tableData) {
     outputs.push({ outputType: 'execute_result', data: { 'application/json': result.tableData } });
@@ -170,7 +175,8 @@ function OriginalOutputView({ originalOutputs }: { originalOutputs: NotebookCell
   const tableData = useMemo(() => {
     for (const out of originalOutputs) {
       const json = out.data?.['application/json'] as any;
-      if (json && json.columns && json.rows) return json as { columns: string[]; rows: Array<Array<string | number | null>> };
+      if (json && json.columns && json.rows)
+        return json as { columns: string[]; rows: Array<Array<string | number | null>> };
     }
     return null;
   }, [originalOutputs]);
@@ -668,7 +674,11 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
               ...nb,
               cells: nb.cells.map((c) =>
                 c.id === cellId
-                  ? { ...c, outputs: cellResultToOutputs(result), executionCount: result.executionCount }
+                  ? {
+                      ...c,
+                      outputs: cellResultToOutputs(result),
+                      executionCount: result.executionCount,
+                    }
                   : c,
               ),
             }));
@@ -684,7 +694,15 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
       setCurrentCellId(null);
       abortRef.current = null;
     }
-  }, [isRunningAll, codeCells, upstreamData, cellDataMap, csvUpstreamFilename, updateNotebook, data.nodeId]);
+  }, [
+    isRunningAll,
+    codeCells,
+    upstreamData,
+    cellDataMap,
+    csvUpstreamFilename,
+    updateNotebook,
+    data.nodeId,
+  ]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -743,7 +761,15 @@ function NotebookNodeInner({ data, selected, id }: NodeProps<NotebookNodeData>) 
 
       setCurrentCellId(null);
     },
-    [isRunningAll, cellResults, upstreamData, cellDataMap, csvUpstreamFilename, updateNotebook, data.nodeId],
+    [
+      isRunningAll,
+      cellResults,
+      upstreamData,
+      cellDataMap,
+      csvUpstreamFilename,
+      updateNotebook,
+      data.nodeId,
+    ],
   );
 
   return (

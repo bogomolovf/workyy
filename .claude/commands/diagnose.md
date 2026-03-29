@@ -10,6 +10,7 @@
 ### 1. Сбор контекста
 
 **Параллельно** выполни:
+
 - Прочитай файлы, связанные с проблемой
 - `git log --oneline -15 -- <path>` — были ли недавние изменения
 - `git diff HEAD~5 -- <path>` — что менялось в последних коммитах
@@ -21,17 +22,20 @@
 Проследи путь данных от источника до симптома:
 
 **Frontend:**
+
 ```
 User action → Event handler → Hook → Zustand store → React render → DOM
                                    → API call → Response → Store update → Re-render
 ```
 
 **Backend:**
+
 ```
 HTTP request → Fastify route → Zod validation → Prisma query → Response
 ```
 
 **Realtime:**
+
 ```
 Yjs ydoc change → Observer callback → Store sync → React update
                 → WebSocket → Other clients → Their ydoc → Their observers
@@ -42,6 +46,7 @@ Yjs ydoc change → Observer callback → Store sync → React update
 ### 3. Гипотезы
 
 Сформулируй **2-3 гипотезы**, для каждой:
+
 - **Гипотеза**: что именно ломается
 - **Вероятность**: высокая / средняя / низкая
 - **Доказательства**: что в коде указывает на эту причину
@@ -56,6 +61,7 @@ console.log('[DIAG:area] description:', variable);
 ```
 
 Для каждого лога объясни:
+
 - Куда вставить (файл, строка, место в функции)
 - Что ожидается при нормальной работе
 - Что покажет при баге
@@ -63,6 +69,7 @@ console.log('[DIAG:area] description:', variable);
 ### 5. Что попросить пользователя
 
 Сформулируй конкретные вопросы:
+
 - Какие шаги воспроизведения (если не описаны)
 - Что проверить в DevTools: Console / Network / React DevTools / Components
 - Какие скриншоты или видео нужны
@@ -91,14 +98,14 @@ console.log('[DIAG:area] description:', variable);
 
 ## Частые ловушки
 
-| Ловушка | Как распознать | Решение |
-|---------|----------------|---------|
-| `.next` кэш показывает старый код | Изменения не видны после правки | `rm -rf apps/web/.next` |
-| Zustand state обновляется, но UI нет | DevTools показывает верный state | Selector возвращает новый объект → нужен shallow compare |
-| Yjs provider не подключён | Нет awareness/sync между клиентами | Проверить `useBoardCollaboration`, WebSocket connection |
-| DuckDB таблица зарегистрирована дважды | `duplicate table` error | Race condition при регистрации в `duckdbClient.ts` |
-| Prisma query возвращает null | 404 или пустые данные на фронте | Проверить `include`/`select` в запросе, связи в schema |
-| Race condition в async коде | Проблема воспроизводится не всегда | Проверить порядок await, отсутствие guard conditions |
+| Ловушка                                | Как распознать                     | Решение                                                  |
+| -------------------------------------- | ---------------------------------- | -------------------------------------------------------- |
+| `.next` кэш показывает старый код      | Изменения не видны после правки    | `rm -rf apps/web/.next`                                  |
+| Zustand state обновляется, но UI нет   | DevTools показывает верный state   | Selector возвращает новый объект → нужен shallow compare |
+| Yjs provider не подключён              | Нет awareness/sync между клиентами | Проверить `useBoardCollaboration`, WebSocket connection  |
+| DuckDB таблица зарегистрирована дважды | `duplicate table` error            | Race condition при регистрации в `duckdbClient.ts`       |
+| Prisma query возвращает null           | 404 или пустые данные на фронте    | Проверить `include`/`select` в запросе, связи в schema   |
+| Race condition в async коде            | Проблема воспроизводится не всегда | Проверить порядок await, отсутствие guard conditions     |
 
 ## Примеры использования
 

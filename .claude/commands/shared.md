@@ -49,28 +49,36 @@ export type MyType = z.infer<typeof MySchema>;
 ## Правила
 
 ### Добавление нового типа ноды
+
 ```typescript
 // В schemas/node.ts — добавь в enum
 export const NodeTypeSchema = z.enum([
-  'sql', 'python', 'table', 'plot',
+  'sql',
+  'python',
+  'table',
+  'plot',
   // ...
-  'newType',  // ← добавь сюда
+  'newType', // ← добавь сюда
 ]);
 ```
+
 После этого фронт и бэк автоматически получат новый тип при пересборке.
 
 ### Добавление новой схемы
+
 1. Создай файл `schemas/newFeature.ts`
 2. Добавь реэкспорт в `index.ts`: `export * from './schemas/newFeature';`
 3. Пересобери: `pnpm --filter core-domain build`
 
 ### Изменение существующей схемы
+
 - **Добавление optional поля** — безопасно, не ломает потребителей
 - **Добавление required поля** — ломает `.parse()` на бэке для старых данных
 - **Удаление поля** — ломает фронт и бэк, нужна координация
 - **Изменение enum** — добавление значения безопасно, удаление ломает
 
 ### Именование
+
 - Схемы: `PascalCaseSchema` (например `NodeTypeSchema`)
 - Типы: `PascalCase` (например `NodeType`)
 - Файлы: `camelCase.ts` (например `common.ts`)
@@ -94,6 +102,7 @@ export const NodeTypeSchema = z.enum([
 ## Координация с другими агентами
 
 Если пользователь говорит:
+
 - "Добавь тип ноды X" → добавь в `NodeTypeSchema`, скажи запустить `/frontend` и `/backend` для обновления
 - "Общий тип для фичи Y" → создай схему, скажи какие файлы на фронте/бэке нужно обновить
 - "Синхронизируй типы" → проверь `NodeTypeSchema` vs `api.types.ts` vs `validators/boards.ts`, найди расхождения
