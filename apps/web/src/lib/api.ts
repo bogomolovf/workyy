@@ -335,10 +335,20 @@ export async function loginUser(payload: { email: string; password: string }) {
     if (!res.ok) {
       let errorDetail = 'Login failed';
       try {
-        const error = (await res.json()) as { detail?: string; title?: string };
-        errorDetail = error.detail ?? error.title ?? errorDetail;
+        const text = await res.text();
+        if (text) {
+          const error = JSON.parse(text) as { detail?: string; title?: string };
+          errorDetail = error.detail ?? error.title ?? errorDetail;
+        }
       } catch {
-        // non-JSON response
+        // non-JSON or empty response — give a hint by status
+        if (res.status >= 500) {
+          errorDetail = 'Server error. Please try again later.';
+        } else if (res.status === 401) {
+          errorDetail = 'Invalid email or password.';
+        } else if (res.status === 0 || res.status === 404) {
+          errorDetail = 'Cannot reach server. Is the backend running? (e.g. ./start.sh)';
+        }
       }
       throw new Error(errorDetail);
     }
@@ -366,6 +376,34 @@ export async function fetchCurrentUser() {
   if (res.status === 401) return null;
   if (!res.ok) {
     throw new Error('Failed to fetch current user');
+  }
+  return res.json();
+}
+
+// Workspace (team) API
+
+export type CreatedWorkspace = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+export async function createWorkspace(payload: { name: string }): Promise<CreatedWorkspace> {
+  const res = await fetch(`${API_URL}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let detail = 'Failed to create workspace';
+    try {
+      const problem = await res.json();
+      detail = problem?.detail ?? detail;
+    } catch {
+      detail = await res.text().catch(() => detail);
+    }
+    throw new Error(detail);
   }
   return res.json();
 }

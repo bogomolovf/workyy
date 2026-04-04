@@ -7,9 +7,53 @@ import {
   addWorkspaceMemberBodySchema,
   removeWorkspaceMemberParamsSchema,
   updateWorkspaceMemberRoleBodySchema,
+  createWorkspaceBodySchema,
 } from '../validators/workspaces';
 
 export async function workspacesRoutes(app: FastifyInstance) {
+  // Create a new workspace (team)
+  app.post('/workspaces', { preValidation: [app.authenticate] }, async (request, reply) => {
+    const userId = request.user!.userId;
+    const parseBody = createWorkspaceBodySchema.safeParse(request.body);
+    if (!parseBody.success) {
+      return sendProblem(reply, {
+        title: 'Validation error',
+        status: 422,
+        detail: parseBody.error.message,
+        errors: parseBody.error.flatten(),
+      });
+    }
+
+    const { name } = parseBody.data;
+
+    const workspace = await container.prisma.workspace.create({
+      data: {
+        name,
+        members: {
+          create: {
+            userId,
+            role: 'owner',
+          },
+        },
+      },
+    });
+
+    await container.auditService.record(
+      {
+        type: 'workspace.created',
+        workspaceId: workspace.id,
+        payload: { name, createdBy: userId },
+      },
+      container.prisma,
+    );
+
+    return reply.code(201).send({
+      id: workspace.id,
+      name: workspace.name,
+      createdAt: workspace.createdAt.toISOString(),
+    });
+  });
+
   // Get workspace members
   app.get(
     '/workspaces/:workspaceId/members',
@@ -370,4 +414,3 @@ export async function workspacesRoutes(app: FastifyInstance) {
     },
   );
 }
-

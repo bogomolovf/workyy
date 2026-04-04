@@ -12,6 +12,7 @@ import {
 } from '../../lib/api';
 import { useBoardCanvasApiStore } from '../../state/boardCanvasApiStore';
 import { useBoardSettingsStore } from '../../state/boardSettingsStore';
+import { useExecutionStore } from '../../state/executionStore';
 import { useToastStore } from '../../state/toastStore';
 
 export type BoardSnapshot = {
@@ -32,14 +33,12 @@ export type BoardMenuContext = {
   canUndo: boolean;
   canRedo: boolean;
   fullscreenTarget: HTMLElement | null | undefined;
-  /** Optional: open command palette (Cmd+K). If not provided, action shows disabled + tooltip. */
   onOpenCommands?: () => void;
-  /** Optional: open find panel. If not provided, action shows disabled + tooltip. */
   onOpenFind?: () => void;
-  /** Optional: open board details panel. If not provided, action opens minimal modal or disabled. */
   onOpenDetails?: () => void;
-  /** Optional: open profile/settings page. If not provided, navigates to /user-profile. */
   onOpenProfile?: () => void;
+  onOpenCatchUp?: () => void;
+  onOpenHistory?: () => void;
 };
 
 function toast(): {
@@ -55,15 +54,19 @@ function toast(): {
   };
 }
 
-/** Catch up: fit view to show all nodes + toast */
+/** Catch up: open catch-up panel (or fallback to fitView) */
 export function runCatchUp(ctx: BoardMenuContext): void {
   ctx.onCloseMenu();
-  const fitView = useBoardCanvasApiStore.getState().fitView;
-  if (fitView) {
-    fitView();
-    toast().success('Caught up');
+  if (ctx.onOpenCatchUp) {
+    ctx.onOpenCatchUp();
   } else {
-    toast().info('Canvas not ready');
+    const fitView = useBoardCanvasApiStore.getState().fitView;
+    if (fitView) {
+      fitView();
+      toast().success('Caught up');
+    } else {
+      toast().info('Canvas not ready');
+    }
   }
 }
 
@@ -155,13 +158,46 @@ export function runSaveAsTemplate(ctx: BoardMenuContext): void {
   toast().success('Template saved locally');
 }
 
-/** Export to spreadsheet (CSV): if selected node has table data, export it */
+/** Export to spreadsheet (CSV): collect all tabular data from execution store and download */
 export function runExportSpreadsheet(ctx: BoardMenuContext): void {
   ctx.onCloseMenu();
-  // TODO: get selected node from execution store; if it has table output, export as CSV
-  toast().info(
-    'Export CSV: select a node with table result, then use this. TODO: wire to execution store.',
-  );
+  const entries = useExecutionStore.getState().entries;
+  const csvParts: string[] = [];
+  for (const [nodeId, entry] of Object.entries(entries)) {
+    const sqlResult =
+      entry.output?.kind === 'sql'
+        ? entry.output.result
+        : entry.output?.kind === 'python' && entry.output.result.table
+          ? entry.output.result.table
+          : null;
+    if (!sqlResult || !sqlResult.columns.length) continue;
+
+    csvParts.push(`# Node: ${nodeId}`);
+    const escape = (v: string | number | null) => {
+      if (v == null) return '';
+      const s = String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+    csvParts.push(sqlResult.columns.map(escape).join(','));
+    for (const row of sqlResult.rows) {
+      csvParts.push(row.map(escape).join(','));
+    }
+    csvParts.push('');
+  }
+  if (!csvParts.length) {
+    toast().info('No tabular data to export. Run some SQL or Python nodes first.');
+    return;
+  }
+  const blob = new Blob([csvParts.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = `board-${ctx.boardId.slice(0, 8)}-data.csv`;
+  link.href = url;
+  link.click();
+  URL.revokeObjectURL(url);
+  toast().success('CSV downloaded');
 }
 
 /** Download board backup: JSON of nodes + edges + meta */
@@ -243,11 +279,14 @@ export function runStartView(ctx: BoardMenuContext): void {
   }
 }
 
-/** History: open history panel. If no Yjs history UI, show toast. */
+/** History: open history panel */
 export function runHistory(ctx: BoardMenuContext): void {
   ctx.onCloseMenu();
-  // TODO: open drawer with undo stack or Yjs history when available
-  toast().info('History panel TODO');
+  if (ctx.onOpenHistory) {
+    ctx.onOpenHistory();
+  } else {
+    toast().info('History panel not available');
+  }
 }
 
 /** Details: open board details panel */
@@ -283,7 +322,7 @@ export function runCommands(ctx: BoardMenuContext): void {
   if (ctx.onOpenCommands) {
     ctx.onOpenCommands();
   } else {
-    toast().info('Command palette TODO');
+    toast().info('Command palette not available');
   }
 }
 
@@ -293,7 +332,7 @@ export function runFind(ctx: BoardMenuContext): void {
   if (ctx.onOpenFind) {
     ctx.onOpenFind();
   } else {
-    toast().info('Find panel TODO');
+    toast().info('Find panel not available');
   }
 }
 
@@ -306,6 +345,36 @@ export function runFullscreen(ctx: BoardMenuContext): void {
   } else {
     target.requestFullscreen?.().catch(() => toast().error('Fullscreen not allowed'));
   }
+}
+
+/** Grid size: small */
+export function runGridSizeSmall(ctx: BoardMenuContext): void {
+  ctx.onCloseMenu();
+  useBoardSettingsStore.getState().setGridSize('small');
+}
+
+/** Grid size: medium */
+export function runGridSizeMedium(ctx: BoardMenuContext): void {
+  ctx.onCloseMenu();
+  useBoardSettingsStore.getState().setGridSize('medium');
+}
+
+/** Grid size: large */
+export function runGridSizeLarge(ctx: BoardMenuContext): void {
+  ctx.onCloseMenu();
+  useBoardSettingsStore.getState().setGridSize('large');
+}
+
+/** Scroll behavior: scroll and zoom */
+export function runScrollAndZoom(ctx: BoardMenuContext): void {
+  ctx.onCloseMenu();
+  useBoardSettingsStore.getState().setScrollBehavior('scrollAndZoom');
+}
+
+/** Scroll behavior: scroll to pan */
+export function runScrollToPan(ctx: BoardMenuContext): void {
+  ctx.onCloseMenu();
+  useBoardSettingsStore.getState().setScrollBehavior('scrollToPan');
 }
 
 /** Profile settings */
@@ -334,8 +403,17 @@ export function getActionState(
         disabled: !ctx.canRedo,
         disabledReason: ctx.canRedo ? undefined : 'Nothing to redo',
       };
-    case 'exportSpreadsheet':
-      return { disabled: true, disabledReason: 'No tabular data to export' }; // TODO: check execution store
+    case 'exportSpreadsheet': {
+      const entries = useExecutionStore.getState().entries;
+      const hasTabular = Object.values(entries).some((e) => {
+        if (e.output?.kind === 'sql' && e.output.result.columns.length > 0) return true;
+        if (e.output?.kind === 'python' && e.output.result.table?.columns.length) return true;
+        return false;
+      });
+      return hasTabular
+        ? { disabled: false }
+        : { disabled: true, disabledReason: 'No tabular data to export' };
+    }
     case 'embed':
       return { disabled: true, disabledReason: 'Embedding not enabled yet' };
     case 'saveToGoogleDrive':

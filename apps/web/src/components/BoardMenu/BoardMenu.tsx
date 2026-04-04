@@ -18,7 +18,12 @@ import {
   runExportSpreadsheet,
   runFind,
   runFullscreen,
+  runGridSizeLarge,
+  runGridSizeMedium,
+  runGridSizeSmall,
   runHistory,
+  runScrollAndZoom,
+  runScrollToPan,
   runMoveTo,
   runNewBoard,
   runProfileSettings,
@@ -36,6 +41,7 @@ import { useToastStore } from '../../state/toastStore';
 import {
   getBoardMenuSections,
   isMenuItemAction,
+  isMenuItemColorPicker,
   isMenuItemSubmenu,
   isMenuItemToggle,
   type BoardSettingsKey,
@@ -81,6 +87,11 @@ const ACTION_RUNNERS: Record<string, (ctx: BoardMenuContext) => void | Promise<v
   find: runFind,
   fullscreen: runFullscreen,
   profileSettings: runProfileSettings,
+  gridSizeSmall: runGridSizeSmall,
+  gridSizeMedium: runGridSizeMedium,
+  gridSizeLarge: runGridSizeLarge,
+  scrollAndZoom: runScrollAndZoom,
+  scrollToPan: runScrollToPan,
 };
 
 export function BoardMenu({ trigger, menuContext }: BoardMenuProps) {
@@ -98,9 +109,14 @@ export function BoardMenu({ trigger, menuContext }: BoardMenuProps) {
       alignObjects: s.alignObjects,
       followAllThreads: s.followAllThreads,
       lockDefaultView: s.lockDefaultView,
+      snapToGrid: s.snapToGrid,
+      invertScroll: s.invertScroll,
     })),
   );
   const isStarred = useBoardSettingsStore((s) => s.isStarred(menuContext.boardId));
+  const currentBgColor = useBoardSettingsStore((s) => s.backgroundColor);
+  const currentGridSize = useBoardSettingsStore((s) => s.gridSize);
+  const currentScrollBehavior = useBoardSettingsStore((s) => s.scrollBehavior);
 
   const fullContext = useMemo<BoardMenuContext>(
     () => ({ ...menuContext, onCloseMenu: () => setOpen(false) }),
@@ -119,6 +135,8 @@ export function BoardMenu({ trigger, menuContext }: BoardMenuProps) {
       alignObjects: store.setAlignObjects,
       followAllThreads: store.setFollowAllThreads,
       lockDefaultView: store.setLockDefaultView,
+      snapToGrid: store.setSnapToGrid,
+      invertScroll: store.setInvertScroll,
     };
     setterMap[key]?.(value);
   }, []);
@@ -158,6 +176,22 @@ export function BoardMenu({ trigger, menuContext }: BoardMenuProps) {
       if (item.action === 'starBoard') {
         label = isStarred ? t.boardMenu.unstarBoard : t.boardMenu.starBoard;
       }
+      const radioMap: Record<string, string> = {
+        gridSizeSmall: 'small',
+        gridSizeMedium: 'medium',
+        gridSizeLarge: 'large',
+        scrollAndZoom: 'scrollAndZoom',
+        scrollToPan: 'scrollToPan',
+      };
+      const radioCurrentMap: Record<string, string> = {
+        gridSizeSmall: currentGridSize,
+        gridSizeMedium: currentGridSize,
+        gridSizeLarge: currentGridSize,
+        scrollAndZoom: currentScrollBehavior,
+        scrollToPan: currentScrollBehavior,
+      };
+      const isActiveRadio =
+        radioMap[item.action] != null && radioMap[item.action] === radioCurrentMap[item.action];
       return (
         <DropdownMenu.Item
           key={item.id}
@@ -170,6 +204,7 @@ export function BoardMenu({ trigger, menuContext }: BoardMenuProps) {
           }}
           textValue={label}
         >
+          {isActiveRadio && <Check size={14} weight="bold" className="text-indigo-600" />}
           <span className="flex-1">{label}</span>
           {item.shortcut && <span className="ml-auto text-slate-500">{item.shortcut}</span>}
         </DropdownMenu.Item>
@@ -196,6 +231,46 @@ export function BoardMenu({ trigger, menuContext }: BoardMenuProps) {
         </DropdownMenu.CheckboxItem>
       );
     }
+    if (isMenuItemColorPicker(item)) {
+      return (
+        <DropdownMenu.Sub key={item.id}>
+          <DropdownMenu.SubTrigger className={subTriggerClassName} textValue={item.label}>
+            <span
+              className="inline-block h-4 w-4 rounded-full border border-slate-300"
+              style={{ backgroundColor: currentBgColor }}
+            />
+            {item.label}
+            <CaretRight size={14} className="ml-auto" />
+          </DropdownMenu.SubTrigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.SubContent className={contentClassName} sideOffset={4} alignOffset={-4}>
+              <div className="grid grid-cols-4 gap-1 p-1">
+                {item.colors.map((c) => (
+                  <DropdownMenu.Item
+                    key={c.value}
+                    className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md outline-none data-[highlighted]:ring-2 data-[highlighted]:ring-indigo-400"
+                    title={c.label}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      useBoardSettingsStore.getState().setBackgroundColor(c.value);
+                    }}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 rounded-full border ${
+                        currentBgColor === c.value
+                          ? 'border-indigo-500 ring-2 ring-indigo-300'
+                          : 'border-slate-300'
+                      }`}
+                      style={{ backgroundColor: c.value }}
+                    />
+                  </DropdownMenu.Item>
+                ))}
+              </div>
+            </DropdownMenu.SubContent>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Sub>
+      );
+    }
     if (isMenuItemSubmenu(item)) {
       const hasChildren = item.children && item.children.length > 0;
       return (
@@ -215,6 +290,9 @@ export function BoardMenu({ trigger, menuContext }: BoardMenuProps) {
     return null;
   }
 
+  const sectionTriggerClassName =
+    'flex w-full cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-sm font-medium text-slate-900 outline-none data-[highlighted]:bg-slate-100 data-[state=open]:bg-slate-50 [&>svg:last-child]:ml-auto';
+
   const content = (
     <DropdownMenu.Content
       className={contentClassName}
@@ -222,14 +300,23 @@ export function BoardMenu({ trigger, menuContext }: BoardMenuProps) {
       align="start"
       onCloseAutoFocus={(e) => e.preventDefault()}
     >
-      {sections.map((section, idx) => (
-        <div key={section.id}>
-          {section.children.map((item) => renderItem(item, section.id))}
-          {idx < sections.length - 1 && (
-            <DropdownMenu.Separator className="my-1 h-px bg-slate-200" />
-          )}
-        </div>
-      ))}
+      {sections.map((section) => {
+        const SectionIcon = section.icon;
+        return (
+          <DropdownMenu.Sub key={section.id}>
+            <DropdownMenu.SubTrigger className={sectionTriggerClassName} textValue={section.label}>
+              {SectionIcon && <SectionIcon size={16} />}
+              <span className="flex-1">{section.label}</span>
+              <CaretRight size={14} />
+            </DropdownMenu.SubTrigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.SubContent className={contentClassName} sideOffset={4} alignOffset={-4}>
+                {section.children.map((item) => renderItem(item, section.id))}
+              </DropdownMenu.SubContent>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Sub>
+        );
+      })}
     </DropdownMenu.Content>
   );
 

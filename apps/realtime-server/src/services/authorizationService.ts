@@ -57,3 +57,38 @@ export async function ensureWorkspaceAccess(params: {
 
   return { ok: true, membership };
 }
+
+export async function ensureTrackerAccess(params: {
+  userId: string;
+  trackerId: string;
+  requiredRoles?: ('owner' | 'editor' | 'viewer')[];
+}) {
+  const { userId, trackerId, requiredRoles = ['owner', 'editor', 'viewer'] } = params;
+
+  const tracker = await prisma.taskTracker.findUnique({
+    where: { id: trackerId },
+    select: {
+      id: true,
+      workspaceId: true,
+    },
+  });
+
+  if (!tracker) {
+    return { ok: false, status: 404 as const, reason: 'Tracker not found' };
+  }
+
+  const membership = await prisma.userWorkspaceRole.findUnique({
+    where: {
+      userId_workspaceId: {
+        userId,
+        workspaceId: tracker.workspaceId,
+      },
+    },
+  });
+
+  if (!membership || !requiredRoles.includes(membership.role)) {
+    return { ok: false, status: 403 as const, reason: 'Forbidden' };
+  }
+
+  return { ok: true, tracker, membership };
+}

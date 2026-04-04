@@ -51,6 +51,9 @@ export type CellShellProps = {
     totalCount?: number;
     isPreview?: boolean;
     onLoadAll?: () => void;
+    onLoadMore?: () => void;
+    loadedCount?: number;
+    isLoadingMore?: boolean;
   };
 };
 
@@ -199,6 +202,9 @@ function CellOutputArea({ output }: { output: NonNullable<CellShellProps['output
             totalCount={output.totalCount}
             isPreview={output.isPreview}
             onLoadAll={output.onLoadAll}
+            onLoadMore={output.onLoadMore}
+            loadedCount={output.loadedCount}
+            isLoadingMore={output.isLoadingMore}
           />
         </div>
       )}

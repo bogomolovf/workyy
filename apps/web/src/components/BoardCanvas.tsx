@@ -36,6 +36,7 @@ import type { ParsedNotebook } from '../lib/notebookParser';
 import { parseSpreadsheetFile } from '../lib/spreadsheetParser';
 import { canvasNodeToReactFlowNode } from '../lib/yjs/adapters';
 import { useBoardCanvasApiStore } from '../state/boardCanvasApiStore';
+import { useBoardSettingsStore, type GridSize } from '../state/boardSettingsStore';
 import {
   getDefaultNodeWidth,
   useCanvasLayoutStore,
@@ -48,6 +49,7 @@ import { DEFAULT_CURSOR, useCursorSettingsStore } from '../state/cursorSettingsS
 import type { ExecutionEntry, NodeStatus, ExecutionStoreState } from '../state/executionStore';
 import { useExecutionStore } from '../state/executionStore';
 import { useAddNode } from '../state/useAddNode';
+import { AlignmentToolbar } from './AlignmentToolbar';
 import { BoardCommandBar, type CanvasTool } from './BoardCommandBar';
 import { BoardInspector } from './BoardInspector';
 import CollaborativeCursors from './CollaborativeCursors';
@@ -69,20 +71,20 @@ import { NotebookNode } from './flowNodes/NotebookNode';
 import { PlotNode } from './flowNodes/PlotNode';
 import { PythonCellNode } from './flowNodes/PythonCellNode';
 import ShapeNode, { type ShapeType } from './flowNodes/ShapeNode';
+import { SqlCellNode } from './flowNodes/SqlCellNode';
 import { VideoNode } from './flowNodes/VideoNode';
 import { VoiceNode } from './flowNodes/VoiceNode';
 import { InteractiveResultTable } from './InteractiveResultTable';
-import { PlotPreview } from './PlotPreview';
+import { EraserOverlay } from './pen/EraserOverlay';
 import { FreehandOverlay } from './pen/FreehandOverlay';
-import { ShapeDragOverlay } from './shape/ShapeDragOverlay';
 import { PenNode } from './pen/PenNode';
 import { PenToolbar } from './pen/PenToolbar';
-import { EraserOverlay } from './pen/EraserOverlay';
-// Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
-import { TextNode } from './TextNode';
-import { SHAPE_DEFAULTS, isLineType as isLineShapeType } from './shape/shapeEngine';
-import { SqlCellNode } from './flowNodes/SqlCellNode';
+import { PlotPreview } from './PlotPreview';
 import { PresentationViewer } from './PresentationViewer';
+import { ShapeDragOverlay } from './shape/ShapeDragOverlay';
+// Undo/Redo now handled at page level via Yjs UndoManager (per-user undo)
+import { SHAPE_DEFAULTS, isLineType as isLineShapeType } from './shape/shapeEngine';
+import { TextNode } from './TextNode';
 
 // SessionStorage-backed cache for voice audio data
 // Persists across HMR, re-renders, and component remounts (until tab close)
@@ -213,6 +215,8 @@ type NodeData = {
   nodeId: string;
   nodeType: 'sql' | 'python';
   nodeKind: 'sql' | 'python' | 'table' | 'plot';
+  /** When SQL node is connected to a Database node, show its connection name so user sees the target DB */
+  upstreamConnectionName?: string;
   execution?: ExecutionEntry;
   onCodeChange: (code: string) => void;
   onRun: () => void;
@@ -384,7 +388,17 @@ const SqlNodeComponent = ({ data, selected }: NodeProps<NodeData>) => {
       <div className="mb-3 flex items-center justify-between">
         <div className="flex flex-col">
           <span className="text-[11px] uppercase tracking-wide text-slate-500">SQL Node</span>
-          <span className="text-xs font-semibold text-slate-900">{data.nodeId.slice(0, 6)}</span>
+          <span className="text-xs font-semibold text-slate-900">
+            {data.nodeId.slice(0, 6)}
+            {data.upstreamConnectionName && (
+              <span
+                className="ml-2 font-normal text-emerald-600"
+                title="Query runs against this connection"
+              >
+                → {data.upstreamConnectionName}
+              </span>
+            )}
+          </span>
         </div>
         <div
           className="flex items-center gap-2 nodrag"
@@ -904,6 +918,21 @@ function InnerBoardCanvas({
   const canvasRootRef = useRef<HTMLDivElement>(null);
   const viewport = useViewport();
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
+
+  const boardBgColor = useBoardSettingsStore((s) => s.backgroundColor);
+  const gridVisible = useBoardSettingsStore((s) => s.gridVisible);
+  const gridSize = useBoardSettingsStore((s) => s.gridSize);
+  const snapEnabled = useBoardSettingsStore((s) => s.snapToGrid);
+  const lockDefaultView = useBoardSettingsStore((s) => s.lockDefaultView);
+  const startView = useBoardSettingsStore((s) => s.startView);
+  const invertScroll = useBoardSettingsStore((s) => s.invertScroll);
+  const scrollBehaviorValue = useBoardSettingsStore((s) => s.scrollBehavior);
+  const alignObjectsEnabled = useBoardSettingsStore((s) => s.alignObjects);
+
+  const GRID_GAP: Record<GridSize, number> = { small: 10, medium: 18, large: 40 };
+  const gridGap = GRID_GAP[gridSize];
+  const snapGrid: [number, number] = [gridGap, gridGap];
+
   const nodeSizes = useCanvasLayoutStore((state: CanvasLayoutState) => state.nodeSizes);
   const setNodeWidth = useCanvasLayoutStore((state: CanvasLayoutState) => state.setNodeWidth);
   const codeCollapsedMap = useCanvasLayoutStore((state: CanvasLayoutState) => state.codeCollapsed);
@@ -2229,6 +2258,12 @@ function InnerBoardCanvas({
                                           }
                                         : n,
                                     );
+                                    // Sync to Yjs immediately so database connection config persists (same as voice node)
+                                    const updatedNode = next.find((n) => n.id === nodeId);
+                                    if (updatedNode && yjsOnNodesChange) {
+                                      const reactFlowNode = canvasNodeToReactFlowNode(updatedNode);
+                                      yjsOnNodesChange([{ type: 'add', item: reactFlowNode }]);
+                                    }
                                     emitNodesChange(next);
                                     return next;
                                   });
@@ -2618,8 +2653,39 @@ function InnerBoardCanvas({
                                                         ? 'last'
                                                         : 'middle') as const)
                                                 : ('standalone' as const);
+                                            // Detect upstream Database connection for SQL Cell
+                                            const edgeTargetIdCell = (e: {
+                                              targetId?: string;
+                                              target?: string;
+                                            }) =>
+                                              (e as { targetId?: string }).targetId ??
+                                              (e as { target?: string }).target;
+                                            const edgeSourceIdCell = (e: {
+                                              sourceId?: string;
+                                              source?: string;
+                                            }) =>
+                                              (e as { sourceId?: string }).sourceId ??
+                                              (e as { source?: string }).source;
+                                            const incomingDbEdgeCell = localEdges.find(
+                                              (e) => edgeTargetIdCell(e) === node.id,
+                                            );
+                                            const dbSourceId = incomingDbEdgeCell
+                                              ? edgeSourceIdCell(incomingDbEdgeCell)
+                                              : undefined;
+                                            const dbNodeCell = dbSourceId
+                                              ? localNodes.find((n) => n.id === dbSourceId)
+                                              : null;
+                                            const isDbCell =
+                                              dbNodeCell &&
+                                              (dbNodeCell.type === 'database' ||
+                                                dbNodeCell.type === 'databaseNode');
+                                            const cellUpstreamConnectionName = isDbCell
+                                              ? ((dbNodeCell.payload as { connectionName?: string })
+                                                  ?.connectionName ?? 'Database')
+                                              : undefined;
                                             return {
                                               nodeId: node.id,
+                                              upstreamConnectionName: cellUpstreamConnectionName,
                                               onCodeChange: (code: string) =>
                                                 onCodeChange(node.id, code),
                                               onRun: () => onRunNode(node.id),
@@ -2682,19 +2748,55 @@ function InnerBoardCanvas({
                                                 // Will be handled by the board page
                                               },
                                             }
-                                          : {
-                                              nodeId: node.id,
-                                              nodeType: isSql ? 'sql' : isPython ? 'python' : 'sql',
-                                              onCodeChange: (code: string) =>
-                                                onCodeChange(node.id, code),
-                                              onRun: () => onRunNode(node.id),
-                                              onRunDownstream: () => onRunDownstream(node.id),
-                                              onToggleCodeCollapsed: () =>
-                                                toggleCodeCollapsed(node.id),
-                                              width: storedWidth,
-                                              isCodeCollapsed,
-                                              nodeKind: node.type,
-                                            },
+                                          : (() => {
+                                              const edgeTargetId = (e: {
+                                                targetId?: string;
+                                                target?: string;
+                                              }) =>
+                                                (e as { targetId?: string }).targetId ??
+                                                (e as { target?: string }).target;
+                                              const edgeSourceId = (e: {
+                                                sourceId?: string;
+                                                source?: string;
+                                              }) =>
+                                                (e as { sourceId?: string }).sourceId ??
+                                                (e as { source?: string }).source;
+                                              const incomingDbEdge = localEdges.find(
+                                                (e) => edgeTargetId(e) === node.id,
+                                              );
+                                              const sourceId = incomingDbEdge
+                                                ? edgeSourceId(incomingDbEdge)
+                                                : undefined;
+                                              const dbNode = sourceId
+                                                ? localNodes.find((n) => n.id === sourceId)
+                                                : null;
+                                              const isDb =
+                                                dbNode &&
+                                                (dbNode.type === 'database' ||
+                                                  dbNode.type === 'databaseNode');
+                                              const upstreamConnectionName = isDb
+                                                ? ((dbNode.payload as { connectionName?: string })
+                                                    ?.connectionName ?? 'Database')
+                                                : undefined;
+                                              return {
+                                                nodeId: node.id,
+                                                nodeType: isSql
+                                                  ? 'sql'
+                                                  : isPython
+                                                    ? 'python'
+                                                    : 'sql',
+                                                upstreamConnectionName,
+                                                onCodeChange: (code: string) =>
+                                                  onCodeChange(node.id, code),
+                                                onRun: () => onRunNode(node.id),
+                                                onRunDownstream: () => onRunDownstream(node.id),
+                                                onToggleCodeCollapsed: () =>
+                                                  toggleCodeCollapsed(node.id),
+                                                width: storedWidth,
+                                                isCodeCollapsed,
+                                                nodeKind: node.type,
+                                              };
+                                            })(),
             // Для shape nodes (включая заметки) передаем width и height как пропсы, чтобы NodeResizer мог обновлять их в реальном времени
             ...(isShape || isNote
               ? {
@@ -2774,6 +2876,7 @@ function InnerBoardCanvas({
     emitNodesChange,
     setLocalNodes,
     board.workspaceId,
+    yjsOnNodesChange,
   ]);
 
   const [flowNodes, setFlowNodes] = useState<Node[]>(() =>
@@ -4591,17 +4694,42 @@ function InnerBoardCanvas({
     flowInstance.fitView({ padding: 0.3, includeHiddenNodes: true, duration: 200 });
   }, [flowInstance]);
 
-  // Register fitView for board menu "Catch up" and other consumers
+  // Register canvas API methods for board menu consumers (catch-up, find, alignment, etc.)
   useEffect(() => {
+    const api = useBoardCanvasApiStore.getState();
     if (!flowInstance) {
-      useBoardCanvasApiStore.getState().setFitView(null);
+      api.setFitView(null);
+      api.setGetNodes(null);
+      api.setGetEdges(null);
+      api.setSetCenter(null);
+      api.setGetViewport(null);
+      api.setSetNodes(null);
       return;
     }
-    const fn = () => {
-      flowInstance.fitView({ padding: 0.3, includeHiddenNodes: true, duration: 200 });
+    api.setFitView(() =>
+      flowInstance.fitView({ padding: 0.3, includeHiddenNodes: true, duration: 200 }),
+    );
+    api.setGetNodes(() => flowInstance.getNodes());
+    api.setGetEdges(() => flowInstance.getEdges());
+    api.setSetCenter((x, y, opts) => flowInstance.setCenter(x, y, opts));
+    api.setGetViewport(() => flowInstance.getViewport());
+    api.setSetNodes((updater) => {
+      if (typeof updater === 'function') {
+        const next = updater(flowInstance.getNodes());
+        flowInstance.setNodes(next);
+      } else {
+        flowInstance.setNodes(updater);
+      }
+    });
+    return () => {
+      const s = useBoardCanvasApiStore.getState();
+      s.setFitView(null);
+      s.setGetNodes(null);
+      s.setGetEdges(null);
+      s.setSetCenter(null);
+      s.setGetViewport(null);
+      s.setSetNodes(null);
     };
-    useBoardCanvasApiStore.getState().setFitView(fn);
-    return () => useBoardCanvasApiStore.getState().setFitView(null);
   }, [flowInstance]);
 
   const pendingStickyRef = useRef<{ x: number; y: number } | null>(null);
@@ -4800,7 +4928,7 @@ function InnerBoardCanvas({
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
-              fitView
+              fitView={!(lockDefaultView && startView)}
               fitViewOptions={{ padding: 0.2, duration: 0 }}
               panOnDrag={
                 !isSelectMode &&
@@ -4811,8 +4939,8 @@ function InnerBoardCanvas({
                 !isShapeMode &&
                 !isVoiceMode
               }
-              panOnScroll={false}
-              zoomOnScroll
+              panOnScroll={scrollBehaviorValue === 'scrollToPan'}
+              zoomOnScroll={scrollBehaviorValue !== 'scrollToPan'}
               selectionOnDrag={isSelectMode}
               nodesDraggable={
                 !isPenMode && !isEraserMode && !isTextMode && !isShapeMode && !isVoiceMode
@@ -4834,9 +4962,19 @@ function InnerBoardCanvas({
                 !isVoiceMode
               }
               proOptions={{ hideAttribution: true }}
-              className="h-full bg-white"
-              style={{ width: '100%', height: '100%' }}
-              onInit={(instance) => setFlowInstance(instance)}
+              className="h-full"
+              style={{ width: '100%', height: '100%', backgroundColor: boardBgColor }}
+              snapToGrid={snapEnabled}
+              snapGrid={snapGrid}
+              onInit={(instance) => {
+                setFlowInstance(instance);
+                if (lockDefaultView && startView) {
+                  instance.setViewport(
+                    { x: startView.x, y: startView.y, zoom: startView.zoom },
+                    { duration: 0 },
+                  );
+                }
+              }}
               selectNodesOnDrag={false}
               onNodesChange={handleNodesChange}
               onEdgesChange={handleEdgesChange}
@@ -5056,7 +5194,14 @@ function InnerBoardCanvas({
               minZoom={0.2}
               nodeTypes={nodeTypes}
             >
-              <Background variant={BackgroundVariant.Dots} gap={18} size={1.8} color="#cbd5e1" />
+              {gridVisible && (
+                <Background
+                  variant={BackgroundVariant.Dots}
+                  gap={gridGap}
+                  size={1.8}
+                  color="#cbd5e1"
+                />
+              )}
               <MiniMap
                 nodeColor={(node) => {
                   const nodeType = node.type;
@@ -5259,6 +5404,7 @@ function InnerBoardCanvas({
           onDeleteSelection={handleDeleteSelection}
           hasSelection={hasSelection}
         />
+        <AlignmentToolbar alignEnabled={alignObjectsEnabled} />
       </div>
     </FileDropOverlay>
   );

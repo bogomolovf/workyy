@@ -26,8 +26,14 @@ export function useBoardCollaboration(
   boardId: string,
   initialNodes?: CanvasNode[],
   initialEdges?: CanvasEdge[],
+  onBoardDeleted?: () => void,
 ) {
   const initializedRef = useRef(false);
+
+  // Use ref for onBoardDeleted to avoid effect re-runs when callback reference changes.
+  // This prevents "Maximum update depth exceeded" when parent passes inline function.
+  const onBoardDeletedRef = useRef(onBoardDeleted);
+  onBoardDeletedRef.current = onBoardDeleted;
 
   // Get Yjs document and provider
   const ydoc = useMemo(() => getBoardYdoc(boardId), [boardId]);
@@ -112,36 +118,38 @@ export function useBoardCollaboration(
   // Get client ID for cursor tracking (exposed for use in BoardCanvas)
   const clientId = useMemo(() => ydoc.clientID.toString(), [ydoc]);
 
-  // Initialize Yjs maps with initial data (only once)
+  // Initialize Yjs maps with initial data (only once).
+  // Use refs + ID-based deps to avoid effect re-runs when parent passes new array refs each render.
+  const initialNodesRef = useRef(initialNodes);
+  const initialEdgesRef = useRef(initialEdges);
+  initialNodesRef.current = initialNodes;
+  initialEdgesRef.current = initialEdges;
+  const initialNodeIds = initialNodes?.map((n) => n.id).join(',') ?? '';
+  const initialEdgeIds = initialEdges?.map((e) => e.id).join(',') ?? '';
+
   useEffect(() => {
-    if (initializedRef.current || !initialNodes || !initialEdges) {
+    const nodes = initialNodesRef.current;
+    const edges = initialEdgesRef.current;
+    if (initializedRef.current || !nodes || !edges) {
       return;
     }
 
     // CRITICAL FIX: Initialize from DB data if Yjs is empty (first load)
-    // This ensures positions from DB are applied on first load
-    // If Yjs already contains data (from another client), don't overwrite it
     if (nodesMap.size === 0 && edgesMap.size === 0) {
-      // Convert CanvasNodes to ReactFlow Nodes and store in Yjs
-      // This preserves positions from DB on first load
-      for (const canvasNode of initialNodes) {
+      for (const canvasNode of nodes) {
         const reactFlowNode = canvasNodeToReactFlowNode(canvasNode);
-        // Ensure position is preserved from DB data
         nodesMap.set(canvasNode.id, {
           ...reactFlowNode,
-          position: canvasNode.position, // Use position from DB
+          position: canvasNode.position,
         });
       }
-
-      // Convert CanvasEdges to ReactFlow Edges and store in Yjs
-      for (const canvasEdge of initialEdges) {
+      for (const canvasEdge of edges) {
         const reactFlowEdge = canvasEdgeToReactFlowEdge(canvasEdge);
         edgesMap.set(canvasEdge.id, reactFlowEdge);
       }
-
       initializedRef.current = true;
     }
-  }, [initialNodes, initialEdges, nodesMap, edgesMap]);
+  }, [initialNodeIds, initialEdgeIds, nodesMap, edgesMap]);
 
   // Use synced hooks with ydoc and clientId for UndoManager tracking
   const [reactFlowNodes, setReactFlowNodes, onNodesChange] = useNodesStateSynced(
@@ -175,6 +183,8 @@ export function useBoardCollaboration(
   // cleanupBoardYdoc decrements the count and schedules delayed destruction.
   // This survives React Strict Mode (mount→unmount→remount) because the delayed
   // cleanup timer is cancelled when retainBoardYdoc fires on remount.
+  // NOTE: Do NOT include provider.wsconnected in deps — it causes effect re-runs on connect,
+  // which can trigger "Maximum update depth exceeded" when combined with Yjs sync.
   useEffect(() => {
     retainBoardYdoc(boardId);
 
@@ -187,7 +197,39 @@ export function useBoardCollaboration(
       }
     }
 
+    let closeListenerCleanup: () => void = () => {};
+    let statusListenerCleanup: () => void = () => {};
+
+    const tryAttachCloseListener = () => {
+      const ws = (provider as { ws?: WebSocket }).ws;
+      if (ws && onBoardDeletedRef.current) {
+        const onClose = (e: CloseEvent) => {
+          if (e.code === 4000 || e.reason === 'board-deleted') {
+            onBoardDeletedRef.current?.();
+          }
+        };
+        ws.addEventListener('close', onClose);
+        closeListenerCleanup = () => ws.removeEventListener('close', onClose);
+        return true;
+      }
+      return false;
+    };
+
+    if (tryAttachCloseListener()) {
+      // ws was already available
+    } else {
+      const onStatus = (event: { status: string }) => {
+        if (event.status === 'connected' && tryAttachCloseListener()) {
+          provider.off('status', onStatus);
+        }
+      };
+      provider.on('status', onStatus);
+      statusListenerCleanup = () => provider.off('status', onStatus);
+    }
+
     return () => {
+      closeListenerCleanup();
+      statusListenerCleanup();
       cleanupBoardYdoc(boardId);
     };
   }, [boardId, provider]);

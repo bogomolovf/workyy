@@ -6,13 +6,13 @@ import { undoState } from '../lib/yjs/undoState';
 /**
  * Hook for syncing edges state through Yjs YMap
  * Based on collaborative-11-pro-example pattern
- * 
+ *
  * Updated to use transactions with clientId as origin for UndoManager tracking
  */
 export function useEdgesStateSynced(
   edgesMap: YMapType<unknown>,
   ydoc?: Doc | null,
-  clientId?: string | null
+  clientId?: string | null,
 ): [Edge[], React.Dispatch<React.SetStateAction<Edge[]>>, OnEdgesChange] {
   const [edges, setEdges] = useState<Edge[]>([]);
 
@@ -21,9 +21,7 @@ export function useEdgesStateSynced(
       const doUpdate = () => {
         const currentEdges = Array.from(edgesMap.values()) as Edge[];
         const next =
-          typeof edgesOrUpdater === 'function'
-            ? edgesOrUpdater(currentEdges)
-            : edgesOrUpdater;
+          typeof edgesOrUpdater === 'function' ? edgesOrUpdater(currentEdges) : edgesOrUpdater;
 
         const seen = new Set<string>();
 
@@ -41,7 +39,7 @@ export function useEdgesStateSynced(
 
       // Skip transaction wrapping if undo/redo is in progress to prevent double-tracking
       const isUndoing = undoState.isUndoing;
-      
+
       // Wrap in transaction with clientId as origin for UndoManager tracking
       // But NOT during undo/redo operations!
       if (ydoc && clientId && !isUndoing) {
@@ -50,7 +48,7 @@ export function useEdgesStateSynced(
         doUpdate();
       }
     },
-    [edgesMap, ydoc, clientId]
+    [edgesMap, ydoc, clientId],
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
@@ -75,7 +73,7 @@ export function useEdgesStateSynced(
 
       // Skip transaction wrapping if undo/redo is in progress to prevent double-tracking
       const isUndoing = undoState.isUndoing;
-      
+
       // Wrap in transaction with clientId as origin for UndoManager tracking
       // But NOT during undo/redo operations!
       if (ydoc && clientId && !isUndoing) {
@@ -84,20 +82,28 @@ export function useEdgesStateSynced(
         doUpdate();
       }
     },
-    [edgesMap, ydoc, clientId]
+    [edgesMap, ydoc, clientId],
   );
 
+  // Batch rapid observer fires to prevent "Maximum update depth exceeded"
   useEffect(() => {
+    let rafId: number | null = null;
     const observer = () => {
-      setEdges(Array.from(edgesMap.values()) as Edge[]);
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        setEdges(Array.from(edgesMap.values()) as Edge[]);
+      });
     };
 
     setEdges(Array.from(edgesMap.values()) as Edge[]);
     edgesMap.observe(observer);
 
-    return () => edgesMap.unobserve(observer);
-  }, [edgesMap, setEdges]);
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      edgesMap.unobserve(observer);
+    };
+  }, [edgesMap]);
 
   return [edges, setEdgesSynced, onEdgesChange];
 }
-

@@ -17,6 +17,29 @@ export type CanvasEdge = {
   metadata: Record<string, unknown>;
 };
 
+// ReactFlow display types -> canonical canvas types.
+// BoardCanvas maps canonical types to these for rendering (via CELL_TYPE_MAP).
+// When converting back we must restore the canonical type so routing logic
+// (e.g. handleRunNode checking type === 'database') keeps working.
+const DISPLAY_TO_CANONICAL: Record<string, string> = {
+  sqlNode: 'sql',
+  pythonNode: 'python',
+  databaseNode: 'database',
+  plotNode: 'plot',
+  csvNode: 'csv',
+  textNode: 'text',
+  voiceNode: 'voice',
+  imageNode: 'image',
+  videoNode: 'video',
+  documentNode: 'document',
+  notebookNode: 'notebook',
+  pythonCellNode: 'pythonCell',
+  markdownCellNode: 'markdownCell',
+  sqlCellNode: 'sqlCell',
+  notebookFrameNode: 'notebookFrame',
+  shapeNode: 'shape',
+};
+
 /**
  * Convert CanvasNode to ReactFlow Node
  */
@@ -39,11 +62,12 @@ export function canvasNodeToReactFlowNode(canvasNode: CanvasNode): Node {
 export function reactFlowNodeToCanvasNode(reactFlowNode: Node): CanvasNode {
   const canvasNode = (reactFlowNode.data as any)?._canvasNode;
   if (canvasNode) {
-    // Preserve original canvas node structure
+    // Always use the canonical type stored in _canvasNode, not the ReactFlow
+    // display type (e.g. 'databaseNode') which BoardCanvas sets via CELL_TYPE_MAP.
     return {
       ...canvasNode,
       id: reactFlowNode.id,
-      type: reactFlowNode.type || canvasNode.type,
+      type: canvasNode.type,
       position: reactFlowNode.position,
     };
   }
@@ -52,7 +76,7 @@ export function reactFlowNodeToCanvasNode(reactFlowNode: Node): CanvasNode {
   // For pen nodes, ensure points and initialSize are preserved in payload
   const data = reactFlowNode.data as any;
   const isPenNode = reactFlowNode.type === 'pen' || data?.points !== undefined;
-  
+
   if (isPenNode) {
     return {
       id: reactFlowNode.id,
@@ -71,9 +95,10 @@ export function reactFlowNodeToCanvasNode(reactFlowNode: Node): CanvasNode {
     };
   }
 
+  const rawType = reactFlowNode.type ?? '';
   return {
     id: reactFlowNode.id,
-    type: reactFlowNode.type || 'note',
+    type: (DISPLAY_TO_CANONICAL[rawType] ?? rawType) || 'note',
     position: reactFlowNode.position,
     payload: data,
   };
@@ -102,4 +127,3 @@ export function reactFlowEdgeToCanvasEdge(reactFlowEdge: Edge): CanvasEdge {
     metadata: (reactFlowEdge.data as Record<string, unknown>) || {},
   };
 }
-

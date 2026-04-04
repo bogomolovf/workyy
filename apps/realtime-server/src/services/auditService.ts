@@ -5,6 +5,7 @@ export type AuditEventInput = {
   boardId?: string | null;
   workspaceId?: string | null;
   runId?: string | null;
+  trackerId?: string | null;
   payload?: Record<string, unknown>;
 };
 
@@ -24,6 +25,7 @@ export class AuditService {
         boardId: event.boardId ?? null,
         workspaceId: event.workspaceId ?? null,
         runId: event.runId ?? null,
+        trackerId: event.trackerId ?? null,
         payload: event.payload ?? {},
       },
     });

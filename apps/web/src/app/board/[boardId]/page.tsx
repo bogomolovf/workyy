@@ -6,7 +6,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { AudioCallPanel } from '../../../components/AudioCallPanel';
+import { BoardDetailsModal } from '../../../components/BoardDetailsModal';
 import { BoardMenuButton } from '../../../components/BoardMenu';
+import { CatchUpPanel } from '../../../components/CatchUpPanel';
+import { CommandPalette } from '../../../components/CommandPalette';
+import { FindPanel } from '../../../components/FindPanel';
+import { HistoryPanel } from '../../../components/HistoryPanel';
 import { LanguageSwitcher } from '../../../components/LanguageSwitcher';
 import { RequireAuth } from '../../../components/RequireAuth';
 import { ToastContainer } from '../../../components/Toast';
@@ -75,6 +80,13 @@ type CanvasEdge = {
   metadata: Record<string, unknown>;
 };
 
+// Defensive: accept both canonical ('database') and ReactFlow display ('databaseNode')
+// types. The adapter fix in adapters.ts prevents new corruption, but nodes already
+// persisted with the display type may still exist in Yjs/DB.
+function isDatabaseNodeType(type: string | undefined): boolean {
+  return type === 'database' || type === 'databaseNode';
+}
+
 function mapNodesToCanvas(nodes: BoardResponse['nodes']): CanvasNode[] {
   return nodes.map((node) => ({
     id: node.id,
@@ -126,6 +138,7 @@ function BoardPageContent({ params }: BoardPageProps) {
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [isUploadingDataset, setIsUploadingDataset] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const boardSectionRef = useRef<HTMLElement | null>(null);
   const queryClient = useQueryClient();
 
   const entries = useExecutionStore((state: ExecutionStoreState) => state.entries);
@@ -156,11 +169,16 @@ function BoardPageContent({ params }: BoardPageProps) {
     if (data?.board?.id) recordBoardVisit(data.board.id);
   }, [data?.board?.id, recordBoardVisit]);
 
+  const handleBoardDeleted = useCallback(() => {
+    router.push('/');
+  }, [router]);
+
   // Initialize Yjs collaboration when board data is loaded
   const collaboration = useBoardCollaboration(
     boardId,
     data ? mapNodesToCanvas(data.nodes) : undefined,
     data ? mapEdgesToCanvas(data.edges) : undefined,
+    handleBoardDeleted,
   );
 
   // Get list of users on the board for presence indicator
@@ -180,6 +198,10 @@ function BoardPageContent({ params }: BoardPageProps) {
     redo: handleRedo,
     canUndo,
     canRedo,
+    undoManager,
+    undoStackLength,
+    redoStackLength,
+    clear: clearHistory,
   } = useYjsUndoManager(
     collaboration.ydoc,
     collaboration.nodesMap,
@@ -217,14 +239,54 @@ function BoardPageContent({ params }: BoardPageProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo, canUndo, canRedo]);
 
-  const handleDeleteBoard = useCallback(
-    (id: string) => {
-      deleteBoardApi(id)
-        .then(() => router.push('/'))
-        .catch((err) => console.error('Failed to delete board:', err));
-    },
-    [router],
-  );
+  // Panel visibility states
+  const [catchUpOpen, setCatchUpOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [findPanelOpen, setFindPanelOpen] = useState(false);
+
+  // Cmd+K / Cmd+F shortcuts
+  useEffect(() => {
+    const handlePanelKeys = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((v) => !v);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setFindPanelOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', handlePanelKeys);
+    return () => window.removeEventListener('keydown', handlePanelKeys);
+  }, []);
+
+  // Save nodeIds when leaving the board (for catch-up diff on next visit)
+  const recordBoardVisitWithNodes = useBoardSettingsStore((s) => s.recordBoardVisitWithNodes);
+  useEffect(() => {
+    return () => {
+      import('../../../state/boardCanvasApiStore').then(({ useBoardCanvasApiStore }) => {
+        const { getNodes } = useBoardCanvasApiStore.getState();
+        if (getNodes) {
+          recordBoardVisitWithNodes(
+            boardId,
+            getNodes().map((n) => n.id),
+          );
+        }
+      });
+    };
+  }, [boardId, recordBoardVisitWithNodes]);
+
+  const handleDeleteBoard = useCallback(async (id: string) => {
+    try {
+      await deleteBoardApi(id);
+    } catch (err) {
+      console.error('Failed to delete board:', err);
+    }
+    // Always navigate away -- even if the API errored, the board may already be gone
+    window.location.href = '/';
+  }, []);
 
   // Use Yjs as the single source of truth for nodes and edges
   const yjsNodes = collaboration.canvasNodes.length > 0 ? collaboration.canvasNodes : nodesState;
@@ -239,13 +301,24 @@ function BoardPageContent({ params }: BoardPageProps) {
   );
 
   // Sync Yjs changes back to local state (but prevent sync loops)
-  // Only sync if nodes actually changed (by comparing IDs, positions, and content)
+  // Use primitive key for deps — avoids effect re-runs when array ref changes but IDs are same
+  const canvasNodesRef = useRef(collaboration.canvasNodes);
+  canvasNodesRef.current = collaboration.canvasNodes;
+  const canvasNodesKey = useMemo(
+    () =>
+      collaboration.canvasNodes
+        .map((n) => `${n.id}:${n.position.x.toFixed(0)},${n.position.y.toFixed(0)}`)
+        .join('|'),
+    [collaboration.canvasNodes],
+  );
+
   useEffect(() => {
-    if (collaboration.canvasNodes.length === 0) return;
+    const canvasNodes = canvasNodesRef.current;
+    if (canvasNodes.length === 0) return;
 
     // Compare by IDs to avoid unnecessary updates
     const currentIds = new Set(nodesStateRef.current.map((n) => n.id));
-    const yjsIds = new Set(collaboration.canvasNodes.map((n) => n.id));
+    const yjsIds = new Set(canvasNodes.map((n) => n.id));
     const idsChanged =
       currentIds.size !== yjsIds.size ||
       Array.from(currentIds).some((id) => !yjsIds.has(id)) ||
@@ -254,7 +327,7 @@ function BoardPageContent({ params }: BoardPageProps) {
     // CRITICAL FIX: Also check if positions changed
     // This ensures that position updates from Yjs are synced to local state
     const positionsChanged = nodesStateRef.current.some((node) => {
-      const yjsNode = collaboration.canvasNodes.find((n) => n.id === node.id);
+      const yjsNode = canvasNodes.find((n) => n.id === node.id);
       if (!yjsNode) return false;
       // Check if position changed (with small threshold to avoid floating point issues)
       const threshold = 0.01;
@@ -264,28 +337,32 @@ function BoardPageContent({ params }: BoardPageProps) {
       );
     });
 
-    // CRITICAL FIX: Check if code changed in SQL/Python nodes
+    // CRITICAL FIX: Check if code changed in SQL/Python/SqlCell nodes
     // This ensures code changes from Yjs are synced to codeStore
     const codeChanged = nodesStateRef.current.some((node) => {
-      if (node.type !== 'sql' && node.type !== 'python') return false;
-      const yjsNode = collaboration.canvasNodes.find((n) => n.id === node.id);
+      if (node.type !== 'sql' && node.type !== 'python' && node.type !== 'sqlCell') return false;
+      const yjsNode = canvasNodes.find((n) => n.id === node.id);
       if (!yjsNode) return false;
       const currentCode =
         node.type === 'sql'
           ? ((node.payload as any)?.sql ?? '')
-          : ((node.payload as any)?.python ?? '');
+          : node.type === 'sqlCell'
+            ? ((node.payload as any)?.cellSource ?? '')
+            : ((node.payload as any)?.python ?? '');
       const yjsCode =
-        node.type === 'sql'
+        yjsNode.type === 'sql'
           ? ((yjsNode.payload as any)?.sql ?? '')
-          : ((yjsNode.payload as any)?.python ?? '');
+          : yjsNode.type === 'sqlCell'
+            ? ((yjsNode.payload as any)?.cellSource ?? '')
+            : ((yjsNode.payload as any)?.python ?? '');
       return currentCode !== yjsCode;
     });
 
     // CRITICAL FIX: Check if execution status/results changed
     // This ensures execution results from Yjs are synced to executionStore
     const executionChanged = nodesStateRef.current.some((node) => {
-      if (node.type !== 'sql' && node.type !== 'python') return false;
-      const yjsNode = collaboration.canvasNodes.find((n) => n.id === node.id);
+      if (node.type !== 'sql' && node.type !== 'python' && node.type !== 'sqlCell') return false;
+      const yjsNode = canvasNodes.find((n) => n.id === node.id);
       if (!yjsNode) return false;
       const currentExecution = (node.payload as any)?.execution;
       const yjsExecution = (yjsNode.payload as any)?.execution;
@@ -309,21 +386,23 @@ function BoardPageContent({ params }: BoardPageProps) {
       isYjsUpdateRef.current = true;
       // Update local state from Yjs
       const previousIds = new Set(nodesStateRef.current.map((node) => node.id));
-      const nextIds = new Set(collaboration.canvasNodes.map((node) => node.id));
+      const nextIds = new Set(canvasNodes.map((node) => node.id));
       previousIds.forEach((id) => {
         if (!nextIds.has(id)) {
           removeExecutionEntry(id);
         }
       });
 
-      // Update codeStore for SQL/Python nodes when code changes through Yjs
+      // Update codeStore for SQL/Python/SqlCell nodes when code changes through Yjs
       if (codeChanged) {
-        collaboration.canvasNodes.forEach((yjsNode) => {
-          if (yjsNode.type === 'sql' || yjsNode.type === 'python') {
+        canvasNodes.forEach((yjsNode) => {
+          if (yjsNode.type === 'sql' || yjsNode.type === 'python' || yjsNode.type === 'sqlCell') {
             const code =
               yjsNode.type === 'sql'
                 ? ((yjsNode.payload as any)?.sql ?? '')
-                : ((yjsNode.payload as any)?.python ?? '');
+                : yjsNode.type === 'sqlCell'
+                  ? ((yjsNode.payload as any)?.cellSource ?? '')
+                  : ((yjsNode.payload as any)?.python ?? '');
             if (code) {
               setCodeStore(yjsNode.id, code);
             }
@@ -336,8 +415,8 @@ function BoardPageContent({ params }: BoardPageProps) {
       // This prevents errors from being overwritten by stale "running" status
       // CRITICAL FIX: Both errors and success should overwrite each other - whichever comes from Yjs is the latest state
       if (executionChanged) {
-        collaboration.canvasNodes.forEach((yjsNode) => {
-          if (yjsNode.type === 'sql' || yjsNode.type === 'python') {
+        canvasNodes.forEach((yjsNode) => {
+          if (yjsNode.type === 'sql' || yjsNode.type === 'python' || yjsNode.type === 'sqlCell') {
             const execution = (yjsNode.payload as any)?.execution;
             if (execution) {
               const currentEntry = useExecutionStore.getState().entries[yjsNode.id];
@@ -378,17 +457,17 @@ function BoardPageContent({ params }: BoardPageProps) {
       // Don't overwrite local code with empty from Yjs: if Yjs has empty payload but executionStore
       // has code for this node, keep the store code in the merged nodes so we never "lose" code.
       const entries = useExecutionStore.getState().entries;
-      const mergedNodes = collaboration.canvasNodes.map((yjsNode) => {
-        if (yjsNode.type !== 'sql' && yjsNode.type !== 'python') return yjsNode;
-        const yjsCode =
-          yjsNode.type === 'sql'
-            ? ((yjsNode.payload as any)?.sql ?? '')
-            : ((yjsNode.payload as any)?.python ?? '');
+      const mergedNodes = canvasNodes.map((yjsNode) => {
+        if (yjsNode.type !== 'sql' && yjsNode.type !== 'python' && yjsNode.type !== 'sqlCell')
+          return yjsNode;
+        const payloadKey =
+          yjsNode.type === 'sql' ? 'sql' : yjsNode.type === 'sqlCell' ? 'cellSource' : 'python';
+        const yjsCode = (yjsNode.payload as any)?.[payloadKey] ?? '';
         const storeCode = entries[yjsNode.id]?.code ?? '';
         if (yjsCode.trim() === '' && storeCode.trim() !== '') {
           const payload = {
             ...(yjsNode.payload ?? {}),
-            [yjsNode.type === 'sql' ? 'sql' : 'python']: storeCode,
+            [payloadKey]: storeCode,
           };
           return { ...yjsNode, payload };
         }
@@ -407,14 +486,7 @@ function BoardPageContent({ params }: BoardPageProps) {
         triggerAutoSaveRef.current?.();
       }, 0);
     }
-  }, [
-    collaboration.canvasNodes,
-    removeExecutionEntry,
-    setCodeStore,
-    setStatus,
-    setSuccess,
-    setError,
-  ]);
+  }, [canvasNodesKey, removeExecutionEntry, setCodeStore, setStatus, setSuccess, setError]);
 
   useEffect(() => {
     if (collaboration.canvasEdges.length === 0) return;
@@ -446,13 +518,8 @@ function BoardPageContent({ params }: BoardPageProps) {
   const yjsNodesRef = useRef<CanvasNode[]>([]);
   const yjsEdgesRef = useRef<CanvasEdge[]>([]);
 
-  useEffect(() => {
-    nodesStateRef.current = nodesState;
-  }, [nodesState]);
-
-  useEffect(() => {
-    edgesStateRef.current = edgesState;
-  }, [edgesState]);
+  nodesStateRef.current = nodesState;
+  edgesStateRef.current = edgesState;
 
   // Track latest Yjs canvas state for beforeunload persistence
   useEffect(() => {
@@ -778,7 +845,12 @@ function BoardPageContent({ params }: BoardPageProps) {
 
   const handleRunNode = useCallback(
     async (nodeId: string) => {
-      const node = nodesState.find((item) => item.id === nodeId);
+      // Read latest state from refs to avoid stale closure issues
+      // (edge may have been added after this callback was created)
+      const latestNodes = nodesStateRef.current;
+      const latestEdges = edgesStateRef.current;
+
+      const node = latestNodes.find((item) => item.id === nodeId);
       if (!node) {
         setError(nodeId, 'Node not found');
         return;
@@ -811,16 +883,37 @@ function BoardPageContent({ params }: BoardPageProps) {
         return next;
       });
       try {
-        if (node.type === 'sql') {
-          // Check if there's a database connection node connected to this SQL node
-          const incomingEdges = edgesState.filter((edge) => edge.targetId === nodeId);
-          let dbNode = null;
+        if (node.type === 'sql' || node.type === 'sqlCell') {
+          // Shared SQL execution logic for both SQL Node and SQL Cell.
+          // Both support upstream Database connections via edges and DuckDB fallback.
+
+          // Use multiple sources for edges to avoid stale state: ref, Yjs, and closure
+          const allEdgeSources = [latestEdges, collaboration.canvasEdges, edgesState];
+          const edgeSource =
+            allEdgeSources.find((src) =>
+              src.some(
+                (edge) =>
+                  edge.targetId === nodeId &&
+                  (latestNodes.some((n) => n.id === edge.sourceId && isDatabaseNodeType(n.type)) ||
+                    collaboration.canvasNodes.some(
+                      (n) => n.id === edge.sourceId && isDatabaseNodeType(n.type),
+                    )),
+              ),
+            ) ?? latestEdges;
+
+          const allNodeSources = [latestNodes, collaboration.canvasNodes, nodesState];
+
+          const incomingEdges = edgeSource.filter((edge) => edge.targetId === nodeId);
+          let dbNode: CanvasNode | null = null;
           for (const edge of incomingEdges) {
-            const sourceNode = nodesState.find((n) => n.id === edge.sourceId);
-            if (sourceNode?.type === 'database') {
-              dbNode = sourceNode;
-              break; // Use the first database connection found
+            for (const nodeSrc of allNodeSources) {
+              const sourceNode = nodeSrc.find((n) => n.id === edge.sourceId);
+              if (isDatabaseNodeType(sourceNode?.type)) {
+                dbNode = sourceNode;
+                break;
+              }
             }
+            if (dbNode) break;
           }
 
           let result;
@@ -837,7 +930,6 @@ function BoardPageContent({ params }: BoardPageProps) {
             try {
               const { executePostgresSql } = await import('../../../lib/postgresClient');
               result = await executePostgresSql(connectionId, code);
-              // Update database node status to connected on success
               setNodesState((prev) =>
                 prev.map((n) =>
                   n.id === dbNode!.id
@@ -852,8 +944,6 @@ function BoardPageContent({ params }: BoardPageProps) {
                 ),
               );
             } catch (err) {
-              const errorMessage = err instanceof Error ? err.message : String(err);
-              // Update database node status to error
               setNodesState((prev) =>
                 prev.map((n) =>
                   n.id === dbNode!.id
@@ -870,15 +960,37 @@ function BoardPageContent({ params }: BoardPageProps) {
               throw err;
             }
           } else {
-            // Execute via DuckDB (default) with preview mode for large results
-            result = await executeSqlWithPreview(code);
+            // DuckDB path: check IndexedDB cache first
+            const { getCachedResult, setCachedResult } = await import('../../../lib/queryCache');
+            const cached = await getCachedResult(code, boardId);
+            if (cached) {
+              result = cached;
+            } else {
+              const previewLimit = node.type === 'sqlCell' ? 500 : undefined;
+              try {
+                result = await executeSqlWithPreview(
+                  code,
+                  previewLimit ? { previewLimit } : undefined,
+                );
+              } catch (duckDbErr) {
+                const msg = duckDbErr instanceof Error ? duckDbErr.message : String(duckDbErr);
+                const looksLikeMissingTable =
+                  /table.*does not exist|catalog error|relation.*does not exist/i.test(msg);
+                if (looksLikeMissingTable) {
+                  throw new Error(
+                    `${msg}\n\nTip: Connect a Database node (e.g. PostgreSQL) to this SQL node to run the query against your database. Without it, SQL runs in local mode and only sees CSV tables.`,
+                  );
+                }
+                throw duckDbErr;
+              }
+              void setCachedResult(code, boardId, result);
+            }
           }
 
           const output = { kind: 'sql' as const, result, code };
           setSuccess(nodeId, output);
           const latestEntry = useExecutionStore.getState().entries[nodeId];
 
-          // Сохраняем результаты выполнения в payload узла и синхронизируем через Yjs
           setNodesState((prev) => {
             const next = prev.map((n) =>
               n.id === nodeId
@@ -895,8 +1007,6 @@ function BoardPageContent({ params }: BoardPageProps) {
                   }
                 : n,
             );
-            // Sync execution results through Yjs for real-time collaboration
-            // CRITICAL: Update nodesStateRef before syncing to Yjs to prevent stale data issues
             nodesStateRef.current = next;
             collaboration.handleCanvasNodesChange(next);
             return next;
@@ -910,11 +1020,11 @@ function BoardPageContent({ params }: BoardPageProps) {
           let upstreamResult: SqlResult | undefined;
 
           // 1. CSV upstream: fetch table from DuckDB so Python gets full (or capped) dataset
-          const directParents = edgesState
+          const directParents = latestEdges
             .filter((e) => e.targetId === nodeId)
             .map((e) => e.sourceId);
           for (const parentId of directParents) {
-            const parentNode = nodesState.find((n) => n.id === parentId);
+            const parentNode = latestNodes.find((n) => n.id === parentId);
             if (parentNode?.type === 'csv' || parentNode?.type === 'csvNode') {
               const tableName = (parentNode.payload as { tableName?: string } | undefined)
                 ?.tableName;
@@ -932,7 +1042,7 @@ function BoardPageContent({ params }: BoardPageProps) {
           // 2. Python upstream: use previous Python node's output table (Jupyter-like chained cells)
           if (!upstreamResult) {
             for (const parentId of directParents) {
-              const parentNode = nodesState.find((n) => n.id === parentId);
+              const parentNode = latestNodes.find((n) => n.id === parentId);
               if (parentNode?.type !== 'python') continue;
               let parentEntry = useExecutionStore.getState().entries[parentId];
               const hasValidOutput =
@@ -979,7 +1089,7 @@ function BoardPageContent({ params }: BoardPageProps) {
             const immediateParents = reverseAdjacency.get(nodeId) ?? [];
             for (const parentId of immediateParents) {
               const parentEntry = useExecutionStore.getState().entries[parentId];
-              const parentNode = nodesState.find((n) => n.id === parentId);
+              const parentNode = latestNodes.find((n) => n.id === parentId);
               if (parentNode?.type === 'sql' && parentEntry?.output?.kind !== 'sql') {
                 await handleRunNode(parentId);
               }
@@ -997,7 +1107,7 @@ function BoardPageContent({ params }: BoardPageProps) {
             }
             if (!upstreamResult) {
               for (const parentId of directParents) {
-                const parentNode = nodesState.find((n) => n.id === parentId);
+                const parentNode = latestNodes.find((n) => n.id === parentId);
                 if (parentNode?.type !== 'sql') continue;
                 const parentEntry = useExecutionStore.getState().entries[parentId];
                 if (parentEntry?.output?.kind !== 'sql') {
@@ -1153,16 +1263,16 @@ function BoardPageContent({ params }: BoardPageProps) {
             const startIdx = cellIds.indexOf(nodeId);
             const upstreamData = resolveUpstreamDataForCell(
               frameId,
-              edgesState.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
-              nodesState.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
+              latestEdges.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
+              latestNodes.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
             );
             const { executeFrameCells } = await import('../../../lib/chainExecutor');
             await executeFrameCells(cellIds, upstreamData, startIdx > 0 ? startIdx : 0);
           } else {
             const upstreamData = resolveUpstreamDataForCell(
               nodeId,
-              edgesState.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
-              nodesState.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
+              latestEdges.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
+              latestNodes.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
             );
             const result = await executeStandalonePythonCell(nodeId, code, upstreamData);
 
@@ -1185,14 +1295,6 @@ function BoardPageContent({ params }: BoardPageProps) {
           return;
         }
 
-        if (node.type === 'sqlCell') {
-          const result = await executeSqlWithPreview(code);
-          const output = { kind: 'sql' as const, result, code };
-          setSuccess(nodeId, output);
-          markDirty();
-          return;
-        }
-
         if (node.type === 'notebookFrame') {
           const { executeFrameCells, resolveUpstreamDataForCell } =
             await import('../../../lib/chainExecutor');
@@ -1200,8 +1302,8 @@ function BoardPageContent({ params }: BoardPageProps) {
           const cellIds = useChainStore.getState().getCellOrder(nodeId);
           const upstreamData = resolveUpstreamDataForCell(
             nodeId,
-            edgesState.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
-            nodesState.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
+            latestEdges.map((e) => ({ sourceId: e.sourceId, targetId: e.targetId })),
+            latestNodes.map((n) => ({ id: n.id, type: n.type, payload: n.payload })),
           );
           await executeFrameCells(cellIds, upstreamData);
           setStatus(nodeId, 'success');
@@ -1210,14 +1312,12 @@ function BoardPageContent({ params }: BoardPageProps) {
         }
 
         if (node.type === 'plot') {
-          // Plot nodes don't execute code - they visualize data from upstream nodes.
-          // Visualization must be built from the FULL dataset (not preview).
-          const upstreamEdges = edgesState.filter((edge) => edge.targetId === nodeId);
+          const upstreamEdges = latestEdges.filter((edge) => edge.targetId === nodeId);
           let inputData: SqlResult | undefined;
 
           for (const edge of upstreamEdges) {
             const upstreamEntry = useExecutionStore.getState().entries[edge.sourceId];
-            const upstreamNode = nodesState.find((n) => n.id === edge.sourceId);
+            const upstreamNode = latestNodes.find((n) => n.id === edge.sourceId);
 
             // CSV upstream: use full dataset from DuckDB (up to 10k rows) as snapshot input
             if (upstreamNode?.type === 'csv' || upstreamNode?.type === 'csvNode') {
@@ -1392,9 +1492,12 @@ function BoardPageContent({ params }: BoardPageProps) {
   // Handler for loading full SQL results without preview limit
   const handleRunNodeFull = useCallback(
     async (nodeId: string) => {
-      const node = nodesState.find((item) => item.id === nodeId);
-      if (!node || node.type !== 'sql') {
-        return; // Only support full load for SQL nodes
+      const latestNodes = nodesStateRef.current;
+      const latestEdges = edgesStateRef.current;
+
+      const node = latestNodes.find((item) => item.id === nodeId);
+      if (!node || (node.type !== 'sql' && node.type !== 'sqlCell')) {
+        return;
       }
 
       resetExecutionOutput(nodeId);
@@ -1405,12 +1508,34 @@ function BoardPageContent({ params }: BoardPageProps) {
       setStatus(nodeId, 'running');
 
       try {
-        // Execute with fullLoad=true to bypass preview limit
-        const result = await executeSqlWithPreview(code, { fullLoad: true });
+        let result;
+
+        const incomingEdges = latestEdges.filter((edge) => edge.targetId === nodeId);
+        let dbNode = null;
+        for (const edge of incomingEdges) {
+          const sourceNode = latestNodes.find((n) => n.id === edge.sourceId);
+          if (isDatabaseNodeType(sourceNode?.type)) {
+            dbNode = sourceNode;
+            break;
+          }
+        }
+
+        if (dbNode) {
+          const payload = dbNode.payload as { connectionId?: string } | undefined;
+          const connectionId = payload?.connectionId;
+          if (!connectionId) {
+            setError(nodeId, 'Database connection not configured');
+            return;
+          }
+          const { executePostgresSql } = await import('../../../lib/postgresClient');
+          result = await executePostgresSql(connectionId, code);
+        } else {
+          result = await executeSqlWithPreview(code, { fullLoad: true });
+        }
+
         const output = { kind: 'sql' as const, result, code };
         setSuccess(nodeId, output);
 
-        // Sync through Yjs
         setNodesState((prev) => {
           const next = prev.map((n) =>
             n.id === nodeId
@@ -1435,7 +1560,7 @@ function BoardPageContent({ params }: BoardPageProps) {
         setError(nodeId, errorMessage);
       }
     },
-    [nodesState, setStatus, setSuccess, setError, resetExecutionOutput, markDirty, collaboration],
+    [setStatus, setSuccess, setError, resetExecutionOutput, markDirty, collaboration],
   );
 
   const runDownstreamRecursive = useCallback(
@@ -1519,6 +1644,24 @@ function BoardPageContent({ params }: BoardPageProps) {
           const pythonFromPayload = (payload.python as string | undefined) ?? '';
           payload.python =
             pythonFromPayload.trim() !== '' ? pythonFromPayload : (entry?.code ?? '');
+          if (entry?.status === 'success' && entry.output) {
+            payload.execution = {
+              status: entry.status,
+              output: entry.output,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
+          } else if (entry?.status === 'error') {
+            payload.execution = {
+              status: entry.status,
+              error: entry.error,
+              hiddenOutputs: entry.hiddenOutputs,
+            };
+          }
+        } else if (node.type === 'sqlCell') {
+          const entry = useExecutionStore.getState().entries[node.id];
+          const cellSourceFromPayload = (payload.cellSource as string | undefined) ?? '';
+          payload.cellSource =
+            cellSourceFromPayload.trim() !== '' ? cellSourceFromPayload : (entry?.code ?? '');
           if (entry?.status === 'success' && entry.output) {
             payload.execution = {
               status: entry.status,
@@ -1777,7 +1920,22 @@ function BoardPageContent({ params }: BoardPageProps) {
         }
       } else if (node.type === 'python') {
         payload.python = (payload.python as string | undefined) ?? '';
-        // Сохраняем результаты выполнения для Python узлов
+        const entry = useExecutionStore.getState().entries[node.id];
+        if (entry?.status === 'success' && entry.output) {
+          payload.execution = {
+            status: entry.status,
+            output: entry.output,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        } else if (entry?.status === 'error') {
+          payload.execution = {
+            status: entry.status,
+            error: entry.error,
+            hiddenOutputs: entry.hiddenOutputs,
+          };
+        }
+      } else if (node.type === 'sqlCell') {
+        payload.cellSource = (payload.cellSource as string | undefined) ?? '';
         const entry = useExecutionStore.getState().entries[node.id];
         if (entry?.status === 'success' && entry.output) {
           payload.execution = {
@@ -1798,7 +1956,6 @@ function BoardPageContent({ params }: BoardPageProps) {
             ? (payload as any).text
             : ((payload as any).noteContent ?? '');
         payload.text = text ?? '';
-        // на всякий случай дублируем под старым ключом, если бэк ожидает noteContent
         if ((payload as any).noteContent === undefined) {
           (payload as any).noteContent = text ?? '';
         }
@@ -1944,6 +2101,7 @@ function BoardPageContent({ params }: BoardPageProps) {
               ...(node.payload ?? {}),
               ...(node.type === 'sql' ? { sql: code } : {}),
               ...(node.type === 'python' ? { python: code } : {}),
+              ...(node.type === 'sqlCell' ? { cellSource: code } : {}),
             },
           };
         });
@@ -2154,8 +2312,11 @@ function BoardPageContent({ params }: BoardPageProps) {
       rows: Array<Array<string | number | null>>;
     }) => {
       collaboration.datasetsMap.set(dataset.tableName, dataset);
+      void import('../../../lib/queryCache').then(({ invalidateBoardCache }) =>
+        invalidateBoardCache(boardId),
+      );
     },
-    [collaboration.datasetsMap],
+    [collaboration.datasetsMap, boardId],
   );
 
   const handleLogout = useCallback(async () => {
@@ -2242,7 +2403,12 @@ function BoardPageContent({ params }: BoardPageProps) {
               redo={handleRedo}
               canUndo={canUndo}
               canRedo={canRedo}
-              fullscreenTarget={undefined}
+              fullscreenTarget={boardSectionRef.current}
+              onOpenCatchUp={() => setCatchUpOpen(true)}
+              onOpenHistory={() => setHistoryOpen((v) => !v)}
+              onOpenDetails={() => setDetailsOpen(true)}
+              onOpenCommands={() => setCommandPaletteOpen(true)}
+              onOpenFind={() => setFindPanelOpen(true)}
             />
             <h1 className="text-lg font-semibold text-slate-900 truncate">
               {data?.board.title ?? t.board}
@@ -2294,7 +2460,7 @@ function BoardPageContent({ params }: BoardPageProps) {
         />
       </header>
 
-      <section className="flex flex-1 min-h-0 flex-col overflow-hidden">
+      <section ref={boardSectionRef} className="flex flex-1 min-h-0 flex-col overflow-hidden">
         {isLoading && (
           <div className="flex h-full items-center justify-center text-slate-500">
             {t.loadingBoard}
@@ -2367,6 +2533,57 @@ function BoardPageContent({ params }: BoardPageProps) {
             />
           </div>
         )}
+
+        {/* Feature panels */}
+        <CatchUpPanel boardId={boardId} open={catchUpOpen} onClose={() => setCatchUpOpen(false)} />
+        <HistoryPanel
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          undoManager={undoManager}
+          undoStackLength={undoStackLength}
+          redoStackLength={redoStackLength}
+          undo={handleUndo}
+          redo={handleRedo}
+          clear={clearHistory}
+          canUndo={canUndo}
+          canRedo={canRedo}
+        />
+        <BoardDetailsModal
+          open={detailsOpen}
+          onClose={() => setDetailsOpen(false)}
+          boardId={boardId}
+          boardTitle={data?.board.title}
+          workspaceId={data?.board.workspaceId ?? ''}
+          createdAt={(data?.board as Record<string, unknown>)?.createdAt as string | undefined}
+          collaboratorsCount={presenceUsers.length}
+        />
+        <FindPanel open={findPanelOpen} onClose={() => setFindPanelOpen(false)} />
+        <CommandPalette
+          open={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+          menuContext={
+            data
+              ? {
+                  boardId,
+                  boardTitle: data.board.title,
+                  workspaceId: data.board.workspaceId ?? '',
+                  getSnapshot,
+                  routerPush: (url) => router.push(url),
+                  onDeleteBoard: handleDeleteBoard,
+                  undo: handleUndo,
+                  redo: handleRedo,
+                  canUndo,
+                  canRedo,
+                  fullscreenTarget: boardSectionRef.current,
+                  onCloseMenu: () => setCommandPaletteOpen(false),
+                  onOpenFind: () => {
+                    setCommandPaletteOpen(false);
+                    setFindPanelOpen(true);
+                  },
+                }
+              : null
+          }
+        />
       </section>
     </main>
   );

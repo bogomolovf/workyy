@@ -314,8 +314,6 @@ export async function loadFileIntoDuckDb(
   const rowCount = Number(result.rows[0]?.[0] ?? 0);
 
   if (options?.persist && options.boardId) {
-    // сохраняем полный снепшот таблицы (как текстовые значения),
-    // чтобы можно было восстановить её после перезагрузки без доступа к исходному файлу
     const fullTable = await connection.query(`SELECT * FROM ${quotedIdentifier(tableName)}`);
     const snapshot = tableToSqlResult(fullTable);
     const dataset: PersistedDataset = {
@@ -324,6 +322,13 @@ export async function loadFileIntoDuckDb(
       rows: snapshot.rows,
     };
     saveDatasetMeta(options.boardId, dataset);
+  }
+
+  // Invalidate query cache: queries referencing this table may now return different data
+  if (options?.boardId) {
+    void import('./queryCache').then(({ invalidateTableCache }) =>
+      invalidateTableCache(options.boardId!, tableName),
+    );
   }
 
   return { tableName, rows: rowCount };
@@ -360,10 +365,8 @@ export async function deleteTable(
 ): Promise<void> {
   const connection = connectionOverride ?? (await getDuckDbContext()).connection;
 
-  // Delete table from DuckDB
   await connection.query(`DROP TABLE IF EXISTS ${quotedIdentifier(tableName)};`);
 
-  // Delete metadata from localStorage
   if (typeof window !== 'undefined') {
     try {
       const key = getDatasetsKey(boardId);
@@ -374,6 +377,10 @@ export async function deleteTable(
       // ignore persistence errors
     }
   }
+
+  void import('./queryCache').then(({ invalidateTableCache }) =>
+    invalidateTableCache(boardId, tableName),
+  );
 }
 
 async function ensureDemoDatasetForBoard(

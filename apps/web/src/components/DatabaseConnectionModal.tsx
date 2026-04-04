@@ -115,6 +115,11 @@ export function DatabaseConnectionModal({
       return;
     }
 
+    if (!formData.connectionId && !workspaceId) {
+      setError('Board is not loaded. Save the board or refresh the page and try again.');
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
 
@@ -161,7 +166,15 @@ export function DatabaseConnectionModal({
 
       onSave(updatedPayload);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save connection';
+      let message = err instanceof Error ? err.message : 'Failed to save connection';
+      if (
+        message.includes('fetch') ||
+        message.includes('NetworkError') ||
+        message.includes('Failed to fetch')
+      ) {
+        message =
+          'Cannot reach the server. Make sure the app backend (realtime-server) is running and try again.';
+      }
       setError(message);
     } finally {
       setIsSaving(false);

@@ -93,6 +93,40 @@ components:
         metadata:
           type: object
           additionalProperties: true
+    WorkspaceSummary:
+      type: object
+      required: [id, name, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+          enum: [owner, editor, viewer]
+    WorkspaceMember:
+      type: object
+      required: [userId, email, role, addedAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [owner, editor, viewer]
+        addedAt:
+          type: string
+          format: date-time
     Run:
       type: object
       required: [runId, nodeId, boardId, status, trigger, startedAt]
@@ -120,7 +154,78 @@ components:
           format: date-time
           nullable: true
 paths:
+  /auth/me:
+    get:
+      summary: Get current authenticated user with workspaces (teams)
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, email]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                    format: email
+                  name:
+                    type: string
+                    nullable: true
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkspaceSummary'
+        '401':
+          description: Not authenticated
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /boards:
+    get:
+      summary: List boards for the authenticated user
+      operationId: listBoards
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: workspaceId
+          description: Filter boards by workspace (team). If omitted, returns boards from all user workspaces.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of boards
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [boards]
+                properties:
+                  boards:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/Board'
+                        - type: object
+                          properties:
+                            stats:
+                              type: object
+                              properties:
+                                nodes: { type: integer }
+                                edges: { type: integer }
+        '403':
+          description: Access denied to workspace
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
     post:
       summary: Create a new board
       operationId: createBoard
@@ -446,3 +551,440 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+  /workspaces:
+    post:
+      summary: Create a new workspace (team)
+      operationId: createWorkspace
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+      responses:
+        '201':
+          description: Workspace created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, name, createdAt]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /workspaces/{workspaceId}/members:
+    get:
+      summary: List workspace (team) members
+      operationId: listWorkspaceMembers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Members list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkspaceMember'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: Workspace not found
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+    post:
+      summary: Add member to workspace (team)
+      operationId: addWorkspaceMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [owner, editor, viewer]
+                  default: viewer
+      responses:
+        '201':
+          description: Member added
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, email, role]
+                properties:
+                  userId: { type: string, format: uuid }
+                  email: { type: string, format: email }
+                  name: { type: string, nullable: true }
+                  role: { type: string, enum: [owner, editor, viewer] }
+        '404':
+          description: User or workspace not found
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: User already a member
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /workspaces/{workspaceId}/members/{userId}:
+    delete:
+      summary: Remove member from workspace (team)
+      operationId: removeWorkspaceMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Member removed
+        '400':
+          description: Cannot remove yourself
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: Member not found
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+    patch:
+      summary: Update member role in workspace (team)
+      operationId: updateWorkspaceMemberRole
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [owner, editor, viewer]
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, role]
+                properties:
+                  userId: { type: string, format: uuid }
+                  role: { type: string, enum: [owner, editor, viewer] }
+        '404':
+          description: Member not found
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  # ── Task Tracker ─────────────────────────────────────────────────
+
+  /trackers:
+    get:
+      operationId: listTrackers
+      summary: List task trackers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: workspaceId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Success
+    post:
+      operationId: createTracker
+      summary: Create task tracker with default columns
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspaceId, title]
+              properties:
+                workspaceId: { type: string, format: uuid }
+                title: { type: string }
+                description: { type: string }
+      responses:
+        '201':
+          description: Created
+        '409':
+          description: Title conflict
+
+  /trackers/{trackerId}:
+    parameters:
+      - name: trackerId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getTracker
+      summary: Get tracker with columns tasks and labels
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+    patch:
+      operationId: updateTracker
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Updated
+    delete:
+      operationId: deleteTracker
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Deleted
+
+  /trackers/{trackerId}/columns:
+    post:
+      operationId: createColumn
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: trackerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Created
+
+  /trackers/{trackerId}/columns/reorder:
+    put:
+      operationId: reorderColumns
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: trackerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Reordered
+
+  /trackers/{trackerId}/tasks:
+    post:
+      operationId: createTask
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: trackerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Created
+
+  /trackers/{trackerId}/tasks/{taskId}:
+    parameters:
+      - name: trackerId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: taskId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getTask
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+    patch:
+      operationId: updateTask
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Updated
+    delete:
+      operationId: deleteTask
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Deleted
+
+  /trackers/{trackerId}/labels:
+    parameters:
+      - name: trackerId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listLabels
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+    post:
+      operationId: createLabel
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201':
+          description: Created
+
+  /trackers/{trackerId}/tasks/{taskId}/labels:
+    post:
+      operationId: attachLabel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: trackerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Attached
+
+  /trackers/{trackerId}/tasks/{taskId}/comments:
+    parameters:
+      - name: trackerId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: taskId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listComments
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+    post:
+      operationId: addComment
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201':
+          description: Created
+
+  /trackers/{trackerId}/activity:
+    parameters:
+      - name: trackerId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listTrackerActivity
+      summary: List activity for the whole tracker
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: Success
+
+  /trackers/{trackerId}/tasks/{taskId}/activity:
+    parameters:
+      - name: trackerId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: taskId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listTaskActivity
+      summary: List activity for a specific task
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: Success

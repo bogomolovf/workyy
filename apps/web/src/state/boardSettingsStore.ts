@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useNotificationsStore } from './notificationsStore';
+import { useToastStore } from './toastStore';
+
+/** Stable empty array — avoid new [] in selectors to prevent "getSnapshot" infinite loop */
+const EMPTY_STRING_ARRAY: string[] = [];
 
 export type GridSize = 'small' | 'medium' | 'large';
 
@@ -18,6 +23,8 @@ export type SavedTemplate = {
 
 export type BoardsListView = 'grid' | 'list';
 
+export type ScrollBehavior = 'scrollAndZoom' | 'scrollToPan';
+
 export type BoardSettingsState = {
   boardsListView: BoardsListView;
   gridVisible: boolean;
@@ -35,7 +42,10 @@ export type BoardSettingsState = {
   startView: StartViewState;
   gridSize: GridSize;
   snapToGrid: boolean;
+  invertScroll: boolean;
+  scrollBehavior: ScrollBehavior;
   templates: SavedTemplate[];
+  nodeIdsAtLastVisit: Record<string, string[]>;
   setGridVisible: (v: boolean) => void;
   setShowCollaboratorCursors: (v: boolean) => void;
   setShowComments: (v: boolean) => void;
@@ -52,7 +62,11 @@ export type BoardSettingsState = {
   setStartView: (v: StartViewState) => void;
   setGridSize: (v: GridSize) => void;
   setSnapToGrid: (v: boolean) => void;
+  setInvertScroll: (v: boolean) => void;
+  setScrollBehavior: (v: ScrollBehavior) => void;
   setBoardsListView: (v: BoardsListView) => void;
+  recordBoardVisitWithNodes: (boardId: string, nodeIds: string[]) => void;
+  getNodeIdsAtLastVisit: (boardId: string) => string[];
 };
 
 export const useBoardSettingsStore = create<BoardSettingsState>()(
@@ -74,7 +88,10 @@ export const useBoardSettingsStore = create<BoardSettingsState>()(
       startView: null,
       gridSize: 'medium',
       snapToGrid: true,
+      invertScroll: false,
+      scrollBehavior: 'scrollAndZoom' as ScrollBehavior,
       templates: [],
+      nodeIdsAtLastVisit: {},
       setGridVisible: (v) => set({ gridVisible: v }),
       setShowCollaboratorCursors: (v) => set({ showCollaboratorCursors: v }),
       setShowComments: (v) => set({ showComments: v }),
@@ -82,7 +99,13 @@ export const useBoardSettingsStore = create<BoardSettingsState>()(
       setShowObjectDimensions: (v) => set({ showObjectDimensions: v }),
       setShowUndoRedoControls: (v) => set({ showUndoRedoControls: v }),
       setAlignObjects: (v) => set({ alignObjects: v }),
-      setFollowAllThreads: (v) => set({ followAllThreads: v }),
+      setFollowAllThreads: (v) => {
+        set({ followAllThreads: v });
+        useNotificationsStore.getState().set('someoneCommentsInThreadsFollowing', v);
+        useToastStore
+          .getState()
+          .show(v ? 'Subscribed to all threads' : 'Unsubscribed from threads', 'success');
+      },
       setLockDefaultView: (v) => set({ lockDefaultView: v }),
       toggleStarred: (boardId) =>
         set((s) => ({
@@ -102,7 +125,17 @@ export const useBoardSettingsStore = create<BoardSettingsState>()(
       setStartView: (v) => set({ startView: v }),
       setGridSize: (v) => set({ gridSize: v }),
       setSnapToGrid: (v) => set({ snapToGrid: v }),
+      setInvertScroll: (v) => set({ invertScroll: v }),
+      setScrollBehavior: (v) => set({ scrollBehavior: v }),
       setBoardsListView: (v) => set({ boardsListView: v }),
+      recordBoardVisitWithNodes: (boardId, nodeIds) =>
+        set((s) => ({
+          lastVisitedAtByBoardId: { ...s.lastVisitedAtByBoardId, [boardId]: Date.now() },
+          nodeIdsAtLastVisit: { ...s.nodeIdsAtLastVisit, [boardId]: nodeIds },
+        })),
+      // Return stable empty array to avoid "getSnapshot should be cached" / infinite loop
+      // when used in Zustand selector (e.g. CatchUpPanel)
+      getNodeIdsAtLastVisit: (boardId) => get().nodeIdsAtLastVisit[boardId] ?? EMPTY_STRING_ARRAY,
     }),
     { name: 'workyy-board-settings' },
   ),

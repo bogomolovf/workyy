@@ -9,7 +9,9 @@ export type BoardSettingsKey =
   | 'showUndoRedoControls'
   | 'alignObjects'
   | 'followAllThreads'
-  | 'lockDefaultView';
+  | 'lockDefaultView'
+  | 'snapToGrid'
+  | 'invertScroll';
 
 export type MenuItemAction =
   | 'undo'
@@ -32,9 +34,14 @@ export type MenuItemAction =
   | 'exportSpreadsheet'
   | 'downloadBackup'
   | 'embed'
-  | 'saveToGoogleDrive';
+  | 'saveToGoogleDrive'
+  | 'gridSizeSmall'
+  | 'gridSizeMedium'
+  | 'gridSizeLarge'
+  | 'scrollAndZoom'
+  | 'scrollToPan';
 
-export type MenuItemType = 'action' | 'toggle' | 'submenu';
+export type MenuItemType = 'action' | 'toggle' | 'submenu' | 'color-picker';
 
 export type MenuItemBase = {
   id: string;
@@ -59,7 +66,17 @@ export type MenuItemSubmenuConfig = MenuItemBase & {
   children: MenuItemConfig[];
 };
 
-export type MenuItemConfig = MenuItemActionConfig | MenuItemToggleConfig | MenuItemSubmenuConfig;
+export type MenuItemColorPickerConfig = MenuItemBase & {
+  type: 'color-picker';
+  colors: { value: string; label: string }[];
+  storeKey: 'backgroundColor';
+};
+
+export type MenuItemConfig =
+  | MenuItemActionConfig
+  | MenuItemToggleConfig
+  | MenuItemSubmenuConfig
+  | MenuItemColorPickerConfig;
 
 export type MenuSection = {
   id: string;
@@ -91,6 +108,11 @@ export const MENU_ACTION_IDS = new Set<string>([
   'downloadBackup',
   'embed',
   'saveToGoogleDrive',
+  'gridSizeSmall',
+  'gridSizeMedium',
+  'gridSizeLarge',
+  'scrollAndZoom',
+  'scrollToPan',
 ]);
 
 /** Top-level section ids */
@@ -176,8 +198,18 @@ export function getBoardMenuSections(
         {
           id: 'backgroundColor',
           label: 'Background color',
-          type: 'submenu',
-          children: [], // stub
+          type: 'color-picker',
+          storeKey: 'backgroundColor',
+          colors: [
+            { value: '#ffffff', label: 'White' },
+            { value: '#f8fafc', label: 'Snow' },
+            { value: '#f1f5f9', label: 'Light gray' },
+            { value: '#e2e8f0', label: 'Gray' },
+            { value: '#fef3c7', label: 'Warm' },
+            { value: '#dbeafe', label: 'Sky' },
+            { value: '#d1fae5', label: 'Mint' },
+            { value: '#1e293b', label: 'Dark' },
+          ],
         },
         { id: 'startView', label: 'Start view', type: 'action', action: 'startView' },
         {
@@ -185,7 +217,6 @@ export function getBoardMenuSections(
           label: 'Lock default view',
           type: 'toggle',
           toggleKey: 'lockDefaultView',
-          disabled: true, // not supported yet
         },
         { id: 'history', label: 'History', type: 'action', action: 'history' },
         { id: 'details', label: 'Details', type: 'action', action: 'details' },
@@ -229,7 +260,18 @@ export function getBoardMenuSections(
       id: 'view',
       label: 'View',
       children: [
-        { id: 'grid', label: 'Grid', type: 'submenu', children: [] },
+        {
+          id: 'grid',
+          label: 'Grid',
+          type: 'submenu',
+          children: [
+            { id: 'gridVisible', label: 'Show grid', type: 'toggle', toggleKey: 'gridVisible' },
+            { id: 'snapToGrid', label: 'Snap to grid', type: 'toggle', toggleKey: 'snapToGrid' },
+            { id: 'gridSizeSmall', label: 'Small', type: 'action', action: 'gridSizeSmall' },
+            { id: 'gridSizeMedium', label: 'Medium', type: 'action', action: 'gridSizeMedium' },
+            { id: 'gridSizeLarge', label: 'Large', type: 'action', action: 'gridSizeLarge' },
+          ],
+        },
         {
           id: 'showCollaboratorCursors',
           label: "Show collaborators' cursors",
@@ -276,7 +318,21 @@ export function getBoardMenuSections(
           id: 'mouseOrTrackpad',
           label: 'Mouse or trackpad',
           type: 'submenu',
-          children: [],
+          children: [
+            {
+              id: 'invertScroll',
+              label: 'Invert scroll direction',
+              type: 'toggle',
+              toggleKey: 'invertScroll',
+            },
+            {
+              id: 'scrollAndZoom',
+              label: 'Scroll and zoom',
+              type: 'action',
+              action: 'scrollAndZoom',
+            },
+            { id: 'scrollToPan', label: 'Scroll to pan', type: 'action', action: 'scrollToPan' },
+          ],
         },
         {
           id: 'alignObjects',
@@ -321,4 +377,8 @@ export function isMenuItemToggle(item: MenuItemConfig): item is MenuItemToggleCo
 
 export function isMenuItemAction(item: MenuItemConfig): item is MenuItemActionConfig {
   return item.type === 'action';
+}
+
+export function isMenuItemColorPicker(item: MenuItemConfig): item is MenuItemColorPickerConfig {
+  return item.type === 'color-picker';
 }

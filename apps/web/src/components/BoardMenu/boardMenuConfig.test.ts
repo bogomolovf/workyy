@@ -6,6 +6,7 @@ import {
   isMenuItemAction,
   isMenuItemSubmenu,
   isMenuItemToggle,
+  isMenuItemColorPicker,
 } from './boardMenuConfig';
 
 describe('boardMenuConfig', () => {
@@ -36,6 +37,25 @@ describe('boardMenuConfig', () => {
     expect(isMenuItemToggle(lockItem!)).toBe(true);
   });
 
+  it('Lock default view is enabled (not disabled)', () => {
+    const board = sections.find((s) => s.id === 'board')!;
+    const lockItem = board.children.find((c) => c.id === 'lockDefaultView');
+    expect(lockItem).toBeDefined();
+    expect(lockItem!.disabled).toBeUndefined();
+  });
+
+  it('Background color is a color-picker with presets', () => {
+    const board = sections.find((s) => s.id === 'board')!;
+    const bgItem = board.children.find((c) => c.id === 'backgroundColor');
+    expect(bgItem).toBeDefined();
+    expect(isMenuItemColorPicker(bgItem!)).toBe(true);
+    if (bgItem!.type === 'color-picker') {
+      expect(bgItem.colors.length).toBeGreaterThanOrEqual(6);
+      expect(bgItem.colors[0]).toHaveProperty('value');
+      expect(bgItem.colors[0]).toHaveProperty('label');
+    }
+  });
+
   it('Edit section contains Undo, Redo, Commands, Find with shortcuts', () => {
     const edit = sections.find((s) => s.id === 'edit');
     expect(edit).toBeDefined();
@@ -51,6 +71,20 @@ describe('boardMenuConfig', () => {
     expect(edit!.children.some((c) => c.id === 'find')).toBe(true);
   });
 
+  it('View section contains Grid submenu with children', () => {
+    const view = sections.find((s) => s.id === 'view')!;
+    const gridItem = view.children.find((c) => c.id === 'grid');
+    expect(gridItem).toBeDefined();
+    expect(isMenuItemSubmenu(gridItem!)).toBe(true);
+    if (gridItem!.type === 'submenu') {
+      expect(gridItem.children.length).toBeGreaterThanOrEqual(3);
+      const ids = gridItem.children.map((c) => c.id);
+      expect(ids).toContain('gridVisible');
+      expect(ids).toContain('snapToGrid');
+      expect(ids).toContain('gridSizeSmall');
+    }
+  });
+
   it("View section contains Show collaborators' cursors toggle and Enter full screen", () => {
     const view = sections.find((s) => s.id === 'view');
     expect(view).toBeDefined();
@@ -60,6 +94,19 @@ describe('boardMenuConfig', () => {
     const fullscreenItem = view!.children.find((c) => c.id === 'fullscreen');
     expect(fullscreenItem).toBeDefined();
     expect(isMenuItemAction(fullscreenItem!)).toBe(true);
+  });
+
+  it('Preferences section contains Mouse/trackpad submenu with children', () => {
+    const prefs = sections.find((s) => s.id === 'preferences')!;
+    const mouseItem = prefs.children.find((c) => c.id === 'mouseOrTrackpad');
+    expect(mouseItem).toBeDefined();
+    expect(isMenuItemSubmenu(mouseItem!)).toBe(true);
+    if (mouseItem!.type === 'submenu') {
+      expect(mouseItem.children.length).toBeGreaterThanOrEqual(2);
+      const ids = mouseItem.children.map((c) => c.id);
+      expect(ids).toContain('invertScroll');
+      expect(ids).toContain('scrollAndZoom');
+    }
   });
 
   it('Preferences section contains Align objects toggle and Profile settings', () => {
@@ -77,6 +124,58 @@ describe('boardMenuConfig', () => {
     expect(MENU_ACTION_IDS.has('delete')).toBe(true);
     expect(MENU_ACTION_IDS.has('fullscreen')).toBe(true);
     expect(MENU_ACTION_IDS.has('exportPdf')).toBe(true);
+    expect(MENU_ACTION_IDS.has('gridSizeSmall')).toBe(true);
+    expect(MENU_ACTION_IDS.has('scrollAndZoom')).toBe(true);
+  });
+
+  it('Board section contains History and Details actions', () => {
+    const board = sections.find((s) => s.id === 'board')!;
+    const historyItem = board.children.find((c) => c.id === 'history');
+    const detailsItem = board.children.find((c) => c.id === 'details');
+    expect(historyItem).toBeDefined();
+    expect(detailsItem).toBeDefined();
+    expect(isMenuItemAction(historyItem!)).toBe(true);
+    expect(isMenuItemAction(detailsItem!)).toBe(true);
+    if (historyItem!.type === 'action') {
+      expect(historyItem.action).toBe('history');
+    }
+    if (detailsItem!.type === 'action') {
+      expect(detailsItem.action).toBe('details');
+    }
+  });
+
+  it('Edit section has Commands (Cmd+K) and Find (Cmd+F)', () => {
+    const edit = sections.find((s) => s.id === 'edit')!;
+    const commands = edit.children.find((c) => c.id === 'commands');
+    const find = edit.children.find((c) => c.id === 'find');
+    expect(commands).toBeDefined();
+    expect(find).toBeDefined();
+    if (commands!.type === 'action') {
+      expect(commands.action).toBe('commands');
+      expect(commands.shortcut).toContain('K');
+    }
+    if (find!.type === 'action') {
+      expect(find.action).toBe('find');
+      expect(find.shortcut).toContain('F');
+    }
+  });
+
+  it('Preferences section contains Follow all threads toggle', () => {
+    const prefs = sections.find((s) => s.id === 'preferences')!;
+    const followItem = prefs.children.find((c) => c.id === 'followAllThreads');
+    expect(followItem).toBeDefined();
+    expect(isMenuItemToggle(followItem!)).toBe(true);
+    if (followItem!.type === 'toggle') {
+      expect(followItem.toggleKey).toBe('followAllThreads');
+    }
+  });
+
+  it('MENU_ACTION_IDS includes history, details, commands, find, catchUp', () => {
+    expect(MENU_ACTION_IDS.has('history')).toBe(true);
+    expect(MENU_ACTION_IDS.has('details')).toBe(true);
+    expect(MENU_ACTION_IDS.has('commands')).toBe(true);
+    expect(MENU_ACTION_IDS.has('find')).toBe(true);
+    expect(MENU_ACTION_IDS.has('catchUp')).toBe(true);
   });
 
   it('type guards work correctly', () => {
@@ -84,8 +183,10 @@ describe('boardMenuConfig', () => {
     const exportItem = board.children.find((c) => c.label === 'Export')!;
     const deleteItem = board.children.find((c) => c.label === 'Delete')!;
     const lockItem = board.children.find((c) => c.label === 'Lock default view')!;
+    const bgItem = board.children.find((c) => c.id === 'backgroundColor')!;
     expect(isMenuItemSubmenu(exportItem)).toBe(true);
     expect(isMenuItemAction(deleteItem)).toBe(true);
     expect(isMenuItemToggle(lockItem)).toBe(true);
+    expect(isMenuItemColorPicker(bgItem)).toBe(true);
   });
 });

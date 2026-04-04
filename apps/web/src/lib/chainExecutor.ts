@@ -8,6 +8,7 @@
 import { useChainStore } from '../state/chainStore';
 import { useExecutionStore, type NodeStatus } from '../state/executionStore';
 import { runPythonInPool, acquireDedicatedWorker } from '../workers/pythonClient';
+import { executeSqlWithPreview } from './duckdbClient';
 
 export type UpstreamData = {
   columns: string[];
@@ -129,7 +130,57 @@ export async function executeFrameCells(
       const entry = store.entries[cellId];
       if (!entry) continue;
 
-      // Only execute python cells in the chain; skip markdown
+      // Execute SQL cells inline (DuckDB, no Python worker needed)
+      if (entry.nodeType === 'sqlCell') {
+        const isBeforeStart = i < startFromIndex;
+        const code = entry.code || '';
+        if (!code.trim()) continue;
+
+        if (!isBeforeStart) {
+          useExecutionStore.getState().setStatus(cellId, 'running');
+        }
+        const startTime = performance.now();
+        try {
+          const sqlResult = await executeSqlWithPreview(code);
+          const durationMs = Math.round(performance.now() - startTime);
+          const result: ChainCellResult = {
+            cellId,
+            status: 'success',
+            stdout: '',
+            stderr: '',
+            table: sqlResult,
+            plotJson: null,
+            durationMs,
+          };
+          results.set(cellId, result);
+          if (!isBeforeStart) {
+            useExecutionStore.getState().setSuccess(cellId, {
+              kind: 'sql',
+              result: sqlResult,
+              code,
+            });
+          }
+        } catch (err) {
+          const durationMs = Math.round(performance.now() - startTime);
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          const result: ChainCellResult = {
+            cellId,
+            status: 'error',
+            stdout: '',
+            stderr: '',
+            error: errorMessage,
+            durationMs,
+          };
+          results.set(cellId, result);
+          if (!isBeforeStart) {
+            useExecutionStore.getState().setError(cellId, errorMessage);
+          }
+          break;
+        }
+        continue;
+      }
+
+      // Only execute python cells in the chain; skip markdown and other types
       if (entry.nodeType !== 'pythonCell') continue;
 
       // If startFromIndex is set, skip cells before it but still run them

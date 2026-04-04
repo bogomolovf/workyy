@@ -62,6 +62,9 @@ export default [
       react: {
         version: 'detect',
       },
+      next: {
+        rootDir: ['apps/web'],
+      },
     },
   },
   {
@@ -102,6 +105,9 @@ export default [
     settings: {
       react: {
         version: 'detect',
+      },
+      next: {
+        rootDir: ['apps/web'],
       },
     },
   },

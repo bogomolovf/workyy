@@ -62,12 +62,16 @@ export default function LoginPage() {
           {error && (
             <div className="space-y-1">
               <p className="text-sm text-rose-600">{error}</p>
-              {error.includes('подключиться к серверу') && (
+              {(error.includes('Invalid email or password') || error === 'Login failed') && (
                 <p className="text-xs text-slate-500">
-                  Запустите из корня проекта:{' '}
-                  <code className="bg-slate-100 px-1 rounded">pnpm dev</code> или{' '}
-                  <code className="bg-slate-100 px-1 rounded">./start.sh</code>. Откройте приложение
-                  по{' '}
+                  Check your email and password, or sign up if you don&apos;t have an account.
+                </p>
+              )}
+              {(error.includes('подключиться к серверу') ||
+                error.includes('Cannot reach server')) && (
+                <p className="text-xs text-slate-500">
+                  Run from project root: <code className="bg-slate-100 px-1 rounded">pnpm dev</code>{' '}
+                  or <code className="bg-slate-100 px-1 rounded">./start.sh</code>. Then open{' '}
                   <a href="http://localhost:3000/login" className="text-indigo-600">
                     http://localhost:3000
                   </a>
